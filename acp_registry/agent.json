@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "name": "shay-shay",
+  "display_name": "Shay-Shay",
+  "description": "AI agent by Nous Research with 90+ tools, persistent memory, and multi-platform support",
+  "icon": "icon.svg",
+  "distribution": {
+    "type": "command",
+    "command": "shay",
+    "args": ["acp"]
+  }
+}

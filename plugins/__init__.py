@@ -1,0 +1,1 @@
+# Shay-Shay plugins package

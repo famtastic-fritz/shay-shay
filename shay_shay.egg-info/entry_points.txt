@@ -1,0 +1,4 @@
+[console_scripts]
+shay = shay_cli.main:main
+shay-acp = acp_adapter.entry:main
+shay-shay = run_agent:main
