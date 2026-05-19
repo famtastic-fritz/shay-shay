@@ -1102,3 +1102,41 @@ class TestDetectSudoStdin:
             "make 2>&1 | tee build.log"
         )
         assert is_dangerous is False
+
+
+class TestUpstreamSecurityHardening:
+    def test_private_etc_redirect_is_dangerous(self):
+        dangerous, _, desc = detect_dangerous_command(
+            "echo 'root ALL=NOPASSWD: ALL' > /private/etc/sudoers"
+        )
+        assert dangerous is True
+        assert "system" in desc.lower()
+
+    def test_private_etc_copy_is_dangerous(self):
+        dangerous, _, desc = detect_dangerous_command("cp malicious.conf /private/etc/hosts")
+        assert dangerous is True
+        assert "system" in desc.lower() or "copy" in desc.lower()
+
+    def test_private_mention_is_safe(self):
+        dangerous, _, _ = detect_dangerous_command(
+            "echo 'the macOS path is /private/etc on disk'"
+        )
+        assert dangerous is False
+
+    def test_killall_force_is_dangerous(self):
+        dangerous, _, desc = detect_dangerous_command("killall -9 firefox")
+        assert dangerous is True
+        assert "kill" in desc.lower()
+
+    def test_killall_list_is_safe(self):
+        dangerous, _, _ = detect_dangerous_command("killall -l")
+        assert dangerous is False
+
+    def test_find_execdir_rm_is_dangerous(self):
+        dangerous, _, desc = detect_dangerous_command("find . -execdir rm {} \\;")
+        assert dangerous is True
+        assert "find" in desc.lower() or "rm" in desc.lower()
+
+    def test_find_execdir_ls_is_safe(self):
+        dangerous, _, _ = detect_dangerous_command("find . -execdir ls {} \\;")
+        assert dangerous is False

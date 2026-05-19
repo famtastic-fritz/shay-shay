@@ -21,6 +21,7 @@ Public API (signatures preserved from the original 2,400-line version):
 """
 
 import json
+import re
 import asyncio
 import logging
 import threading
@@ -31,6 +32,38 @@ from tools.registry import discover_builtin_tools, registry
 from toolsets import resolve_toolset, validate_toolset
 
 logger = logging.getLogger(__name__)
+
+
+# =========================================================================
+# Tool error sanitization
+# =========================================================================
+#
+# Tool exceptions can carry arbitrary text into the model's context as the
+# `tool` message content. JSON serialization handles wire-layer escaping, but
+# the model still reads structural-looking tokens. Strip role/tool framing,
+# CDATA blocks, and markdown fences before an exception enters conversation
+# context. This is defense-in-depth for hostile or malformed tool errors.
+_TOOL_ERROR_ROLE_TAG_RE = re.compile(
+    r'</?(?:tool_call|function_call|result|response|output|input|system|assistant|user)>',
+    re.IGNORECASE,
+)
+_TOOL_ERROR_FENCE_OPEN_RE = re.compile(r'^\s*```(?:json|xml|html|markdown)?\s*', re.MULTILINE)
+_TOOL_ERROR_FENCE_CLOSE_RE = re.compile(r'\s*```\s*$', re.MULTILINE)
+_TOOL_ERROR_CDATA_RE = re.compile(r'<!\[CDATA\[.*?\]\]>', re.DOTALL)
+_TOOL_ERROR_MAX_LEN = 2000
+
+
+def _sanitize_tool_error(error_msg: str) -> str:
+    """Strip structural framing tokens from a tool error before model context."""
+    if not error_msg:
+        return "[TOOL_ERROR] "
+    sanitized = _TOOL_ERROR_ROLE_TAG_RE.sub("", error_msg)
+    sanitized = _TOOL_ERROR_FENCE_OPEN_RE.sub("", sanitized)
+    sanitized = _TOOL_ERROR_FENCE_CLOSE_RE.sub("", sanitized)
+    sanitized = _TOOL_ERROR_CDATA_RE.sub("", sanitized)
+    if len(sanitized) > _TOOL_ERROR_MAX_LEN:
+        sanitized = sanitized[:_TOOL_ERROR_MAX_LEN - 3] + "..."
+    return f"[TOOL_ERROR] {sanitized}"
 
 
 # =============================================================================
@@ -833,7 +866,7 @@ def handle_function_call(
     except Exception as e:
         error_msg = f"Error executing {function_name}: {str(e)}"
         logger.exception(error_msg)
-        return json.dumps({"error": error_msg}, ensure_ascii=False)
+        return json.dumps({"error": _sanitize_tool_error(error_msg)}, ensure_ascii=False)
 
 
 # =============================================================================
