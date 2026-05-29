@@ -978,10 +978,26 @@ def resolve_anthropic_token() -> Optional[str]:
         return resolved_claude_token
 
     # 4. Regular API key, or a legacy OAuth token saved in ANTHROPIC_API_KEY.
-    # This remains as a compatibility fallback for pre-migration Shay-Shay configs.
+    # A real sk-ant-api* key here switches billing from the Max subscription
+    # (OAuth) to pay-as-you-go API credits. To prevent a SILENT subscription→API
+    # billing switch when the OAuth token is absent/expired, a genuine API key is
+    # gated behind an explicit opt-in flag. A legacy OAuth-shaped token stored in
+    # ANTHROPIC_API_KEY is still subscription billing, so it remains allowed.
     api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if api_key:
-        return api_key
+        if _is_oauth_token(api_key):
+            return api_key  # legacy OAuth/setup token — subscription billing, safe
+        if os.getenv("SHAY_ALLOW_ANTHROPIC_API_KEY", "").strip().lower() in (
+            "1", "true", "yes", "on",
+        ):
+            return api_key  # explicit opt-in to pay-as-you-go API-credit billing
+        logger.warning(
+            "ANTHROPIC_API_KEY is set but ignored: the subscription→API-key "
+            "billing fallback is gated. No OAuth token was resolved, so Anthropic "
+            "calls will fail cleanly instead of silently billing API credits. Set "
+            "SHAY_ALLOW_ANTHROPIC_API_KEY=1 to opt in to API billing."
+        )
+        return None
 
     return None
 
