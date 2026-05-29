@@ -985,6 +985,70 @@ def _skill_should_show(
     return True
 
 
+def _read_skills_cap_config() -> "tuple[int | None, frozenset[str]]":
+    """Read ``skills.max_count`` and ``skills.always_include`` from config.yaml.
+
+    Returns ``(max_count, always_include_set)``. ``max_count`` is ``None`` or
+    ``<= 0`` when no cap is configured (backward-compatible — original behavior).
+    """
+    try:
+        from shay_cli.config import load_config
+        cfg = load_config().get("skills") or {}
+        max_count = cfg.get("max_count")
+        if not isinstance(max_count, int) or max_count <= 0:
+            max_count = None
+        raw_always = cfg.get("always_include") or []
+        if isinstance(raw_always, str):
+            raw_always = [raw_always]
+        always = frozenset(str(x) for x in raw_always if isinstance(x, str) and x.strip())
+    except Exception:  # pragma: no cover — defensive
+        max_count, always = None, frozenset()
+    return max_count, always
+
+
+def _apply_skill_count_cap(
+    skills_by_category: "dict[str, list[tuple[str, str]]]",
+    available_toolsets: "set[str] | None",
+    max_count: "int | None",
+    always_include: "frozenset[str]",
+) -> "dict[str, list[tuple[str, str]]]":
+    """Cap the total skill count to keep the system prompt small.
+
+    Prioritizes (kept first): always_include → toolset-matched categories →
+    alphabetical. Returns the original mapping unchanged when no cap is set or
+    the total is already under the cap.
+
+    Cuts per-call input tokens by ~10-15k when the vault has 160+ skills, which
+    is the dominant contributor to Claude-Code quota burn for Shay (see
+    plans/no-dude-this-is-zesty-minsky.md).
+    """
+    if max_count is None:
+        return skills_by_category
+
+    toolsets = available_toolsets or set()
+    flat: "list[tuple[int, str, str, str]]" = []
+    for category, items in skills_by_category.items():
+        cat_match = category in toolsets
+        for name, desc in items:
+            if name in always_include:
+                prio = 0
+            elif cat_match:
+                prio = 1
+            else:
+                prio = 2
+            flat.append((prio, category, name, desc))
+
+    if len(flat) <= max_count:
+        return skills_by_category
+
+    flat.sort(key=lambda t: (t[0], t[1], t[2]))
+    kept = flat[:max_count]
+    result: "dict[str, list[tuple[str, str]]]" = {}
+    for _, category, name, desc in kept:
+        result.setdefault(category, []).append((name, desc))
+    return result
+
+
 def build_skills_system_prompt(
     available_tools: "set[str] | None" = None,
     available_toolsets: "set[str] | None" = None,
@@ -1019,6 +1083,7 @@ def build_skills_system_prompt(
         or ""
     )
     disabled = get_disabled_skill_names()
+    _cap_max, _cap_always = _read_skills_cap_config()
     cache_key = (
         str(skills_dir.resolve()),
         tuple(str(d) for d in external_dirs),
@@ -1026,6 +1091,8 @@ def build_skills_system_prompt(
         tuple(sorted(str(ts) for ts in (available_toolsets or set()))),
         _platform_hint,
         tuple(sorted(disabled)),
+        _cap_max,
+        tuple(sorted(_cap_always)),
     )
     with _SKILLS_PROMPT_CACHE_LOCK:
         cached = _SKILLS_PROMPT_CACHE.get(cache_key)
@@ -1158,6 +1225,13 @@ def build_skills_system_prompt(
                 category_descriptions.setdefault(cat, str(cat_desc).strip().strip("'\""))
             except Exception as e:
                 logger.debug("Could not read external skill description %s: %s", desc_file, e)
+
+    # Apply the configured cap (no-op when skills.max_count is unset). This
+    # trims down ~22.6k-token skill blocks to a focused subset so Shay's Claude
+    # calls don't blow the Claude Code weekly quota.
+    skills_by_category = _apply_skill_count_cap(
+        skills_by_category, available_toolsets, _cap_max, _cap_always,
+    )
 
     if not skills_by_category:
         result = ""

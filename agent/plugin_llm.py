@@ -581,11 +581,27 @@ def _resolve_attribution(
     elif model_override:
         model = model_override
     else:
+        # NEVER fall through to the literal string "default" — Anthropic returns
+        # HTTP 404 "model: default" when that hits the API. Resolve to the
+        # configured model.default; final hard fallback is a real model name.
+        model = ""
         try:
             from agent.auxiliary_client import _read_main_model
-            model = (_read_main_model() or "").strip() or "default"
+            model = (_read_main_model() or "").strip()
         except Exception:  # pragma: no cover — defensive
-            model = "default"
+            model = ""
+        if not model:
+            try:
+                from shay_cli.config import load_config
+                cfg_model = load_config().get("model") or {}
+                if isinstance(cfg_model, dict):
+                    model = (cfg_model.get("default") or "").strip()
+                elif isinstance(cfg_model, str):
+                    model = cfg_model.strip()
+            except Exception:  # pragma: no cover — defensive
+                model = ""
+        if not model:
+            model = "claude-sonnet-4-6"
 
     return provider, model
 
