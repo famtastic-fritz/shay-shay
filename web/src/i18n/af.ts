@@ -120,8 +120,8 @@ export const af: Translations = {
     starting: "Begin",
     startedInBackground: "Begin in agtergrond — kyk logs vir vordering",
     stopped: "Gestop",
-    updateShay-Shay: "Werk Shay-Shay op",
-    updatingShay-Shay: "Besig om Shay-Shay op te werk…",
+    updateShayShay: "Werk Shay-Shay op",
+    updatingShayShay: "Besig om Shay-Shay op te werk…",
     waitingForOutput: "Wag vir uitset…",
   },
 

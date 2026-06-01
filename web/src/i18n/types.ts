@@ -137,8 +137,8 @@ export interface Translations {
     starting: string;
     startedInBackground: string;
     stopped: string;
-    updateShay-Shay: string;
-    updatingShay-Shay: string;
+    updateShayShay: string;
+    updatingShayShay: string;
     waitingForOutput: string;
   };
 

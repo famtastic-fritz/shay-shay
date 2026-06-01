@@ -120,8 +120,8 @@ export const zhHant: Translations = {
     starting: "啟動中",
     startedInBackground: "已於背景啟動 — 請查看日誌以取得進度",
     stopped: "已停止",
-    updateShay-Shay: "更新 Shay-Shay",
-    updatingShay-Shay: "正在更新 Shay-Shay…",
+    updateShayShay: "更新 Shay-Shay",
+    updatingShayShay: "正在更新 Shay-Shay…",
     waitingForOutput: "等待輸出…",
   },
 

@@ -120,8 +120,8 @@ export const en: Translations = {
     starting: "Starting",
     startedInBackground: "Started in background — check logs for progress",
     stopped: "Stopped",
-    updateShay-Shay: "Update Shay-Shay",
-    updatingShay-Shay: "Updating Shay-Shay…",
+    updateShayShay: "Update Shay-Shay",
+    updatingShayShay: "Updating Shay-Shay…",
     waitingForOutput: "Waiting for output…",
   },
 

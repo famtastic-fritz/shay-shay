@@ -268,7 +268,7 @@ export const api = {
   // Gateway / update actions
   restartGateway: () =>
     fetchJSON<ActionResponse>("/api/gateway/restart", { method: "POST" }),
-  updateShay-Shay: () =>
+  updateShayShay: () =>
     fetchJSON<ActionResponse>("/api/shay/update", { method: "POST" }),
   getActionStatus: (name: string, lines = 200) =>
     fetchJSON<ActionStatusResponse>(

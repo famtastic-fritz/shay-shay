@@ -703,8 +703,8 @@ function SidebarSystemActions({ onNavigate }: { onNavigate: () => void }) {
     {
       action: "update",
       icon: Download,
-      label: t.status.updateShay-Shay,
-      runningLabel: t.status.updatingShay-Shay,
+      label: t.status.updateShayShay,
+      runningLabel: t.status.updatingShayShay,
       spin: false,
     },
   ];

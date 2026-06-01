@@ -72,7 +72,7 @@ export function SystemActionsProvider({
         if (action === "restart") {
           await api.restartGateway();
         } else {
-          await api.updateShay-Shay();
+          await api.updateShayShay();
         }
         setActiveAction(action);
       } catch (err) {

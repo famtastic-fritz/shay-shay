@@ -120,8 +120,8 @@ export const ru: Translations = {
     starting: "Запуск",
     startedInBackground: "Запущено в фоне — следите за журналами",
     stopped: "Остановлено",
-    updateShay-Shay: "Обновить Shay-Shay",
-    updatingShay-Shay: "Обновление Shay-Shay…",
+    updateShayShay: "Обновить Shay-Shay",
+    updatingShayShay: "Обновление Shay-Shay…",
     waitingForOutput: "Ожидание вывода…",
   },
 
