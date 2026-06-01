@@ -74,6 +74,19 @@ app = FastAPI(title="Shay-Shay", version=__version__)
 _SESSION_TOKEN = secrets.token_urlsafe(32)
 _SESSION_HEADER_NAME = "X-Shay-Shay-Session-Token"
 
+
+def _resolve_stable_bearer_token() -> Tuple[Optional[str], Optional[str]]:
+    """Return (token, source_env_var_name) for the stable bearer, or (None, None).
+
+    Precedence: SHAY_DASHBOARD_TOKEN > HERMES_DASHBOARD_TOKEN. Empty values
+    are treated as unset, matching the upstream hermes-workspace contract.
+    """
+    for name in ("SHAY_DASHBOARD_TOKEN", "HERMES_DASHBOARD_TOKEN"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value, name
+    return None, None
+
 # In-browser Chat tab (/chat, /api/pty, …).  Off unless ``shay dashboard --tui``
 # or SHAY_DASHBOARD_TUI=1.  Set from :func:`start_server`.
 _DASHBOARD_EMBEDDED_CHAT_ENABLED = False
@@ -127,7 +140,20 @@ def _has_valid_session_token(request: Request) -> bool:
 
     auth = request.headers.get("authorization", "")
     expected = f"Bearer {_SESSION_TOKEN}"
-    return hmac.compare_digest(auth.encode(), expected.encode())
+    if hmac.compare_digest(auth.encode(), expected.encode()):
+        return True
+
+    # Stable bearer token from env (SHAY_DASHBOARD_TOKEN / HERMES_DASHBOARD_TOKEN)
+    # lets external clients like the hermes-workspace harness authenticate
+    # without scraping the dashboard HTML for the ephemeral token. Resolved
+    # per-request so tests / live env changes are picked up.
+    stable_token, _ = _resolve_stable_bearer_token()
+    if stable_token:
+        stable_expected = f"Bearer {stable_token}"
+        if hmac.compare_digest(auth.encode(), stable_expected.encode()):
+            return True
+
+    return False
 
 
 def _require_token(request: Request) -> None:
@@ -4420,6 +4446,18 @@ def start_server(
             webbrowser.open(f"http://{host}:{port}")
 
         threading.Thread(target=_open, daemon=True).start()
+
+    stable_token, stable_source = _resolve_stable_bearer_token()
+    if stable_token:
+        _log.info(
+            "Dashboard auth: stable bearer enabled via %s (ephemeral session "
+            "token also accepted)", stable_source,
+        )
+    else:
+        _log.info(
+            "Dashboard auth: ephemeral session token only (set "
+            "SHAY_DASHBOARD_TOKEN to enable a stable external bearer)",
+        )
 
     print(f"  Shay-Shay Web UI → http://{host}:{port}")
     uvicorn.run(app, host=host, port=port, log_level="warning")
