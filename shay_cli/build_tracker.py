@@ -150,8 +150,15 @@ def _load_task_runs(board_slug: str, db_path: Path,
             if started_at and ended_at:
                 duration = float(ended_at - started_at)
 
-            tests_run = int(meta.get("tests_run") or 0)
-            tests_passed = int(meta.get("tests_passed") or 0)
+            def _lead_int(v):
+                # Workers sometimes write human strings like "8 (2 new, 6 existing)";
+                # extract the leading integer, default 0.
+                try:
+                    return int(str(v if v is not None else 0).strip().split()[0])
+                except (ValueError, IndexError, AttributeError):
+                    return 0
+            tests_run = _lead_int(meta.get("tests_run"))
+            tests_passed = _lead_int(meta.get("tests_passed"))
             changed_files = meta.get("changed_files") or []
 
             proto_viol = bool(
