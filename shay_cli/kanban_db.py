@@ -606,6 +606,12 @@ class Task:
     # ``kanban.failure_limit`` config, and then to ``DEFAULT_FAILURE_LIMIT``.
     # Name matches the ``--max-retries`` CLI flag on ``kanban create``.
     max_retries: Optional[int] = None
+    # Optional list of tool names the assigned profile must have before the
+    # dispatcher will spawn a worker. Checked at dispatch time; if any tool
+    # is missing from the assignee's resolved effective toolset the task is
+    # blocked pre-spawn with a clear human-readable message. Individual tool
+    # names only (NOT toolset names). None = no extra requirements.
+    required_tools: Optional[list] = None
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Task":
@@ -619,6 +625,15 @@ class Task:
                     skills_value = [str(s) for s in parsed if s]
             except Exception:
                 skills_value = None
+        # Parse required_tools JSON blob if present
+        required_tools_value: Optional[list] = None
+        if "required_tools" in keys and row["required_tools"]:
+            try:
+                parsed_rt = json.loads(row["required_tools"])
+                if isinstance(parsed_rt, list):
+                    required_tools_value = [str(t) for t in parsed_rt if t]
+            except Exception:
+                required_tools_value = None
         return cls(
             id=row["id"],
             title=row["title"],
@@ -670,6 +685,7 @@ class Task:
             max_retries=(
                 row["max_retries"] if "max_retries" in keys else None
             ),
+            required_tools=required_tools_value,
         )
 
 
@@ -796,7 +812,15 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- ``max_retries=1`` blocks on the first failure. NULL (the common
     -- case) falls through to the dispatcher-level ``kanban.failure_limit``
     -- config and then ``DEFAULT_FAILURE_LIMIT``.
-    max_retries          INTEGER
+    max_retries          INTEGER,
+    -- Optional list of tool names the assigned profile must have
+    -- before the dispatcher will spawn a worker. Stored as a JSON array
+    -- of individual tool names (NOT toolset names). When set, the
+    -- dispatcher checks the assignee's resolved toolset at dispatch
+    -- time and blocks the task pre-spawn if any tool is absent.
+    -- NULL means "no extra requirements" (the implicit kanban_complete +
+    -- kanban_block mandate is always enforced separately).
+    required_tools       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS task_links (
@@ -1076,6 +1100,14 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
         # they were getting before the column existed).
         _add_column_if_missing(conn, "tasks", "max_retries", "max_retries INTEGER")
 
+    if "required_tools" not in cols:
+        # JSON array of individual tool names that the assigned profile must
+        # have in its resolved effective toolset before the dispatcher will
+        # spawn a worker.  NULL (the common case) means no extra requirements
+        # beyond the implicit kanban_complete / kanban_block mandate that the
+        # dispatcher always enforces.
+        _add_column_if_missing(conn, "tasks", "required_tools", "required_tools TEXT")
+
     # task_events gained a run_id column; back-fill it as NULL for
     # historical events (they predate runs and can't be attributed).
     ev_cols = {row["name"] for row in conn.execute("PRAGMA table_info(task_events)")}
@@ -1244,6 +1276,7 @@ def create_task(
     max_runtime_seconds: Optional[int] = None,
     skills: Optional[Iterable[str]] = None,
     max_retries: Optional[int] = None,
+    required_tools: Optional[Iterable[str]] = None,
 ) -> str:
     """Create a new task and optionally link it under parent tasks.
 
@@ -1324,6 +1357,28 @@ def create_task(
             )
         skills_list = cleaned
 
+    # Normalise + validate required_tools: strip whitespace, drop empties, dedupe.
+    required_tools_list: Optional[list[str]] = None
+    if required_tools is not None:
+        rt_cleaned: list[str] = []
+        rt_seen: set[str] = set()
+        for t in required_tools:
+            if not t:
+                continue
+            name = str(t).strip()
+            if not name:
+                continue
+            if "," in name:
+                raise ValueError(
+                    f"required_tools name cannot contain comma: {name!r} "
+                    f"(pass a list of separate names)"
+                )
+            if name in rt_seen:
+                continue
+            rt_seen.add(name)
+            rt_cleaned.append(name)
+        required_tools_list = rt_cleaned
+
     # Idempotency check — return the existing task instead of creating a
     # duplicate. Done BEFORE entering write_txn to keep the fast path fast
     # and to avoid holding a write lock during the lookup. Race is
@@ -1377,8 +1432,8 @@ def create_task(
                         id, title, body, assignee, status, priority,
                         created_by, created_at, workspace_kind, workspace_path,
                         tenant, idempotency_key, max_runtime_seconds, skills,
-                        max_retries
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        max_retries, required_tools
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         task_id,
@@ -1396,6 +1451,7 @@ def create_task(
                         int(max_runtime_seconds) if max_runtime_seconds else None,
                         json.dumps(skills_list) if skills_list is not None else None,
                         int(max_retries) if max_retries is not None else None,
+                        json.dumps(required_tools_list) if required_tools_list is not None else None,
                     ),
                 )
                 for pid in parents:
@@ -3631,6 +3687,102 @@ def _clear_failure_counter(conn: sqlite3.Connection, task_id: str) -> None:
 _clear_spawn_failures = _clear_failure_counter
 
 
+def _get_profile_effective_tools(profile: str) -> Optional[set]:
+    """Return the set of tool names the profile can access, or None on error.
+
+    For kanban-dispatched workers the caller should always add the kanban
+    toolset implicitly (``SHAY_KANBAN_TASK`` is set at spawn time, which
+    gates every ``kanban_*`` tool regardless of static config).
+
+    Returns ``None`` when the profile directory or its config cannot be
+    read — callers treat ``None`` as "unknown, skip check".
+    """
+    try:
+        from shay_cli.profiles import get_profile_dir, profile_exists
+        from toolsets import resolve_multiple_toolsets
+    except Exception:
+        return None
+
+    if not profile_exists(profile):
+        return None
+
+    try:
+        profile_dir = get_profile_dir(profile)
+        config_path = profile_dir / "config.yaml"
+        cfg: dict = {}
+        if config_path.exists():
+            import yaml
+            with open(config_path, "r", encoding="utf-8") as _f:
+                cfg = yaml.safe_load(_f) or {}
+    except Exception:
+        return None
+
+    try:
+        # Collect all toolset names the profile has enabled across any platform.
+        # We union over all platforms because we don't know which platform the
+        # dispatcher uses, and a profile is usually configured for one platform.
+        enabled_toolset_names: set[str] = set()
+
+        # 1. Direct ``toolsets:`` key (orchestrator / CLI profiles)
+        raw_ts = cfg.get("toolsets", [])
+        if isinstance(raw_ts, list):
+            enabled_toolset_names.update(str(t) for t in raw_ts if t)
+
+        # 2. Per-platform ``platform_toolsets:`` mapping
+        platform_toolsets = cfg.get("platform_toolsets") or {}
+        if isinstance(platform_toolsets, dict):
+            for ts_list in platform_toolsets.values():
+                if isinstance(ts_list, list):
+                    enabled_toolset_names.update(str(t) for t in ts_list if t)
+
+        # Kanban tools are always injected at spawn time via SHAY_KANBAN_TASK.
+        enabled_toolset_names.add("kanban")
+
+        resolved = set(resolve_multiple_toolsets(list(enabled_toolset_names)))
+        return resolved
+    except Exception:
+        return None
+
+
+def _capability_check_error(task: "Task") -> Optional[str]:
+    """Return a human-readable error if the task's assignee lacks required tools.
+
+    Returns None when the check passes (or cannot be performed — we fail open
+    rather than blocking tasks whose profile config is simply unreadable).
+
+    Mandatory base: every kanban-dispatched worker must have kanban_complete
+    and kanban_block. These are injected automatically when SHAY_KANBAN_TASK
+    is set, so they always pass — this check enforces the contract explicitly
+    so the error message is clear when something is misconfigured.
+
+    Optional: any additional tool names in ``task.required_tools`` are also
+    verified against the assignee's resolved effective toolset.
+    """
+    if not task.assignee:
+        return None  # no assignee → nothing to check (skipped_unassigned handles it)
+
+    # Build the full required set: mandatory kanban tools + task-declared extras.
+    # kanban_complete and kanban_block are always available to dispatched workers
+    # (SHAY_KANBAN_TASK env set at spawn → _check_kanban_mode() returns True).
+    # We still list them explicitly so the error message is actionable.
+    mandatory = {"kanban_complete", "kanban_block"}
+    declared: set[str] = set(task.required_tools) if task.required_tools else set()
+    all_required = mandatory | declared
+
+    effective = _get_profile_effective_tools(task.assignee)
+    if effective is None:
+        # Profile config unreadable — fail open (don't block on uncertainty).
+        return None
+
+    missing = sorted(all_required - effective)
+    if not missing:
+        return None
+
+    # Format as individual messages per missing tool, matching the task spec.
+    msgs = [f"role {task.assignee!r} lacks required tool {t!r}" for t in missing]
+    return "; ".join(msgs)
+
+
 def has_spawnable_ready(conn: sqlite3.Connection) -> bool:
     """Return True iff there is at least one ready+assigned+unclaimed task
     whose assignee maps to a real Shay-Shay profile.
@@ -3797,6 +3949,26 @@ def dispatch_once(
             # of human-pulled work.
             result.skipped_nonspawnable.append(row["id"])
             continue
+        # Pre-flight capability check: verify the assignee's resolved toolset
+        # includes kanban_complete + kanban_block (mandatory for all dispatched
+        # workers) plus any additional tools declared in task.required_tools.
+        # Fetch the full task row only now (after profile_exists passes) so we
+        # can inspect required_tools without hitting the DB on every iteration.
+        # Fail open (skip the block) when the profile config is unreadable.
+        _preflight_task = get_task(conn, row["id"])
+        if _preflight_task is not None:
+            _cap_err = _capability_check_error(_preflight_task)
+            if _cap_err:
+                # Block the task pre-spawn so it doesn't loop forever.  The
+                # block is permanent (failure_limit=1) because the missing tool
+                # is a configuration problem, not a transient runtime failure.
+                block_task(
+                    conn,
+                    row["id"],
+                    reason=_cap_err,
+                )
+                result.auto_blocked.append(row["id"])
+                continue
         if dry_run:
             result.spawned.append((row["id"], row["assignee"], ""))
             continue
