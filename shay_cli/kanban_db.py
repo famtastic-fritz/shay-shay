@@ -3078,8 +3078,10 @@ def _classify_worker_exit(pid: int) -> "tuple[str, Optional[int]]":
 
     * ``"clean_exit"`` — ``WIFEXITED`` with ``WEXITSTATUS == 0``. When the
       task is still ``running`` in the DB, this is a protocol violation
-      (worker exited without calling ``kanban_complete`` / ``kanban_block``)
-      and should be auto-blocked immediately — retrying will just loop.
+      (worker exited without calling ``kanban_complete`` / ``kanban_block``).
+      It is routed through the completion watcher first; if that can't
+      reconcile it, the violation is retried up to ``failure_limit``
+      before the breaker trips (see ``detect_crashed_workers``).
     * ``"nonzero_exit"`` — ``WIFEXITED`` with non-zero status. Real error.
     * ``"signaled"`` — ``WIFSIGNALED`` (OOM killer, SIGKILL, etc). Real crash.
     * ``"unknown"`` — pid was not in the reap registry (either reaped by
@@ -3420,25 +3422,31 @@ def set_max_runtime(
 
 
 def _extract_task_gate(task_body: Optional[str]) -> Optional[str]:
-    """Extract the HARD GATE / GATE command from a task body.
+    """Extract the structured gate commands from a task body.
 
-    Looks for lines like:
-        HARD GATE: <cmd>
-        GATE: <cmd>
-    Returns the command string, or None if no gate is declared.
-    The command is everything after the colon up to (but not including)
-    a semicolon that introduces the second gate clause, if any.
+    Looks for a fenced code block delimited by ```gate...```.
+    Each non-empty line within the block is treated as a separate shell command.
+    All commands are joined by ' && ' to be run sequentially.
+
+    Returns the joined command string, or None if no structured gate is found.
     """
     if not task_body:
         return None
+
+    gate_commands: list[str] = []
+    in_gate_block = False
     for line in task_body.splitlines():
-        stripped = line.strip()
-        for prefix in ("HARD GATE:", "GATE:"):
-            if stripped.upper().startswith(prefix):
-                cmd = stripped[len(prefix):].strip()
-                # If there are multiple gate steps joined by " && " or ";",
-                # keep them all — subprocess will run via shell.
-                return cmd if cmd else None
+        if line.strip() == "```gate":
+            in_gate_block = True
+            continue
+        if in_gate_block and line.strip() == "```":
+            in_gate_block = False
+            break
+        if in_gate_block and line.strip():
+            gate_commands.append(line.strip())
+
+    if gate_commands:
+        return " && ".join(gate_commands)
     return None
 
 
@@ -3600,7 +3608,11 @@ def _reconcile_worker_exit(
     return "failed"
 
 
-def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
+def detect_crashed_workers(
+    conn: sqlite3.Connection,
+    *,
+    failure_limit: Optional[int] = None,
+) -> list[str]:
     """Reclaim ``running`` tasks whose worker PID is no longer alive.
 
     Appends a ``crashed`` event and drops the task back to ``ready``.
@@ -3615,9 +3627,21 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
     When the reap registry shows the worker exited cleanly (rc=0) but
     the task was still ``running`` in the DB, treat it as a protocol
     violation (worker answered conversationally without calling
-    ``kanban_complete`` / ``kanban_block``) and trip the circuit breaker
-    on the first occurrence — retrying a worker whose CLI keeps
-    returning 0 without a terminal transition just loops forever.
+    ``kanban_complete`` / ``kanban_block``). Protocol violations are
+    first routed through the COMPLETION WATCHER (``_reconcile_worker_exit``):
+    if the structured gate is GREEN and the workspace has real changes,
+    the task is auto-completed on the worker's behalf. Otherwise the
+    violation is treated as a **retryable** failure — the task is
+    re-spawned up to ``failure_limit`` (the dispatcher's
+    ``kanban.failure_limit`` config) before the circuit breaker trips.
+    This replaces the old "give up after one protocol violation" rule:
+    a single conversational reply is no longer terminal — only repeated
+    failures past the configured limit are.
+
+    ``failure_limit`` threads the dispatcher's configured limit
+    (``kanban.failure_limit``) through to the protocol-violation retry
+    counter. When ``None``, ``_record_task_failure`` falls back to
+    ``DEFAULT_FAILURE_LIMIT``.
     """
     crashed: list[str] = []
     # Per-crash details collected inside the main txn, used after it
@@ -3705,9 +3729,13 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
     # (_reconcile_worker_exit) before the failure counter. If the gate
     # passes and the workspace has real changes, the reconciler auto-completes
     # the task on the worker's behalf and we skip the failure counter entirely.
-    # Only when reconciliation fails do we trip the breaker immediately
-    # (failure_limit=1) — retrying a worker whose CLI keeps returning 0 without
-    # a terminal transition is still deterministic failure once the gate says so.
+    # When reconciliation can NOT save it (no gate / no evidence), the
+    # protocol violation is treated as a RETRYABLE failure: the task drops
+    # back to ``ready`` and is re-spawned, counting against the dispatcher's
+    # ``failure_limit`` (``kanban.failure_limit``, default
+    # ``DEFAULT_FAILURE_LIMIT``). Only after the configured number of
+    # consecutive protocol violations does the breaker trip. A single
+    # conversational reply is no longer terminal.
     auto_blocked: list[str] = []
     reconciled: list[str] = []
     for tid, pid, claimer, protocol_violation, error_text, run_id in crash_details:
@@ -3724,12 +3752,13 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
                 if tid in crashed:
                     crashed.remove(tid)
                 continue
-            # Reconciler couldn't save it — fall through to immediate breaker trip.
+            # Reconciler couldn't save it — fall through to a RETRYABLE
+            # breaker increment (failure_limit from config, not 1).
         tripped = _record_task_failure(
             conn, tid,
             error=error_text,
             outcome="crashed",
-            failure_limit=(1 if protocol_violation else None),
+            failure_limit=failure_limit,
             release_claim=False,
             end_run=False,
             event_payload_extra={"pid": pid, "claimer": claimer},
@@ -4160,7 +4189,7 @@ def dispatch_once(
 
     result = DispatchResult()
     result.reclaimed = release_stale_claims(conn)
-    result.crashed = detect_crashed_workers(conn)
+    result.crashed = detect_crashed_workers(conn, failure_limit=failure_limit)
     # detect_crashed_workers stashes protocol-violation auto-blocks on
     # itself so the public list-return stays stable. Pull them into the
     # DispatchResult here so telemetry / tests see the trip.

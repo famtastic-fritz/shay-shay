@@ -3958,16 +3958,67 @@ def test_detect_crashed_workers_increments_counter(kanban_home):
         conn.close()
 
 
-def test_detect_crashed_workers_protocol_violation_auto_blocks(kanban_home):
-    """A worker that exited rc=0 while its task was still ``running``
-    is a protocol violation (agent answered conversationally without
-    calling kanban_complete / kanban_block). Retrying will just loop,
-    so auto-block immediately instead of waiting for the breaker to
-    trip at ``DEFAULT_FAILURE_LIMIT``.
+def _simulate_protocol_violation(conn, tid, fake_pid):
+    """Drive one protocol-violation crash detection tick for ``tid``.
 
-    Regression test for the respawn-loop-after-completion bug reported
-    against small local models (gemma4-e2b q4) where the model writes
-    the answer as plain text and the CLI exits rc=0 cleanly.
+    Records a clean rc=0 exit for ``fake_pid`` and forces the liveness
+    check to report it dead, so ``detect_crashed_workers`` classifies
+    the still-``running`` task as a protocol violation.
+    """
+    import shay_cli.kanban_db as _kb
+    _kb._record_worker_exit(fake_pid, 0)  # W_EXITCODE(0, 0) == 0 on POSIX
+    original_alive = _kb._pid_alive
+    _kb._pid_alive = lambda p: False
+    try:
+        return kb.detect_crashed_workers(conn)
+    finally:
+        _kb._pid_alive = original_alive
+
+
+def test_protocol_violation_green_gate_auto_completes(kanban_home, tmp_path):
+    """A protocol violation (worker exited rc=0 without calling
+    kanban_complete) whose structured gate is GREEN and whose workspace
+    has real changes is auto-completed by the completion watcher — the
+    task ends ``done``, not blocked, and is never retried.
+    """
+    import shay_cli.kanban_db as _kb
+    # Workspace with a real file change so _gather_workspace_diff sees it.
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "output.txt").write_text("real work produced\n")
+
+    body = "Do the work.\n\n```gate\ntrue\n```\n"
+    conn = kb.connect()
+    try:
+        tid = kb.create_task(
+            conn, title="green-gate", assignee="worker",
+            body=body, workspace_kind="dir", workspace_path=str(ws),
+        )
+        host_prefix = _kb._claimer_id().split(":", 1)[0]
+        kb.claim_task(conn, tid, claimer=f"{host_prefix}:mock")
+        fake_pid = 999996
+        kb._set_worker_pid(conn, tid, fake_pid)
+
+        _simulate_protocol_violation(conn, tid, fake_pid)
+
+        task = kb.get_task(conn, tid)
+        assert task.status == "done", (
+            f"green gate + real changes should auto-complete, got {task.status}"
+        )
+        kinds = [e.kind for e in kb.list_events(conn, tid)]
+        assert "reconciled_complete" in kinds, (
+            f"expected reconciler auto-complete event, got {kinds}"
+        )
+        assert "gave_up" not in kinds
+    finally:
+        conn.close()
+
+
+def test_protocol_violation_no_evidence_retries_then_blocks(kanban_home):
+    """A protocol violation with NO gate and NO workspace changes can't
+    be reconciled. It is now RETRYABLE: the task drops back to ``ready``
+    and is re-spawned, counting against ``failure_limit``. Only after the
+    configured number of consecutive violations does the breaker trip.
     """
     import shay_cli.kanban_db as _kb
     conn = kb.connect()
@@ -3975,44 +4026,49 @@ def test_detect_crashed_workers_protocol_violation_auto_blocks(kanban_home):
         tid = kb.create_task(conn, title="quiet", assignee="worker")
         host_prefix = _kb._claimer_id().split(":", 1)[0]
         lock = f"{host_prefix}:mock"
-        kb.claim_task(conn, tid, claimer=lock)
-        fake_pid = 999998
-        kb._set_worker_pid(conn, tid, fake_pid)
 
-        # Simulate the reap loop having recorded a clean exit for this pid.
-        # os.W_EXITCODE(status=0, signal=0) == 0 on POSIX.
-        _kb._record_worker_exit(fake_pid, 0)
-        # Force liveness check to say "dead" for the fake pid.
+        # First violation with failure_limit=3 — should NOT block; retryable.
+        kb.claim_task(conn, tid, claimer=lock)
+        kb._set_worker_pid(conn, tid, 999998)
+        import shay_cli.kanban_db as _kb2
+        _kb2._record_worker_exit(999998, 0)
         original_alive = _kb._pid_alive
         _kb._pid_alive = lambda p: False
         try:
-            result_crashed = kb.detect_crashed_workers(conn)
+            result_crashed = kb.detect_crashed_workers(conn, failure_limit=3)
         finally:
             _kb._pid_alive = original_alive
 
-        assert tid in result_crashed, "should be detected as crashed"
+        assert tid in result_crashed
+        task = kb.get_task(conn, tid)
+        assert task.status == "ready", (
+            f"first protocol violation should be retryable (ready), "
+            f"got {task.status}"
+        )
+        assert task.consecutive_failures == 1
+        kinds = [e.kind for e in kb.list_events(conn, tid)]
+        assert "protocol_violation" in kinds
+        assert "crashed" not in kinds
+        assert "gave_up" not in kinds, "should not give up on first violation"
+
+        # Drive two more violations (limit=3) — third trips the breaker.
+        for pid in (999988, 999978):
+            kb.claim_task(conn, tid, claimer=lock)
+            kb._set_worker_pid(conn, tid, pid)
+            _kb._record_worker_exit(pid, 0)
+            _kb._pid_alive = lambda p: False
+            try:
+                kb.detect_crashed_workers(conn, failure_limit=3)
+            finally:
+                _kb._pid_alive = original_alive
+
         task = kb.get_task(conn, tid)
         assert task.status == "blocked", (
-            f"protocol violation should auto-block on first occurrence, "
-            f"got status={task.status}"
+            f"should block after reaching failure_limit, got {task.status}"
         )
-        assert "kanban_complete" in (task.last_failure_error or ""), (
-            f"expected protocol-violation message, got {task.last_failure_error!r}"
-        )
-
-        events = kb.list_events(conn, tid)
-        kinds = [e.kind for e in events]
-        assert "protocol_violation" in kinds, (
-            f"expected 'protocol_violation' event, got {kinds}"
-        )
-        # The ``crashed`` event would be misleading here — the worker
-        # didn't crash, it returned 0.
-        assert "crashed" not in kinds, (
-            f"should NOT emit 'crashed' event on clean exit, got {kinds}"
-        )
-        assert "gave_up" in kinds, (
-            f"breaker should trip, expected 'gave_up' event, got {kinds}"
-        )
+        assert "kanban_complete" in (task.last_failure_error or "")
+        kinds = [e.kind for e in kb.list_events(conn, tid)]
+        assert "gave_up" in kinds
     finally:
         conn.close()
 
