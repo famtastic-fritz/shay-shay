@@ -5252,6 +5252,13 @@ def cmd_kanban(args):
     return kanban_command(args)
 
 
+def cmd_builds(args):
+    """Build tracker — per-brain success/cost/smell summary."""
+    from shay_cli.build_tracker import builds_command
+
+    return builds_command(args)
+
+
 def cmd_hooks(args):
     """Shell-hook inspection and management."""
     from shay_cli.hooks import hooks_command
@@ -9167,7 +9174,7 @@ def _build_provider_choices() -> list[str]:
 # to parse.
 _BUILTIN_SUBCOMMANDS = frozenset(
     {
-        "acp", "auth", "backup", "checkpoints", "claw", "completion",
+        "acp", "auth", "backup", "builds", "checkpoints", "claw", "completion",
         "computer-use",
         "config", "cron", "curator", "dashboard", "debug", "doctor",
         "dump", "fallback", "gateway", "hooks", "import", "insights",
@@ -9999,6 +10006,14 @@ def main():
 
     kanban_parser = _build_kanban_parser(subparsers)
     kanban_parser.set_defaults(func=cmd_kanban)
+
+    # =========================================================================
+    # builds command — build tracker (aggregate task_runs + cost)
+    # =========================================================================
+    from shay_cli.build_tracker import build_parser as _build_builds_parser
+
+    builds_parser = _build_builds_parser(subparsers)
+    builds_parser.set_defaults(func=cmd_builds)
 
     # =========================================================================
     # hooks command — shell-hook inspection and management
