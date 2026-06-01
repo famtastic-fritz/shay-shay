@@ -9490,6 +9490,26 @@ def main():
         help="Target the Linux system-level gateway service",
     )
 
+    # gateway handoff-restart
+    gateway_handoff = gateway_subparsers.add_parser(
+        "handoff-restart",
+        help="Drain-aware restart handoff with before/after verify (new PID, dispatcher import, health)",
+        description=(
+            "Hand a drain-aware gateway restart off to the CLI when a change "
+            "(backend flag, config key, env var) needs a fresh process. Shells "
+            "`shay gateway restart` (SIGUSR1 drain-aware) then verifies the "
+            "gateway came back with a new PID, the dispatcher imports clean, "
+            "and runtime health is ok. Use --dry-run to validate the command "
+            "and verify-logic against the running gateway without restarting."
+        ),
+    )
+    gateway_handoff.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="Safe mode: read status + run verify-logic only; never restart",
+    )
+
     # gateway list
     gateway_subparsers.add_parser("list", help="List all profiles and their gateway status")
 

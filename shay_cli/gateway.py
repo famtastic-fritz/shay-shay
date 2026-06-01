@@ -5370,6 +5370,15 @@ def _gateway_command_inner(args):
         # Show other profiles' gateway status for multi-profile awareness
         _print_other_profiles_gateway_status()
 
+    elif subcmd == "handoff-restart":
+        # Z3: drain-aware restart handoff Shay invokes when she changes
+        # something her own running process can't apply to itself (a backend
+        # flag, config key, env var). Shells `shay gateway restart` (SIGUSR1
+        # drain-aware) then verifies a new PID + dispatcher import + health.
+        from shay_cli.handoff_restart import run_handoff_restart
+        dry_run = getattr(args, 'dry_run', False)
+        sys.exit(run_handoff_restart(dry_run=dry_run))
+
     elif subcmd == "list":
         _gateway_list()
 
