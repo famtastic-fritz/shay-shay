@@ -4540,6 +4540,92 @@ def _mount_plugin_api_routes():
             _log.warning("Failed to load plugin %s API routes: %s", plugin["name"], exc)
 
 
+# ---------------------------------------------------------------------------
+# Conductor missions API
+#
+# Backs the hermes-workspace v2.3 Conductor capability. The gateway probe
+# (`src/server/gateway-capabilities.ts::probeConductor`) flips `conductor:true`
+# only when GET /api/conductor/missions returns HTTP 200 + application/json.
+# Workspace also POSTs to spawn missions (`conductor-spawn.ts`) and DELETEs to
+# stop them (`conductor-stop.ts`), so the full CRUD round-trips here.
+#
+# These routes MUST be declared before mount_spa(app) below, or the SPA
+# catch-all would swallow them and return text/html (keeping the flag false).
+# Auth is enforced globally by auth_middleware for all /api/ paths.
+# ---------------------------------------------------------------------------
+from shay_cli import conductor_missions as _conductor_missions  # noqa: E402
+
+
+class _ConductorSpawnBody(BaseModel):
+    # Workspace's dashboard POST sends {name, prompt} (conductor-spawn.ts:120).
+    # `goal` is accepted as the primary alias; native callers may send richer
+    # fields. All optional so a bare {"goal": "..."} or {"name","prompt"} works.
+    goal: Optional[str] = None
+    name: Optional[str] = None
+    prompt: Optional[str] = None
+    title: Optional[str] = None
+    assignments: Optional[List[Dict[str, Any]]] = None
+
+
+@app.get("/api/conductor/missions")
+async def conductor_list_missions():
+    """List all conductor missions: {version:1, missions:[...]}.
+
+    This is the route the Workspace gateway probes — its JSON content-type
+    and 200 status are what flip the `conductor` capability flag.
+    """
+    return JSONResponse(
+        content={"version": 1, "missions": _conductor_missions.list_missions()}
+    )
+
+
+@app.post("/api/conductor/missions")
+async def conductor_create_mission(body: _ConductorSpawnBody):
+    """Register a conductor mission and return the created SwarmMission.
+
+    Accepts the {goal} shape and Workspace's {name, prompt} shape. The mission
+    is created in `planning` state with any supplied assignments recorded;
+    actual worker dispatch into the shay-agent-os swarm is a documented
+    follow-up (see conductor_missions.py module docstring).
+    """
+    goal = (body.goal or body.prompt or body.name or "").strip()
+    if not goal:
+        raise HTTPException(status_code=400, detail="goal required")
+    title = (body.title or body.name or "").strip() or None
+    try:
+        mission = _conductor_missions.create_mission(
+            goal=goal,
+            title=title,
+            assignments=body.assignments,
+        )
+    except Exception:
+        _log.exception("POST /api/conductor/missions failed")
+        raise HTTPException(status_code=500, detail="Failed to create mission")
+    # Echo session_id:None so Workspace's createDashboardConductorMission()
+    # (which reads {id, name, session_id}) parses cleanly.
+    return JSONResponse(content={**mission, "name": mission["title"], "session_id": None})
+
+
+@app.get("/api/conductor/missions/{mission_id}")
+async def conductor_get_mission(mission_id: str, lines: Optional[int] = None):
+    """Return a single mission. The optional ?lines=N is accepted for
+    Workspace compatibility (it truncates log views) but does not alter the
+    stored mission record."""
+    mission = _conductor_missions.get_mission(mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    return JSONResponse(content=mission)
+
+
+@app.delete("/api/conductor/missions/{mission_id}")
+async def conductor_delete_mission(mission_id: str):
+    """Mark a mission cancelled. Returns {ok, mission}; 404 if unknown."""
+    mission = _conductor_missions.cancel_mission(mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    return JSONResponse(content={"ok": True, "mission": mission})
+
+
 # Mount plugin API routes before the SPA catch-all.
 _mount_plugin_api_routes()
 
