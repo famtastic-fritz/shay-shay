@@ -143,7 +143,7 @@ from agent.think_scrubber import StreamingThinkScrubber
 from agent.retry_utils import jittered_backoff
 from agent.error_classifier import classify_api_error, FailoverReason
 from agent.prompt_builder import (
-    DEFAULT_AGENT_IDENTITY, PLATFORM_HINTS,
+    DEFAULT_AGENT_IDENTITY, SOUL_GOVERNS_PREAMBLE, PLATFORM_HINTS,
     MEMORY_GUIDANCE, SESSION_SEARCH_GUIDANCE, SKILLS_GUIDANCE,
     SHAY_AGENT_HELP_GUIDANCE,
     KANBAN_GUIDANCE,
@@ -5741,11 +5741,16 @@ class AIAgent:
         if self.load_soul_identity or not self.skip_context_files:
             _soul_content = load_soul_md()
             if _soul_content:
+                # SOUL governs: a short preamble establishes SOUL.md as the SOLE
+                # persona source so no generic "assistant"/"concise" preset
+                # competes with or dilutes it, then SOUL.md itself.
+                stable_parts.append(SOUL_GOVERNS_PREAMBLE)
                 stable_parts.append(_soul_content)
                 _soul_loaded = True
 
         if not _soul_loaded:
-            # Fallback to hardcoded identity
+            # Fallback to hardcoded identity (carries the generic concise default
+            # only here, where there is no SOUL persona to compete with).
             stable_parts.append(DEFAULT_AGENT_IDENTITY)
 
         # Pointer to the shay-shay skill + docs for user questions about Shay-Shay itself.

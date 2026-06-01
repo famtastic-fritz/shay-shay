@@ -21,7 +21,7 @@ from agent.codex_responses_adapter import _chat_messages_to_responses_input, _no
 import run_agent
 from run_agent import AIAgent
 from agent.error_classifier import FailoverReason
-from agent.prompt_builder import DEFAULT_AGENT_IDENTITY
+from agent.prompt_builder import DEFAULT_AGENT_IDENTITY, SOUL_GOVERNS_PREAMBLE
 
 
 # ---------------------------------------------------------------------------
@@ -5350,3 +5350,56 @@ class TestMemoryProviderTurnStart:
         import inspect
         src = inspect.getsource(AIAgent.run_conversation)
         assert "on_turn_start(self._user_turn_count" in src
+
+
+# ---------------------------------------------------------------------------
+# A3 — SOUL governs the persona (no generic preset dilutes it)
+# ---------------------------------------------------------------------------
+
+
+class TestSoulGovernsPersona:
+    """SOUL.md must be the SOLE persona source when present; the generic
+    'concise' default only applies as the no-SOUL fallback."""
+
+    def _agent(self):
+        with (
+            patch(
+                "run_agent.get_tool_definitions",
+                return_value=_make_tool_defs("web_search"),
+            ),
+            patch("run_agent.check_toolset_requirements", return_value={}),
+            patch("run_agent.OpenAI"),
+        ):
+            a = AIAgent(
+                api_key="test-key-1234567890",
+                base_url="https://openrouter.ai/api/v1",
+                quiet_mode=True,
+                skip_context_files=True,
+                skip_memory=True,
+                load_soul_identity=True,  # honor SHAY_HOME SOUL persona
+            )
+            a.client = MagicMock()
+            return a
+
+    def test_soul_present_governs_and_no_generic_concise_preset(self):
+        soul = "## Persona\nYou are loud, playful, and bold. Speak in vivid bursts."
+        with patch("run_agent.load_soul_md", return_value=soul):
+            agent = self._agent()
+            parts = agent._build_system_prompt_parts()
+        stable = parts["stable"]
+        # SOUL governs: the preamble appears and precedes SOUL content.
+        assert SOUL_GOVERNS_PREAMBLE in stable
+        assert soul in stable
+        assert stable.index(SOUL_GOVERNS_PREAMBLE) < stable.index(soul)
+        # The generic concise fallback must NOT compete with SOUL.
+        assert DEFAULT_AGENT_IDENTITY not in stable
+        assert "Be concise by default" not in stable
+
+    def test_no_soul_falls_back_to_generic_identity(self):
+        with patch("run_agent.load_soul_md", return_value=None):
+            agent = self._agent()
+            parts = agent._build_system_prompt_parts()
+        stable = parts["stable"]
+        assert DEFAULT_AGENT_IDENTITY in stable
+        # No SOUL persona, so the governs-preamble should not be injected.
+        assert SOUL_GOVERNS_PREAMBLE not in stable
