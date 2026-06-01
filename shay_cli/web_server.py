@@ -3525,6 +3525,142 @@ async def events_ws(ws: WebSocket) -> None:
                     _event_channels.pop(channel, None)
 
 
+# ---------------------------------------------------------------------------
+# MCP server endpoints — wire shay's existing `mcp_servers` config to the
+# `/api/mcp*` contract that hermes-workspace v2.3's `probeMcp()` and full
+# MCP UI surface expect. All routes go behind the auth_middleware token
+# check so config-write paths are never exposed unauthenticated.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/mcp")
+async def list_mcp_servers():
+    """Return all configured MCP servers in workspace's `McpServer` JSON shape."""
+    from shay_cli.mcp_config import _get_mcp_servers, mcp_entry_to_json
+    servers_cfg = _get_mcp_servers()
+    servers = [mcp_entry_to_json(name, cfg) for name, cfg in servers_cfg.items()]
+    return {"servers": servers, "total": len(servers)}
+
+
+@app.post("/api/mcp")
+async def add_mcp_server(request: Request):
+    """Create or update an MCP server. Body is workspace's `McpServerInput`."""
+    from shay_cli.mcp_config import (
+        _save_mcp_server,
+        mcp_entry_to_json,
+        mcp_input_to_config_entry,
+    )
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
+    try:
+        name, cfg = mcp_input_to_config_entry(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _save_mcp_server(name, cfg)
+    return {"ok": True, "server": mcp_entry_to_json(name, cfg)}
+
+
+@app.delete("/api/mcp/{name}")
+async def delete_mcp_server(name: str):
+    """Remove a server. 404 when unknown so workspace can show a useful toast."""
+    from shay_cli.mcp_config import _remove_mcp_server
+    removed = _remove_mcp_server(name)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"server '{name}' not found")
+    return {"ok": True}
+
+
+def _run_probe(name: str, cfg: Dict[str, Any]) -> Tuple[bool, float, List[Dict[str, str]], Optional[str]]:
+    """Probe a single MCP server, returning (ok, latency_ms, tools, error)."""
+    from shay_cli.mcp_config import _probe_single_server
+    start = time.monotonic()
+    try:
+        tools_pairs = _probe_single_server(name, cfg)
+        elapsed_ms = (time.monotonic() - start) * 1000
+        tools = [{"name": t[0], "description": t[1]} for t in tools_pairs]
+        return True, elapsed_ms, tools, None
+    except Exception as exc:
+        elapsed_ms = (time.monotonic() - start) * 1000
+        return False, elapsed_ms, [], str(exc)
+
+
+@app.post("/api/mcp/test")
+async def test_mcp_server(request: Request):
+    """Probe a configured server (by-name) or an ad-hoc input payload.
+
+    Returns workspace's `normalizeTestResult` shape: ``{ok, status,
+    latencyMs, discoveredTools[], error?}``.
+    """
+    from shay_cli.mcp_config import _get_mcp_servers, mcp_input_to_config_entry
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="payload must be an object")
+
+    if "transportType" in payload:
+        try:
+            name, cfg = mcp_input_to_config_entry(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    else:
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name is required")
+        servers = _get_mcp_servers()
+        if name not in servers:
+            raise HTTPException(status_code=404, detail=f"server '{name}' not found")
+        cfg = servers[name]
+
+    loop = asyncio.get_running_loop()
+    ok, latency_ms, tools, err = await loop.run_in_executor(None, _run_probe, name, cfg)
+    body: Dict[str, Any] = {
+        "ok": ok,
+        "status": "connected" if ok else "failed",
+        "latencyMs": round(latency_ms, 1),
+        "discoveredTools": tools,
+    }
+    if err:
+        body["error"] = err
+    return body
+
+
+@app.post("/api/mcp/discover")
+async def discover_mcp_tools(request: Request):
+    """Discover tools for an ad-hoc server input without persisting.
+
+    Returns ``{ok, tools[], error?}`` — the workspace's discover-only flow.
+    """
+    from shay_cli.mcp_config import mcp_input_to_config_entry
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
+    try:
+        name, cfg = mcp_input_to_config_entry(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    loop = asyncio.get_running_loop()
+    ok, _latency, tools, err = await loop.run_in_executor(None, _run_probe, name, cfg)
+    body: Dict[str, Any] = {"ok": ok, "tools": tools}
+    if err:
+        body["error"] = err
+    return body
+
+
+@app.get("/api/mcp/{name}/logs")
+async def get_mcp_server_logs(name: str):
+    """Return any per-server probe logs. Stub returns empty until shay
+    captures per-server probe history."""
+    from shay_cli.mcp_config import _get_mcp_servers
+    if name not in _get_mcp_servers():
+        raise HTTPException(status_code=404, detail=f"server '{name}' not found")
+    return {"lines": [], "available": False}
+
+
 def _normalise_prefix(raw: Optional[str]) -> str:
     """Normalise an X-Forwarded-Prefix header value.
 
@@ -3581,8 +3717,14 @@ def mount_spa(application: FastAPI):
         """
         html = _index_path.read_text()
         chat_js = "true" if _DASHBOARD_EMBEDDED_CHAT_ENABLED else "false"
+        # ``__HERMES__SESSION_TOKEN__`` and ``__CLAUDE__SESSION_TOKEN__`` are
+        # injected alongside the native ``__SHAY_SESSION_TOKEN__`` so the
+        # hermes-workspace v2.3 ``fetchDashboardToken()`` scraper regex can
+        # extract a valid token when pointed at shay's web server.
         token_script = (
             f'<script>window.__SHAY_SESSION_TOKEN__="{_SESSION_TOKEN}";'
+            f'window.__HERMES__SESSION_TOKEN__="{_SESSION_TOKEN}";'
+            f'window.__CLAUDE__SESSION_TOKEN__="{_SESSION_TOKEN}";'
             f"window.__SHAY_DASHBOARD_EMBEDDED_CHAT__={chat_js};"
             f'window.__SHAY_BASE_PATH__="{prefix}";</script>'
         )

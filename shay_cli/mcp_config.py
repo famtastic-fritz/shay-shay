@@ -30,6 +30,18 @@ logger = logging.getLogger(__name__)
 
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+# Sentinel returned in place of secret values when serializing for the API.
+# Matches the hermes-workspace mask sentinel so the workspace UI recognises
+# masked values directly.
+MASK_SENTINEL = "••••"
+
+# Env-reference form, e.g. ``${MCP_FOO_API_KEY}``. Preserved as-is when
+# masking — they are references resolved at probe time, not literal secrets.
+_ENV_REF_RE = re.compile(r"^\$\{[A-Za-z_][A-Za-z0-9_]*\}$")
+
+# Trailing markers that identify env-var keys whose values are secrets.
+_AUTH_ENV_KEY_RE = re.compile(r"(_TOKEN|_KEY|_SECRET|_AUTH|_APIKEY|_API_KEY)$", re.IGNORECASE)
+
 
 _MCP_PRESETS: Dict[str, Dict[str, Any]] = {
     "codex": {
@@ -742,6 +754,251 @@ def cmd_mcp_configure(args):
     new_count = len(chosen)
     _success(f"Updated config: {new_count}/{total} tools enabled")
     _info("Start a new session for changes to take effect.")
+
+
+# ─── JSON serialisation helpers (used by the web API) ─────────────────────────
+
+def _mask_value(value: Any) -> str:
+    """Return ``MASK_SENTINEL`` for non-empty secrets; preserve any value that
+    contains a ``${ENV_REF}`` placeholder (e.g. ``"Bearer ${FOO_API_KEY}"``).
+
+    Env-references are not secrets themselves — they are pointers to env vars
+    resolved at probe time. Workspace's normalizer relies on the literal
+    ``${VAR}`` form remaining intact to populate ``authEnvRef``.
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    if not text:
+        return ""
+    if "${" in text and re.search(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}", text):
+        return text
+    return MASK_SENTINEL
+
+
+def _mask_record(record: Any) -> Dict[str, str]:
+    """Coerce a dict of secrets to a string→masked-string map."""
+    if not isinstance(record, dict):
+        return {}
+    out: Dict[str, str] = {}
+    for k, v in record.items():
+        out[str(k)] = _mask_value(v)
+    return out
+
+
+def _string_list(value: Any) -> List[str]:
+    if isinstance(value, list):
+        return [str(x) for x in value if x is not None]
+    return []
+
+
+def _detect_has_bearer(cfg: Dict[str, Any], headers: Dict[str, Any], env: Dict[str, Any]) -> bool:
+    """Mirror normalizeMcpServerFromConfig's hasBearerToken detection."""
+    auth = cfg.get("auth")
+    if isinstance(auth, dict):
+        if auth.get("token") or auth.get("bearerToken"):
+            return True
+    auth_header = headers.get("Authorization") or headers.get("authorization")
+    if auth_header:
+        return True
+    for key, val in env.items():
+        if val and _AUTH_ENV_KEY_RE.search(str(key)):
+            return True
+    return False
+
+
+def _detect_auth_env_ref(cfg: Dict[str, Any]) -> Optional[str]:
+    """Return the env-var name embedded in a ``${VAR}`` header value, if any."""
+    headers = cfg.get("headers") or {}
+    if not isinstance(headers, dict):
+        return None
+    auth_header = headers.get("Authorization") or headers.get("authorization")
+    if not isinstance(auth_header, str):
+        return None
+    m = re.search(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", auth_header)
+    return m.group(1) if m else None
+
+
+def mcp_entry_to_json(name: str, cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Map a shay yaml ``mcp_servers[name]`` entry to the McpServer JSON shape
+    consumed by hermes-workspace's ``normalizeMcpServer``.
+
+    All secret values are masked (``MASK_SENTINEL``); ``${ENV_REF}`` placeholders
+    are preserved. This is the canonical shape returned by ``/api/mcp`` and
+    related routes.
+    """
+    if not isinstance(cfg, dict):
+        cfg = {}
+
+    url = cfg.get("url")
+    command = cfg.get("command")
+    explicit_transport = str(cfg.get("transport") or cfg.get("transportType") or "").lower()
+    if explicit_transport in {"http", "stdio"}:
+        transport_type = explicit_transport
+    elif url:
+        transport_type = "http"
+    else:
+        transport_type = "stdio"
+
+    # Normalise auth type
+    auth_type: str = "none"
+    auth_raw = cfg.get("auth")
+    if isinstance(auth_raw, str):
+        if auth_raw in {"bearer", "oauth", "none"}:
+            auth_type = auth_raw
+    elif isinstance(auth_raw, dict):
+        t = str(auth_raw.get("type") or auth_raw.get("kind") or "").lower()
+        if t in {"bearer", "oauth", "none"}:
+            auth_type = t
+
+    headers_raw = cfg.get("headers") if isinstance(cfg.get("headers"), dict) else {}
+    env_raw = cfg.get("env") if isinstance(cfg.get("env"), dict) else {}
+
+    has_bearer = _detect_has_bearer(cfg, headers_raw, env_raw)
+    if has_bearer and auth_type == "none":
+        auth_type = "bearer"
+
+    # Bridge shay's nested ``tools.{include,exclude}`` to workspace's
+    # flat includeTools/excludeTools shape.
+    tools_cfg = cfg.get("tools") if isinstance(cfg.get("tools"), dict) else {}
+    include_tools = _string_list(
+        tools_cfg.get("include")
+        if tools_cfg
+        else cfg.get("include_tools") or cfg.get("includeTools")
+    )
+    exclude_tools = _string_list(
+        tools_cfg.get("exclude")
+        if tools_cfg
+        else cfg.get("exclude_tools") or cfg.get("excludeTools")
+    )
+
+    tool_mode_raw = str(cfg.get("tool_mode") or cfg.get("toolMode") or "").lower()
+    if tool_mode_raw in {"all", "include", "exclude"}:
+        tool_mode = tool_mode_raw
+    elif include_tools:
+        tool_mode = "include"
+    elif exclude_tools:
+        tool_mode = "exclude"
+    else:
+        tool_mode = "all"
+
+    enabled = cfg.get("enabled", True)
+    if isinstance(enabled, str):
+        enabled = enabled.lower() in {"true", "1", "yes"}
+
+    out: Dict[str, Any] = {
+        "id": name,
+        "name": name,
+        "enabled": bool(enabled),
+        "transportType": transport_type,
+        "url": url if isinstance(url, str) else None,
+        "command": command if isinstance(command, str) else None,
+        "args": _string_list(cfg.get("args")),
+        "env": _mask_record(env_raw),
+        "headers": _mask_record(headers_raw),
+        "authType": auth_type,
+        "hasBearerToken": has_bearer,
+        "hasOAuthClientSecret": bool(
+            isinstance(auth_raw, dict)
+            and isinstance(auth_raw.get("oauth"), dict)
+            and auth_raw["oauth"].get("clientSecret")
+        ),
+        "toolMode": tool_mode,
+        "includeTools": include_tools,
+        "excludeTools": exclude_tools,
+        "discoveredToolsCount": 0,
+        "discoveredTools": [],
+        "status": "unknown",
+        "source": "configured",
+    }
+    auth_env_ref = _detect_auth_env_ref(cfg)
+    if auth_env_ref:
+        out["authEnvRef"] = auth_env_ref
+    return out
+
+
+def mcp_input_to_config_entry(payload: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+    """Translate a workspace ``McpServerInput`` payload into the shay yaml shape.
+
+    Returns ``(name, server_config)``. Raises ``ValueError`` on validation
+    failure so the route handler can return a 400.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("payload must be an object")
+
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise ValueError("name is required")
+
+    transport = str(payload.get("transportType") or "").lower()
+    if transport not in {"http", "stdio"}:
+        raise ValueError("transportType must be 'http' or 'stdio'")
+
+    cfg: Dict[str, Any] = {}
+
+    if transport == "http":
+        url = str(payload.get("url") or "").strip()
+        if not url:
+            raise ValueError("url is required for http transport")
+        cfg["url"] = url
+    else:
+        command = str(payload.get("command") or "").strip()
+        if not command:
+            raise ValueError("command is required for stdio transport")
+        cfg["command"] = command
+        args = payload.get("args")
+        if isinstance(args, list):
+            cfg["args"] = [str(a) for a in args]
+
+    headers = payload.get("headers")
+    if isinstance(headers, dict) and headers:
+        cfg["headers"] = {str(k): str(v) for k, v in headers.items()}
+
+    env = payload.get("env")
+    if isinstance(env, dict) and env:
+        cfg["env"] = {str(k): str(v) for k, v in env.items()}
+
+    auth_type = payload.get("authType")
+    bearer = payload.get("bearerToken")
+    oauth = payload.get("oauth")
+    if auth_type == "oauth":
+        cfg["auth"] = "oauth"
+    elif auth_type == "bearer" and bearer:
+        env_key = _env_key_for_server(name)
+        save_env_value(env_key, str(bearer))
+        cfg.setdefault("headers", {})["Authorization"] = f"Bearer ${{{env_key}}}"
+        cfg["auth"] = "bearer"
+    elif auth_type == "none":
+        cfg["auth"] = "none"
+    if isinstance(oauth, dict) and oauth.get("clientId"):
+        # Persist OAuth client metadata without leaking secrets to disk
+        # beyond what shay already supports.
+        cfg["auth"] = {
+            "type": "oauth",
+            "clientId": str(oauth.get("clientId") or ""),
+            "clientSecret": str(oauth.get("clientSecret") or ""),
+        }
+        if oauth.get("authorizationUrl"):
+            cfg["auth"]["authorizationUrl"] = str(oauth["authorizationUrl"])
+        if oauth.get("tokenUrl"):
+            cfg["auth"]["tokenUrl"] = str(oauth["tokenUrl"])
+        if isinstance(oauth.get("scopes"), list):
+            cfg["auth"]["scopes"] = [str(s) for s in oauth["scopes"]]
+
+    include_tools = payload.get("includeTools")
+    exclude_tools = payload.get("excludeTools")
+    if isinstance(include_tools, list) and include_tools:
+        cfg.setdefault("tools", {})["include"] = [str(t) for t in include_tools]
+    if isinstance(exclude_tools, list) and exclude_tools:
+        cfg.setdefault("tools", {})["exclude"] = [str(t) for t in exclude_tools]
+
+    enabled = payload.get("enabled")
+    if isinstance(enabled, bool):
+        cfg["enabled"] = enabled
+    else:
+        cfg["enabled"] = True
+
+    return name, cfg
 
 
 # ─── Dispatcher ───────────────────────────────────────────────────────────────
