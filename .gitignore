@@ -17,6 +17,10 @@ __pycache__/model_tools.cpython-310.pyc
 __pycache__/web_tools.cpython-310.pyc
 logs/
 data/
+# Packaged default policies live under shay_cli/data and MUST be tracked
+# even though runtime data/ dirs elsewhere are ignored.
+!shay_cli/data/
+!shay_cli/data/**
 .pytest_cache/
 tmp/
 temp_vision_images/

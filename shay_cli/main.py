@@ -5200,6 +5200,33 @@ def cmd_status(args):
     show_status(args)
 
 
+def cmd_run_plan(args):
+    """Advisory: print what the run router WOULD do for a request.
+
+    Reads run-policy.yaml and applies the Run Model routing rules to show the
+    chosen orchestrator + per-item executor + reasoning. Pure/advisory — it
+    does not execute anything or override an explicit request.
+    """
+    import json as _json
+
+    from shay_cli import run_router
+
+    request = " ".join(args.request).strip() if args.request else ""
+    if not request:
+        print('usage: shay run-plan "<request>"')
+        return 1
+
+    items = getattr(args, "item", None) or None
+    src = run_router.policy_path()
+    plan = run_router.select_run(request, items=items)
+
+    if getattr(args, "json", False):
+        print(_json.dumps(plan.as_dict(), indent=2))
+    else:
+        print(run_router.render_plan(plan, policy_src=src))
+    return 0
+
+
 def cmd_cron(args):
     """Cron job management."""
     from shay_cli.cron import cron_command
@@ -9179,7 +9206,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "config", "cron", "curator", "dashboard", "debug", "doctor",
         "dump", "fallback", "gateway", "hooks", "import", "insights",
         "kanban", "login", "logout", "logs", "mcp", "memory", "model",
-        "pairing", "plugins", "profile", "sessions", "setup", "skills",
+        "pairing", "plugins", "profile", "run-plan", "sessions", "setup", "skills",
         "slack", "status", "tools", "uninstall", "update", "version",
         "webhook", "whatsapp", "chat",
         # Help-ish invocations — plugin commands not being listed in
@@ -9803,6 +9830,31 @@ def main():
         "--deep", action="store_true", help="Run deep checks (may take longer)"
     )
     status_parser.set_defaults(func=cmd_status)
+
+    # =========================================================================
+    # run-plan command (advisory Run Model router)
+    # =========================================================================
+    run_plan_parser = subparsers.add_parser(
+        "run-plan",
+        help="Show what the run router WOULD do for a request (advisory)",
+        description=(
+            "Apply run-policy.yaml (the Run Model) to a request and print the "
+            "recommended orchestrator + per-item executor + reasoning. Advisory "
+            "only: nothing runs and no explicit request is overridden."
+        ),
+    )
+    run_plan_parser.add_argument(
+        "request", nargs="*", help='The request, e.g. "build these 10 screens"'
+    )
+    run_plan_parser.add_argument(
+        "--item",
+        action="append",
+        help="Explicit work item (repeatable); overrides count inference",
+    )
+    run_plan_parser.add_argument(
+        "--json", action="store_true", help="Emit the plan as JSON"
+    )
+    run_plan_parser.set_defaults(func=cmd_run_plan)
 
     # =========================================================================
     # cron command
