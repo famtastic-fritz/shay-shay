@@ -22,13 +22,50 @@ anything.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Callable, List, Optional
+
+# Default vault locations to seed the C4 index from on first activation.
+# These are the markdown stores the legacy flat recall used to grep.
+_DEFAULT_SEED_DIRS = ("~/.shay/memories",)
 
 
 def recall_backend_mode() -> str:
     """Return the active recall mode: 'c4' or 'flat' (default)."""
     val = (os.environ.get("SHAY_RECALL_BACKEND") or "flat").strip().lower()
     return "c4" if val in ("c4", "graph", "vector", "semantic") else "flat"
+
+
+def _seed_dirs() -> list:
+    """Seed dirs, overridable via SHAY_RECALL_SEED_DIRS (os.pathsep list)."""
+    raw = os.environ.get("SHAY_RECALL_SEED_DIRS")
+    if raw:
+        return [d for d in raw.split(os.pathsep) if d.strip()]
+    return list(_DEFAULT_SEED_DIRS)
+
+
+def ensure_seeded(backend) -> int:
+    """Seed an empty C4 backend from the vault once (idempotent).
+
+    If the backend already has nodes, this is a no-op. Otherwise it ingests
+    the default vault dirs so a fresh ``SHAY_RECALL_BACKEND=c4`` flip returns
+    real hits instead of an empty index. Returns nodes ingested this call.
+    """
+    try:
+        if backend.count() > 0:
+            return 0
+    except Exception:
+        return 0
+    from agent.memory_recall_backend import ingest_markdown_dir
+
+    total = 0
+    for d in _seed_dirs():
+        if Path(d).expanduser().is_dir():
+            try:
+                total += ingest_markdown_dir(backend, d, tier="L1", project="vault")
+            except Exception:
+                continue
+    return total
 
 
 def _format_hits(hits) -> str:
@@ -71,6 +108,9 @@ def route_recall(
             if be is None:
                 from agent.memory_recall_backend import MemoryRecallBackend
                 be = MemoryRecallBackend()
+                # First activation on a fresh index: seed from the vault so
+                # c4 returns real hits instead of an empty result.
+                ensure_seeded(be)
             hits = be.recall(query, k=k, project=project, graph_depth=1)
             block = _format_hits(hits)
             if block:
@@ -87,4 +127,4 @@ def route_recall(
     return ""
 
 
-__all__ = ["recall_backend_mode", "route_recall"]
+__all__ = ["recall_backend_mode", "route_recall", "ensure_seeded"]
