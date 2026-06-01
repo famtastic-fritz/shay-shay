@@ -5227,6 +5227,36 @@ def cmd_run_plan(args):
     return 0
 
 
+def cmd_coordinator(args):
+    """Build Coordinator — show active concurrent builds, queue, worktrees, budget.
+
+    The coordinator is the layer above the orchestrators: it isolates each
+    build in its own git worktree and serializes overlapping builds so
+    concurrent multi-build is safe. ``shay coordinator status`` (and the alias
+    ``shay builds-active``) renders the live registry — empty is fine.
+    """
+    import json as _json
+
+    from shay_cli.build_coordinator import BuildCoordinator
+
+    action = getattr(args, "coordinator_command", None) or "status"
+    coord = BuildCoordinator(low_funds=getattr(args, "low_funds", False))
+
+    if action in ("status", None):
+        if getattr(args, "json", False):
+            print(_json.dumps(coord.status_dict(), indent=2))
+        else:
+            print(coord.render_status())
+        return 0
+    if action == "prune":
+        removed = coord.prune_terminal()
+        print(f"Pruned {removed} terminal build(s) from the registry.")
+        return 0
+
+    print(coord.render_status())
+    return 0
+
+
 def cmd_cron(args):
     """Cron job management."""
     from shay_cli.cron import cron_command
@@ -9202,7 +9232,7 @@ def _build_provider_choices() -> list[str]:
 _BUILTIN_SUBCOMMANDS = frozenset(
     {
         "acp", "auth", "backup", "builds", "checkpoints", "claw", "completion",
-        "computer-use",
+        "builds-active", "computer-use", "coordinator",
         "config", "cron", "curator", "dashboard", "debug", "doctor",
         "dump", "fallback", "gateway", "hooks", "import", "insights",
         "kanban", "login", "logout", "logs", "mcp", "memory", "model",
@@ -10078,6 +10108,50 @@ def main():
 
     kanban_parser = _build_kanban_parser(subparsers)
     kanban_parser.set_defaults(func=cmd_kanban)
+
+    # =========================================================================
+    # coordinator command — Build Coordinator (safe concurrent multi-build)
+    # =========================================================================
+    coordinator_parser = subparsers.add_parser(
+        "coordinator",
+        help="Build Coordinator: active builds, queue, worktrees, budget",
+        description=(
+            "The layer above the orchestrators. Isolates each build in its own "
+            "git worktree and serializes overlapping builds so concurrent "
+            "multi-build is safe. Use `status` to see the live registry."
+        ),
+    )
+    coordinator_parser.add_argument(
+        "--low-funds",
+        action="store_true",
+        help="Treat the cost/low-funds signal as active when reporting budget",
+    )
+    coordinator_subparsers = coordinator_parser.add_subparsers(
+        dest="coordinator_command"
+    )
+    coord_status = coordinator_subparsers.add_parser(
+        "status", help="Show active builds, queue, worktrees, and budget usage"
+    )
+    coord_status.add_argument(
+        "--json", action="store_true", help="Emit coordinator state as JSON"
+    )
+    coordinator_subparsers.add_parser(
+        "prune", help="Drop terminal (green/failed) builds from the registry"
+    )
+    coordinator_parser.set_defaults(func=cmd_coordinator)
+
+    # `shay builds-active` — alias for `shay coordinator status`
+    builds_active_parser = subparsers.add_parser(
+        "builds-active",
+        help="Alias for `coordinator status` — show active concurrent builds",
+    )
+    builds_active_parser.add_argument(
+        "--json", action="store_true", help="Emit coordinator state as JSON"
+    )
+    builds_active_parser.add_argument("--low-funds", action="store_true")
+    builds_active_parser.set_defaults(
+        func=cmd_coordinator, coordinator_command="status"
+    )
 
     # =========================================================================
     # builds command — build tracker (aggregate task_runs + cost)
