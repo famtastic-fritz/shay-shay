@@ -940,6 +940,8 @@ class APIServerAdapter(BasePlatformAdapter):
             "features": {
                 "chat_completions": True,
                 "chat_completions_streaming": True,
+                "enhanced_chat": True,
+                "chat_enhanced": True,
                 "responses_api": True,
                 "responses_streaming": True,
                 "run_submission": True,
@@ -958,6 +960,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 "health_detailed": {"method": "GET", "path": "/health/detailed"},
                 "models": {"method": "GET", "path": "/v1/models"},
                 "chat_completions": {"method": "POST", "path": "/v1/chat/completions"},
+                "chat_stream": {"method": "POST", "path": "/api/sessions/{session_id}/chat/stream"},
                 "responses": {"method": "POST", "path": "/v1/responses"},
                 "runs": {"method": "POST", "path": "/v1/runs"},
                 "run_status": {"method": "GET", "path": "/v1/runs/{run_id}"},
@@ -3368,6 +3371,17 @@ class APIServerAdapter(BasePlatformAdapter):
                 logger.warning(
                     "[%s] desk_tasks routes not mounted: %s",
                     self.name, _desk_tasks_err,
+                )
+            # Enhanced-chat SSE endpoint for Hermes Workspace v2.3+
+            # (POST /api/sessions/{id}/chat/stream). See
+            # gateway/chat_stream_routes.py for the wire contract.
+            try:
+                from gateway.chat_stream_routes import register_chat_stream_routes
+                register_chat_stream_routes(self._app, self)
+            except Exception as _chat_stream_err:  # pragma: no cover - defensive
+                logger.warning(
+                    "[%s] chat_stream routes not mounted: %s",
+                    self.name, _chat_stream_err,
                 )
             # Start background sweep to clean up orphaned (unconsumed) run streams
             sweep_task = asyncio.create_task(self._sweep_orphaned_runs())
