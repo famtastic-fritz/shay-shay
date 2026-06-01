@@ -3425,10 +3425,20 @@ def _extract_task_gate(task_body: Optional[str]) -> Optional[str]:
     """Extract the structured gate commands from a task body.
 
     Looks for a fenced code block delimited by ```gate...```.
-    Each non-empty line within the block is treated as a separate shell command.
-    All commands are joined by ' && ' to be run sequentially.
+    Each non-empty, non-comment line within the block is treated as a
+    separate shell command. All commands are joined by ' && ' so they
+    run sequentially and ALL must exit 0 for the gate to pass.
 
-    Returns the joined command string, or None if no structured gate is found.
+    A STRUCTURED gate is required: if no ```gate fence is present, this
+    returns None (gate "unknown" → callers skip it). Prose in the task
+    body is NEVER run as a shell command — only commands inside the
+    fenced ```gate block are.
+
+    Comment lines (those starting with ``#`` after stripping) are
+    ignored, so authors can annotate the gate block.
+
+    Returns the joined command string, or None if no structured gate is
+    found (no fence, or fence present but empty / comments-only).
     """
     if not task_body:
         return None
@@ -3442,8 +3452,13 @@ def _extract_task_gate(task_body: Optional[str]) -> Optional[str]:
         if in_gate_block and line.strip() == "```":
             in_gate_block = False
             break
-        if in_gate_block and line.strip():
-            gate_commands.append(line.strip())
+        if in_gate_block:
+            stripped = line.strip()
+            # Skip blank lines and comment lines — they are annotations,
+            # not commands.
+            if not stripped or stripped.startswith("#"):
+                continue
+            gate_commands.append(stripped)
 
     if gate_commands:
         return " && ".join(gate_commands)
