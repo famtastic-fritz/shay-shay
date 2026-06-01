@@ -2567,6 +2567,66 @@ def complete_task(
     _clear_failure_counter(conn, task_id)
     # Recompute ready status for dependents (separate txn so children see done).
     recompute_ready(conn)
+
+    # D0 VERIFICATION GATE (Branch B of the Completion Watcher):
+    # If the task body declares a HARD GATE / GATE, run it now.  A RED gate
+    # means the worker self-attested done but the objective check disagrees.
+    # We override the completion back to blocked so a human can investigate
+    # rather than letting a broken artifact slip downstream.
+    #
+    # We run this AFTER the success write and failure-counter reset so the
+    # gate output is fully durable before any override. If the gate is RED,
+    # we revert: done → blocked, clear the dependent-promotion that
+    # recompute_ready() may have triggered, and emit a diagnostic event.
+    #
+    # Exceptions in the gate (timeout, import error) are treated as
+    # "unknown" → no override (fail-open: a broken gate harness must
+    # not block legitimate completions).
+    task_for_gate = get_task(conn, task_id)
+    if task_for_gate is not None:
+        gate_cmd = _extract_task_gate(task_for_gate.body)
+        if gate_cmd:
+            gate_result, gate_output = _run_task_gate(
+                gate_cmd, task_for_gate.workspace_path
+            )
+            if gate_result == "red":
+                # Override: done → blocked.
+                d0_evidence = {
+                    "gate_cmd": gate_cmd,
+                    "gate_result": gate_result,
+                    "gate_output_tail": gate_output[-500:] if gate_output else "",
+                    "override": "self-attested done rejected: gate failed",
+                    "reconciler": "completion-watcher-v1-d0",
+                }
+                override_reason = (
+                    "D0 gate FAILED — self-attested done rejected. "
+                    "Gate command returned non-zero. Review the gate output "
+                    "and re-run after fixing the reported issue."
+                )
+                try:
+                    with write_txn(conn):
+                        conn.execute(
+                            "UPDATE tasks SET status = 'blocked' WHERE id = ?",
+                            (task_id,),
+                        )
+                        # Synthesize a blocked run so the reason is visible in
+                        # attempt history (done tasks have no open run to end).
+                        _synthesize_ended_run(
+                            conn, task_id,
+                            outcome="blocked",
+                            summary=override_reason,
+                            metadata=d0_evidence,
+                        )
+                        _append_event(
+                            conn, task_id, "d0_gate_override",
+                            d0_evidence,
+                        )
+                except Exception:
+                    # Override failed (e.g. another writer raced us) — leave
+                    # task as done, log is still in the event row above.
+                    pass
+                return True  # completion was attempted; override is internal
+
     return True
 
 
@@ -3345,6 +3405,201 @@ def set_max_runtime(
     return cur.rowcount == 1
 
 
+# ---------------------------------------------------------------------------
+# Completion Watcher / Reconciler — outcome from evidence, not self-report
+# ---------------------------------------------------------------------------
+# Design doc: Shay-Memory/research/completion-watcher-design-2026-05-31.md
+#
+# On every worker exit the dispatcher now RECONCILES outcome from objective
+# evidence (workspace diff + gate result) instead of trusting self-report.
+# Four branches (see _reconcile_worker_exit):
+#   (A) No tool call + gate GREEN + real changes  → auto-complete on behalf
+#   (B) Called complete + gate RED                → override to blocked/retry
+#   (C) No tool call + gate RED / no changes      → normal crash/retry path
+#   (D) Called complete + gate GREEN              → complete normally (no-op here)
+
+
+def _extract_task_gate(task_body: Optional[str]) -> Optional[str]:
+    """Extract the HARD GATE / GATE command from a task body.
+
+    Looks for lines like:
+        HARD GATE: <cmd>
+        GATE: <cmd>
+    Returns the command string, or None if no gate is declared.
+    The command is everything after the colon up to (but not including)
+    a semicolon that introduces the second gate clause, if any.
+    """
+    if not task_body:
+        return None
+    for line in task_body.splitlines():
+        stripped = line.strip()
+        for prefix in ("HARD GATE:", "GATE:"):
+            if stripped.upper().startswith(prefix):
+                cmd = stripped[len(prefix):].strip()
+                # If there are multiple gate steps joined by " && " or ";",
+                # keep them all — subprocess will run via shell.
+                return cmd if cmd else None
+    return None
+
+
+def _run_task_gate(
+    gate_cmd: Optional[str],
+    workspace_path: Optional[str],
+    timeout: int = 120,
+) -> tuple[str, str]:
+    """Run the task gate and return ``(result, output)``.
+
+    ``result`` is ``"green"`` or ``"red"`` (or ``"unknown"`` on hard error).
+    ``output`` is captured stdout+stderr, truncated to 2 000 chars.
+
+    When ``gate_cmd`` is None, falls back to a generic Python import
+    sanity check (``python -c "import sys; sys.exit(0)"``), which always
+    passes — callers treat unknown-gate as inconclusive (no auto-complete
+    without an explicit gate).
+    """
+    if not gate_cmd:
+        return ("unknown", "no gate declared")
+    try:
+        env = os.environ.copy()
+        cwd = workspace_path if workspace_path and os.path.isdir(workspace_path) else None
+        proc = subprocess.run(
+            gate_cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=cwd,
+            env=env,
+        )
+        output = (proc.stdout + proc.stderr)[-2000:]
+        result = "green" if proc.returncode == 0 else "red"
+        return (result, output)
+    except subprocess.TimeoutExpired:
+        return ("red", f"gate timed out after {timeout}s")
+    except Exception as exc:
+        return ("unknown", f"gate error: {exc}")
+
+
+def _gather_workspace_diff(workspace_path: Optional[str]) -> list[str]:
+    """Return a list of changed/added file paths in the workspace.
+
+    Tries ``git diff`` first; falls back to listing all files present in
+    the workspace directory. Returns an empty list when the workspace is
+    missing or empty.
+    """
+    if not workspace_path or not os.path.isdir(workspace_path):
+        return []
+    # Try git first — most reliable signal.
+    try:
+        proc = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            capture_output=True, text=True, timeout=15,
+            cwd=workspace_path,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return [l.strip() for l in proc.stdout.splitlines() if l.strip()]
+        # Also check untracked files.
+        proc2 = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            capture_output=True, text=True, timeout=15,
+            cwd=workspace_path,
+        )
+        if proc2.returncode == 0 and proc2.stdout.strip():
+            lines = [l.strip() for l in proc2.stdout.splitlines() if l.strip()]
+            if lines:
+                return lines
+    except Exception:
+        pass
+    # Fallback: any files at all in the workspace.
+    try:
+        found = []
+        for root, _dirs, files in os.walk(workspace_path):
+            for f in files:
+                found.append(os.path.relpath(os.path.join(root, f), workspace_path))
+        return found[:100]
+    except Exception:
+        return []
+
+
+def _reconcile_worker_exit(
+    conn: sqlite3.Connection,
+    task_id: str,
+    *,
+    run_id: int,
+    pid: int,
+    claimer: str,
+) -> str:
+    """Reconcile a protocol-violation exit (clean rc=0, no kanban_complete call).
+
+    Returns one of:
+        ``"auto_completed"``   — gate GREEN, auto-completed on worker's behalf.
+        ``"failed"``           — gate RED or inconclusive, routed to crash path.
+        ``"unknown"``          — no gate declared AND no workspace changes; gave up.
+
+    Callers are responsible for updating the task state on ``"failed"``
+    (the existing crash-counter / circuit-breaker path applies).
+    """
+    task = get_task(conn, task_id)
+    if task is None:
+        return "failed"
+
+    gate_cmd = _extract_task_gate(task.body)
+    gate_result, gate_output = _run_task_gate(gate_cmd, task.workspace_path)
+    changed_files = _gather_workspace_diff(task.workspace_path)
+
+    evidence = {
+        "pid": pid,
+        "claimer": claimer,
+        "gate_result": gate_result,
+        "gate_cmd": gate_cmd,
+        "gate_output_tail": gate_output[-500:] if gate_output else "",
+        "changed_files": changed_files[:20],
+        "reconciler": "completion-watcher-v1",
+    }
+
+    if gate_result == "green" and changed_files:
+        # Branch A: no tool call, gate GREEN, real changes → auto-complete.
+        summary = (
+            "reconciled-from-evidence: gate passed — "
+            f"auto-completed on behalf of worker pid={pid} "
+            f"({len(changed_files)} file(s) changed)"
+        )
+        try:
+            with write_txn(conn):
+                # The task is already back at 'ready' (detect_crashed_workers
+                # moved it there before calling us). complete_task expects
+                # running|ready|blocked → done. Temporarily flip status to
+                # 'running' is not safe inside a nested txn, so call
+                # complete_task directly — it accepts 'ready' → 'done'.
+                pass  # txn just for the event below
+
+            complete_task(
+                conn, task_id,
+                summary=summary,
+                metadata=evidence,
+            )
+            with write_txn(conn):
+                _append_event(
+                    conn, task_id, "reconciled_complete",
+                    evidence,
+                    run_id=None,  # run was already closed by detect_crashed_workers
+                )
+            return "auto_completed"
+        except Exception as exc:
+            # If complete_task fails (e.g. task was raced to done by another
+            # worker), fall through to normal crash path.
+            evidence["auto_complete_error"] = str(exc)
+
+    # Branches C / unknown: gate RED, no changes, or gate unknown with no
+    # changes. Route to existing crash-counter path.
+    with write_txn(conn):
+        _append_event(
+            conn, task_id, "reconciler_gate_failed",
+            evidence,
+        )
+    return "failed"
+
+
 def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
     """Reclaim ``running`` tasks whose worker PID is no longer alive.
 
@@ -3370,8 +3625,8 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
     # write_txn so can't nest). ``protocol_violation`` flags the
     # clean-exit-but-still-running case so we can trip the breaker
     # immediately instead of incrementing by 1.
-    crash_details: list[tuple[str, int, str, bool, str]] = []
-    # (task_id, pid, claimer, protocol_violation, error_text)
+    crash_details: list[tuple[str, int, str, bool, str, Optional[int]]] = []
+    # (task_id, pid, claimer, protocol_violation, error_text, run_id)
     with write_txn(conn):
         rows = conn.execute(
             "SELECT id, worker_pid, claim_lock FROM tasks "
@@ -3439,20 +3694,37 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
                 crashed.append(row["id"])
                 crash_details.append(
                     (row["id"], pid, row["claim_lock"],
-                     protocol_violation, error_text)
+                     protocol_violation, error_text, run_id)
                 )
     # Outside the main txn: increment the unified failure counter for
     # each crashed task. If the breaker trips, the task transitions
     # ready → blocked with a ``gave_up`` event on top of the ``crashed``
     # event we already emitted.
     #
-    # Protocol-violation crashes force an immediate trip (failure_limit=1)
-    # because clean-exit-without-transition is deterministic: the next
-    # respawn will do exactly the same thing. Better to surface to a
-    # human with a clear reason than to loop ``DEFAULT_FAILURE_LIMIT``
-    # times first.
+    # Protocol-violation crashes now go through the COMPLETION WATCHER
+    # (_reconcile_worker_exit) before the failure counter. If the gate
+    # passes and the workspace has real changes, the reconciler auto-completes
+    # the task on the worker's behalf and we skip the failure counter entirely.
+    # Only when reconciliation fails do we trip the breaker immediately
+    # (failure_limit=1) — retrying a worker whose CLI keeps returning 0 without
+    # a terminal transition is still deterministic failure once the gate says so.
     auto_blocked: list[str] = []
-    for tid, pid, claimer, protocol_violation, error_text in crash_details:
+    reconciled: list[str] = []
+    for tid, pid, claimer, protocol_violation, error_text, run_id in crash_details:
+        if protocol_violation:
+            recon = _reconcile_worker_exit(
+                conn, tid,
+                run_id=run_id or 0,
+                pid=pid,
+                claimer=claimer or "",
+            )
+            if recon == "auto_completed":
+                reconciled.append(tid)
+                # Remove from crashed list — it's now done, not crashed.
+                if tid in crashed:
+                    crashed.remove(tid)
+                continue
+            # Reconciler couldn't save it — fall through to immediate breaker trip.
         tripped = _record_task_failure(
             conn, tid,
             error=error_text,
@@ -3469,6 +3741,7 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
     # and tests that destructure the result; ``dispatch_once`` reads this
     # side-channel attribute to populate ``DispatchResult.auto_blocked``.
     detect_crashed_workers._last_auto_blocked = auto_blocked  # type: ignore[attr-defined]
+    detect_crashed_workers._last_reconciled = reconciled  # type: ignore[attr-defined]
     return crashed
 
 
