@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from shay_constants import get_shay_home
 from typing import Any, Dict, List, Optional, Tuple, Union
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse, quote
 
 import httpx
 import yaml
@@ -3121,6 +3121,130 @@ class ShayIndexSource(SkillSource):
         )
 
 
+class SkillNetSource(SkillSource):
+    """
+    Discovery source backed by SkillNet's hosted search API
+    (api-skillnet.openkg.cn/v1/search). Per the community-gap-discovery design:
+
+    - search() hits the hosted JSON API, which returns candidates that ALREADY
+      carry a 5-D evaluation (Safety / Completeness / Executability /
+      Maintainability / Cost-Awareness). That evaluation is preserved in
+      ``SkillMeta.extra['evaluation']`` so a verdict can be surfaced without a
+      second call.
+    - The API is plain HTTP on a ``.cn`` host — metadata only, never trusted for
+      content. Each result is a GitHub blob URL, so ``fetch()`` delegates to the
+      existing ``GitHubSource`` path (HTTPS + skills_guard scan + quarantine).
+    - trust_level is always ``community`` regardless of stars/evaluation.
+    """
+
+    SEARCH_URL = "http://api-skillnet.openkg.cn/v1/search"
+
+    def __init__(self, auth: Optional[GitHubAuth] = None):
+        self.auth = auth or GitHubAuth()
+        self._github = GitHubSource(auth=self.auth)
+
+    def source_id(self) -> str:
+        return "skillnet"
+
+    def trust_level_for(self, identifier: str) -> str:
+        return "community"
+
+    @staticmethod
+    def _blob_to_identifier(url: str) -> Optional[str]:
+        """Map a GitHub blob/tree URL to the GitHubSource identifier form
+        ``owner/repo/path/to/skill-dir`` (the SKILL.md's containing dir)."""
+        if not url or "github.com/" not in url:
+            return None
+        try:
+            tail = url.split("github.com/", 1)[1]
+        except (IndexError, AttributeError):
+            return None
+        parts = [p for p in tail.split("/") if p]
+        if len(parts) < 2:
+            return None
+        owner, repo = parts[0], parts[1]
+        rest = parts[2:]
+        # Drop a leading blob|tree|raw + branch ref if present.
+        if rest and rest[0] in ("blob", "tree", "raw"):
+            rest = rest[2:]  # drop "blob"/"tree" + branch
+        # Drop a trailing SKILL.md so the identifier points at the skill dir.
+        if rest and rest[-1].lower() == "skill.md":
+            rest = rest[:-1]
+        if not rest:
+            return None
+        return f"{owner}/{repo}/" + "/".join(rest)
+
+    def _to_meta(self, entry: Dict[str, Any]) -> Optional[SkillMeta]:
+        if not isinstance(entry, dict):
+            return None
+        url = entry.get("skill_url") or entry.get("url") or ""
+        identifier = self._blob_to_identifier(url) or url
+        if not identifier:
+            return None
+        name = entry.get("skill_name") or entry.get("name") or identifier.split("/")[-1]
+        return SkillMeta(
+            name=str(name),
+            description=str(entry.get("skill_description") or entry.get("description") or ""),
+            source="skillnet",
+            identifier=identifier,
+            trust_level="community",
+            repo=None,
+            path=None,
+            tags=[str(entry["category"])] if entry.get("category") else [],
+            extra={
+                # The verdict-bearing payload — preserved for the GapResolver.
+                "evaluation": entry.get("evaluation"),
+                "stars": entry.get("stars"),
+                "author": entry.get("author"),
+                "skill_url": url,
+            },
+        )
+
+    def search(self, query: str, limit: int = 10) -> List[SkillMeta]:
+        if not query.strip():
+            return []
+        cache_key = "skillnet-" + hashlib.sha1(
+            f"{query}|{limit}".encode("utf-8", "ignore")
+        ).hexdigest()
+        cached = _read_index_cache(cache_key)
+        if cached is not None:
+            return [SkillMeta(**d) for d in cached]
+
+        url = f"{self.SEARCH_URL}?q={quote(query, safe='')}&limit={int(limit)}"
+        resp = _guarded_http_get(url, timeout=20)
+        if resp is None or resp.status_code != 200:
+            return []
+        try:
+            payload = resp.json()
+        except (ValueError, json.JSONDecodeError):
+            return []
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, list):
+            return []
+
+        results: List[SkillMeta] = []
+        for entry in data[:limit]:
+            meta = self._to_meta(entry)
+            if meta:
+                results.append(meta)
+
+        _write_index_cache(cache_key, [_skill_meta_to_dict(m) for m in results])
+        return results
+
+    def inspect(self, identifier: str) -> Optional[SkillMeta]:
+        # SkillNet identifiers resolve to GitHub; delegate metadata inspection.
+        return self._github.inspect(identifier)
+
+    def fetch(self, identifier: str) -> Optional[SkillBundle]:
+        # Content always re-fetched from GitHub over HTTPS + scanned downstream.
+        bundle = self._github.fetch(identifier)
+        if bundle is not None:
+            # Stamp the true discovery source for provenance/audit.
+            bundle.source = "skillnet"
+            bundle.trust_level = "community"
+        return bundle
+
+
 def create_source_router(auth: Optional[GitHubAuth] = None) -> List[SkillSource]:
     """
     Create all configured source adapters.
@@ -3139,6 +3263,7 @@ def create_source_router(auth: Optional[GitHubAuth] = None) -> List[SkillSource]
         WellKnownSkillSource(),
         UrlSource(),                  # Direct HTTP(S) URL to a SKILL.md file
         GitHubSource(auth=auth, extra_taps=extra_taps),
+        SkillNetSource(auth=auth),    # Hosted search API w/ 5-D evaluations
         ClawHubSource(),
         ClaudeMarketplaceSource(auth=auth),
         LobeHubSource(),

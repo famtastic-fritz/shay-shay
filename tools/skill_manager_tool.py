@@ -707,12 +707,43 @@ def _remove_file(name: str, file_path: str) -> Dict[str, Any]:
 
 
 # =============================================================================
+# Discovery (read-only) — reuse-before-generate
+# =============================================================================
+
+def _discover_skills(query: str, sources: list = None, limit: int = 5) -> Dict[str, Any]:
+    """Read-only community/local skill discovery.
+
+    Fans out across the registered SkillSource adapters (local catalog first,
+    then SkillNet / clawhub / GitHub), dedupes, and returns a ranked candidate
+    list with a per-candidate verdict via the GapResolver. Never installs.
+    """
+    try:
+        from tools.gap_resolver import discover as _resolver_discover
+    except Exception as e:  # pragma: no cover - defensive
+        return {"success": False, "error": f"discovery unavailable: {e}"}
+
+    try:
+        candidates = _resolver_discover(query, sources=sources, limit=limit)
+    except Exception as e:
+        return {"success": False, "error": f"discovery failed: {e}"}
+
+    return {
+        "success": True,
+        "action": "discover",
+        "query": query,
+        "count": len(candidates),
+        "candidates": candidates,
+        "note": "Read-only. No skill was installed. Use GapResolver.resolve() to act on a verdict.",
+    }
+
+
+# =============================================================================
 # Main entry point
 # =============================================================================
 
 def skill_manage(
     action: str,
-    name: str,
+    name: str = None,
     content: str = None,
     category: str = None,
     file_path: str = None,
@@ -721,12 +752,26 @@ def skill_manage(
     new_string: str = None,
     replace_all: bool = False,
     absorbed_into: str = None,
+    query: str = None,
+    sources: list = None,
+    limit: int = 5,
 ) -> str:
     """
     Manage user-created skills. Dispatches to the appropriate action handler.
 
     Returns JSON string with results.
     """
+    # `discover` is READ-ONLY — it searches local + community sources and
+    # returns ranked candidates with a verdict. It never installs or mutates.
+    if action == "discover":
+        if not query:
+            return tool_error("query is required for 'discover'. Describe the capability gap.", success=False)
+        result = _discover_skills(query, sources=sources, limit=limit)
+        return json.dumps(result, ensure_ascii=False)
+
+    if action != "discover" and not name:
+        return tool_error(f"name is required for '{action}'.", success=False)
+
     if action == "create":
         if not content:
             return tool_error("content is required for 'create'. Provide the full SKILL.md text (frontmatter + body).", success=False)
@@ -760,7 +805,7 @@ def skill_manage(
         result = _remove_file(name, file_path)
 
     else:
-        result = {"success": False, "error": f"Unknown action '{action}'. Use: create, edit, patch, delete, write_file, remove_file"}
+        result = {"success": False, "error": f"Unknown action '{action}'. Use: create, edit, patch, delete, write_file, remove_file, discover"}
 
     if result.get("success"):
         try:
@@ -831,8 +876,18 @@ SKILL_MANAGE_SCHEMA = {
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["create", "patch", "edit", "delete", "write_file", "remove_file"],
-                "description": "The action to perform."
+                "enum": ["create", "patch", "edit", "delete", "write_file", "remove_file", "discover"],
+                "description": (
+                    "The action to perform. `discover` is READ-ONLY: it searches the "
+                    "local catalog + community hubs (SkillNet, clawhub, GitHub) for an "
+                    "existing skill that fills a capability gap and returns ranked "
+                    "candidates with a verdict (ADOPT/REVIEW/BUILD). It never installs. "
+                    "Run discover BEFORE create — reuse before generate."
+                )
+            },
+            "query": {
+                "type": "string",
+                "description": "For action='discover': the capability gap to search for."
             },
             "name": {
                 "type": "string",
