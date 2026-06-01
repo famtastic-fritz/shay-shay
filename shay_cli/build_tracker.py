@@ -617,11 +617,10 @@ def build_parser(parent_subparsers: "argparse._SubParsersAction") -> argparse.Ar
     """Attach 'builds' subcommand to an existing subparsers action."""
     p = parent_subparsers.add_parser(
         "builds",
-        help="Build tracker — per-brain success/cost/smell summary",
+        help="Build tracker — durable ledger, search, and per-brain summary",
         description=(
-            "Aggregates task_runs across all Kanban boards and joins per-session "
-            "cost from state.db. Shows per-brain success rate, runtime percentiles, "
-            "$/build, test pass rate, failure-mode breakdown, and regression/gate-bypass flags."
+            "BT-2: durable build ledger + search. Subcommands: summary (default), "
+            "list, show, search, capture."
         ),
     )
     p.add_argument(
@@ -655,13 +654,125 @@ def build_parser(parent_subparsers: "argparse._SubParsersAction") -> argparse.Ar
         default=False,
         help="Output machine-readable JSON instead of table",
     )
+
+    subs = p.add_subparsers(dest="builds_subcommand")
+
+    # --- capture ---
+    cap = subs.add_parser(
+        "capture",
+        help="Mirror all completed runs into ~/.shay/build-ledger.db + vault notes",
+    )
+    cap.add_argument("--ledger", metavar="PATH", default=None,
+                     help="Override ledger DB path")
+
+    # --- list ---
+    lst = subs.add_parser(
+        "list",
+        help="List builds from the durable ledger",
+    )
+    lst.add_argument("--since", metavar="HOURS", type=float, default=None)
+    lst.add_argument("--outcome", metavar="OUTCOME", default=None,
+                     help="Filter by outcome (completed, blocked, crashed, timed_out)")
+    lst.add_argument("--by", metavar="PROFILE", default=None)
+    lst.add_argument("--board", metavar="SLUG", default=None)
+    lst.add_argument("--limit", type=int, default=50)
+    lst.add_argument("--json", action="store_true", default=False)
+
+    # --- show ---
+    shw = subs.add_parser(
+        "show",
+        help="Full drilldown for a single build by build_id",
+    )
+    shw.add_argument("build_id", help="build_id (b_<hex>) from 'shay builds list'")
+    shw.add_argument("--json", action="store_true", default=False)
+
+    # --- search ---
+    srch = subs.add_parser(
+        "search",
+        help="Full-text + filter search across all builds in the ledger",
+    )
+    srch.add_argument("query", help="Search terms (FTS5 or LIKE fallback)")
+    srch.add_argument("--outcome", metavar="OUTCOME", default=None)
+    srch.add_argument("--by", metavar="PROFILE", default=None)
+    srch.add_argument("--board", metavar="SLUG", default=None)
+    srch.add_argument("--error-sig", metavar="SIG", default=None,
+                      help="Filter by normalized error signature substring")
+    srch.add_argument("--file", metavar="FILENAME", default=None,
+                      help="Only builds that touched this file")
+    srch.add_argument("--since", metavar="HOURS", type=float, default=None)
+    srch.add_argument("--limit", type=int, default=50)
+    srch.add_argument("--json", action="store_true", default=False)
+
     return p
 
 
 def builds_command(args: argparse.Namespace) -> int:
-    """Handler for 'shay builds' subcommand."""
+    """Handler for 'shay builds' subcommand (and sub-subcommands)."""
     import json as _json
 
+    sub = getattr(args, "builds_subcommand", None)
+
+    # ------------------------------------------------------------------ capture
+    if sub == "capture":
+        from shay_cli.build_ledger import capture_all
+        from pathlib import Path as _Path
+        ledger = _Path(args.ledger) if getattr(args, "ledger", None) else None
+        result = capture_all(ledger_path=ledger)
+        print(f"Captured {result['new']} new builds, skipped {result['skipped']} already-present.")
+        return 0
+
+    # ------------------------------------------------------------------ list
+    if sub == "list":
+        from shay_cli.build_ledger import list_builds, print_builds_list
+        builds = list_builds(
+            since_hours=getattr(args, "since", None),
+            outcome=getattr(args, "outcome", None),
+            profile=getattr(args, "by", None),
+            board=getattr(args, "board", None),
+            limit=getattr(args, "limit", 50),
+        )
+        if getattr(args, "json", False):
+            print(_json.dumps(builds, indent=2, default=str))
+        else:
+            print(f"\nDURABLE LEDGER — {len(builds)} build(s)\n")
+            print_builds_list(builds)
+        return 0
+
+    # ------------------------------------------------------------------ show
+    if sub == "show":
+        from shay_cli.build_ledger import show_build, print_build_detail
+        build = show_build(args.build_id)
+        if build is None:
+            print(f"Build not found: {args.build_id}")
+            print("Run 'shay builds capture' first, then 'shay builds list' to find IDs.")
+            return 1
+        if getattr(args, "json", False):
+            print(_json.dumps(build, indent=2, default=str))
+        else:
+            print_build_detail(build)
+        return 0
+
+    # ------------------------------------------------------------------ search
+    if sub == "search":
+        from shay_cli.build_ledger import search_ledger, print_builds_list, print_build_detail
+        results = search_ledger(
+            query=args.query,
+            outcome=getattr(args, "outcome", None),
+            profile=getattr(args, "by", None),
+            board=getattr(args, "board", None),
+            error_signature=getattr(args, "error_sig", None),
+            file_touched=getattr(args, "file", None),
+            since_hours=getattr(args, "since", None),
+            limit=getattr(args, "limit", 50),
+        )
+        if getattr(args, "json", False):
+            print(_json.dumps(results, indent=2, default=str))
+        else:
+            print(f"\nSEARCH: '{args.query}' — {len(results)} result(s)\n")
+            print_builds_list(results)
+        return 0
+
+    # ------------------------------------------------------------------ default summary
     since_hours: Optional[float] = getattr(args, "since", None)
     brain_filter: Optional[str] = getattr(args, "by", None)
     board_filter: Optional[str] = getattr(args, "board", None)
