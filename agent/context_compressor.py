@@ -34,6 +34,12 @@ from agent.redact import redact_sensitive_text
 
 logger = logging.getLogger(__name__)
 
+
+def _memo_now_iso() -> str:
+    """UTC ISO timestamp for session-memo metadata (stdlib-only)."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
 SUMMARY_PREFIX = (
     "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
     "into the summary below. This is a handoff from a previous context "
@@ -372,6 +378,61 @@ class ContextCompressor(ContextEngine):
         self._last_compression_savings_pct = 100.0
         self._ineffective_compression_count = 0
         self._summary_failure_cooldown_until = 0.0  # transient errors must not block a fresh session
+
+    # ------------------------------------------------------------------
+    # Session lifecycle — memory lifecycle stage (b) SAVE/COMPACT.
+    # The handoff summary the compressor already builds is the session
+    # memo; on_session_end persists it to the L1 episodic vault so the
+    # nightly dreamer and the next session's carry-forward can read it.
+    # See research/memory-lifecycle-design-2026-05-31.md §3(b).
+    # ------------------------------------------------------------------
+    def on_session_start(self, session_id: str, **kwargs) -> None:
+        """Capture session metadata for the memo written at session end."""
+        try:
+            self._session_started_at = _memo_now_iso()
+            self._session_platform = kwargs.get("platform")
+            self._session_model = kwargs.get("model") or self.model
+            try:
+                from agent.session_memo import detect_project
+                self._session_project = detect_project(kwargs.get("shay_home"))
+            except Exception:
+                self._session_project = None
+        except Exception:
+            # Metadata capture is best-effort; never block session start.
+            pass
+
+    def on_session_end(self, session_id: str, messages: List[Dict[str, Any]]) -> None:
+        """Persist the session's handoff summary as an L1 episodic memo.
+
+        Prefers the already-generated ``_previous_summary``; otherwise
+        scans ``messages`` for the latest in-context handoff summary. If
+        neither exists (short session that never compacted) nothing is
+        written — we do NOT spend an extra aux-model call here, matching
+        the design's "reuse, don't reinvent" rule. Never raises.
+        """
+        try:
+            summary_body = self._previous_summary
+            if not summary_body and messages:
+                _idx, _body = self._find_latest_context_summary(
+                    messages, 0, len(messages),
+                )
+                summary_body = _body or None
+            if not summary_body or not str(summary_body).strip():
+                return
+            body = self._strip_summary_prefix(str(summary_body))
+            from agent.session_memo import persist_session_memo
+            path = persist_session_memo(
+                session_id=session_id,
+                summary_body=body,
+                started_at=getattr(self, "_session_started_at", None),
+                platform=getattr(self, "_session_platform", None),
+                project=getattr(self, "_session_project", None),
+                model=getattr(self, "_session_model", None) or self.model,
+            )
+            if path and not self.quiet_mode:
+                logger.info("Session memo persisted: %s", path)
+        except Exception as exc:
+            logger.debug("Session memo persist failed: %s", exc)
 
     def update_model(
         self,
