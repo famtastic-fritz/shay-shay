@@ -439,6 +439,22 @@ DEFAULT_CONFIG = {
     "providers": {},
     "fallback_providers": [],
     "credential_pool_strategies": {},
+    # Cost / energy routing telemetry (clean-room port of the OpenJarvis
+    # "intelligence per watt" idea). These keys are SAFE DEFAULTS — they do
+    # NOT change routing or fire notifications until the operator opts in.
+    # See agent/cost_telemetry.py.
+    "routing": {
+        # When True, agent/cost_telemetry.cost_routing_score() divides a
+        # candidate model's quality score by its relative energy weight so a
+        # router can prefer the cheapest model that clears the quality bar.
+        # Default False == no routing-behavior change; the scorer is inert.
+        "cost_aware": False,
+        # Soft daily $-budget. 0 (default) disables the low-funds/budget
+        # signal entirely. When > 0, agent/cost_telemetry.budget_status()
+        # reports today's spend against it for the low-funds notification
+        # surface; it does not by itself block any request.
+        "daily_budget_usd": 0,
+    },
     "toolsets": ["shay-cli"],
     "agent": {
         "max_turns": 90,
@@ -1191,6 +1207,14 @@ DEFAULT_CONFIG = {
             "enabled": True,
             "keep": 5,  # retain last N regular snapshots
         },
+        # Trace-grounded review (clean-room port of the OpenJarvis trace-driven
+        # skill-optimization idea). When True, the curator's LLM review prompt
+        # is augmented with measured execution-trace evidence per candidate
+        # skill — usage counts, recency, and (when the session DB is available)
+        # token cost — so keep/patch/consolidate/archive decisions are grounded
+        # in evidence, not inspection alone. Additive: the existing review
+        # behavior is unchanged when False. SAFE DEFAULT: False (opt-in).
+        "trace_grounded": False,
     },
 
     # Honcho AI-native memory -- reads ~/.honcho/config.json as single source of truth.

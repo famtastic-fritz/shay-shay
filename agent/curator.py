@@ -183,6 +183,16 @@ def get_archive_after_days() -> int:
         return DEFAULT_ARCHIVE_AFTER_DAYS
 
 
+def is_trace_grounded() -> bool:
+    """Whether to feed the LLM review measured execution-trace evidence.
+
+    Reads ``curator.trace_grounded`` (default ``False``). When off, the review
+    behaves exactly as before — this is purely additive.
+    """
+    cfg = _load_config()
+    return bool(cfg.get("trace_grounded", False))
+
+
 # ---------------------------------------------------------------------------
 # Idle / interval check
 # ---------------------------------------------------------------------------
@@ -1346,14 +1356,113 @@ def _render_report_markdown(p: Dict[str, Any]) -> str:
 # Orchestrator — spawn a forked AIAgent for the LLM review pass
 # ---------------------------------------------------------------------------
 
-def _render_candidate_list() -> str:
-    """Human/agent-readable list of agent-created skills with usage stats."""
+# Prompt preamble injected ONLY when curator.trace_grounded is on. It tells
+# the LLM how to read the measured-evidence columns so its keep / patch /
+# consolidate / archive decisions are grounded in traces, not inspection alone.
+# This is additive: it does NOT relax the existing umbrella-consolidation rules
+# (in particular, "use=0 is absence of evidence, not a reason to prune" still
+# holds — the trace columns inform consolidation grouping and patch targeting,
+# they do not license deletion-by-low-usage).
+CURATOR_TRACE_GROUNDING_PREAMBLE = (
+    "TRACE-GROUNDED REVIEW (measured evidence is attached).\n"
+    "Each candidate below carries measured execution-trace columns from the "
+    "session database in addition to the lifecycle counters:\n"
+    "  - use / view / patches / activity — lifetime usage counters.\n"
+    "  - win_loads / win_edits — times the skill was loaded/edited inside the "
+    "recent telemetry window (last N days).\n"
+    "  - win_cost — estimated $ attributable to sessions in the window "
+    "(coarse; '?' when the route has no known pricing).\n"
+    "  - last_activity — recency.\n"
+    "Use this evidence to GROUND your decisions, not to override the "
+    "consolidation rules below:\n"
+    "  • Skills repeatedly loaded in the window are HOT — when you consolidate "
+    "a cluster, prefer making the hottest member the umbrella (better cache "
+    "locality and discoverability).\n"
+    "  • A skill with many patches but little use is CHURNING — a good patch "
+    "target to stabilise inside an umbrella.\n"
+    "  • High win_cost on a rarely-used skill is a flag to consolidate so the "
+    "expensive instructions are reused, NOT a license to prune.\n"
+    "  • Recency (last_activity) breaks ties on which member is the live one.\n"
+    "Reminder: low or zero usage is ABSENCE of evidence, never a reason to "
+    "archive on its own. The umbrella-building rules below are unchanged.\n"
+)
+
+
+def _trace_evidence_by_skill(days: int = 30) -> Dict[str, Dict[str, Any]]:
+    """Build per-skill measured-evidence rows from the session DB.
+
+    Returns ``{skill_name: {"win_loads", "win_edits", "win_cost"}}`` for the
+    last *days*. ``win_cost`` is a coarse attribution: the skill's share of
+    window skill-actions times the window's total estimated spend (we don't
+    have per-skill billing, so this is a proportional estimate, flagged as
+    such to the model). Best-effort — any failure returns an empty dict and the
+    candidate list silently falls back to the lifecycle-counter-only view.
+    """
+    try:
+        from shay_state import SessionDB
+        from agent.insights import InsightsEngine
+        from agent.cost_telemetry import daily_cost_summary
+    except Exception as e:  # pragma: no cover — import guard
+        logger.debug("Curator trace evidence imports failed: %s", e)
+        return {}
+
+    db = None
+    try:
+        db = SessionDB()
+        engine = InsightsEngine(db)
+        report = engine.generate(days=days)
+        top_skills = (report.get("skills") or {}).get("top_skills") or []
+        cost = daily_cost_summary(db, days=days)
+        window_spend = float(cost.get("total_usd", 0.0) or 0.0)
+
+        total_actions = sum(
+            (s.get("view_count") or 0) + (s.get("manage_count") or 0)
+            for s in top_skills
+        )
+        out: Dict[str, Dict[str, Any]] = {}
+        for s in top_skills:
+            name = s.get("skill")
+            if not name:
+                continue
+            loads = int(s.get("view_count") or 0)
+            edits = int(s.get("manage_count") or 0)
+            share = ((loads + edits) / total_actions) if total_actions else 0.0
+            out[name] = {
+                "win_loads": loads,
+                "win_edits": edits,
+                "win_cost": round(window_spend * share, 4) if window_spend else None,
+            }
+        return out
+    except Exception as e:
+        logger.debug("Curator trace evidence build failed: %s", e, exc_info=True)
+        return {}
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+
+def _render_candidate_list(trace_grounded: bool = False) -> str:
+    """Human/agent-readable list of agent-created skills with usage stats.
+
+    When *trace_grounded* is True, each row is augmented with measured
+    execution-trace evidence (windowed load/edit counts and a coarse cost
+    attribution) pulled from the session DB. The base lifecycle columns are
+    always present so the output stays backward compatible.
+    """
     rows = skill_usage.agent_created_report()
     if not rows:
         return "No agent-created skills to review."
+
+    trace: Dict[str, Dict[str, Any]] = {}
+    if trace_grounded:
+        trace = _trace_evidence_by_skill()
+
     lines = [f"Agent-created skills ({len(rows)}):\n"]
     for r in rows:
-        lines.append(
+        line = (
             f"- {r['name']}  "
             f"state={r['state']}  "
             f"pinned={'yes' if r.get('pinned') else 'no'}  "
@@ -1363,6 +1472,16 @@ def _render_candidate_list() -> str:
             f"patches={r.get('patch_count', 0)}  "
             f"last_activity={r.get('last_activity_at') or 'never'}"
         )
+        if trace_grounded:
+            ev = trace.get(r["name"], {})
+            cost = ev.get("win_cost")
+            cost_str = f"${cost}" if cost is not None else "?"
+            line += (
+                f"  win_loads={ev.get('win_loads', 0)}  "
+                f"win_edits={ev.get('win_edits', 0)}  "
+                f"win_cost={cost_str}"
+            )
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -1453,7 +1572,8 @@ def run_curator_review(
 
         llm_meta: Dict[str, Any] = {}
         try:
-            candidate_list = _render_candidate_list()
+            trace_grounded = is_trace_grounded()
+            candidate_list = _render_candidate_list(trace_grounded=trace_grounded)
             if "No agent-created skills" in candidate_list:
                 final_summary = f"{prefix}{auto_summary}; llm: skipped (no candidates)"
                 llm_meta = {
@@ -1465,14 +1585,23 @@ def run_curator_review(
                     "error": None,
                 }
             else:
+                # When trace-grounding is on, prepend the preamble that tells
+                # the model how to read the measured-evidence columns. Additive
+                # to the existing review prompt — the base behavior is intact
+                # when the flag is off.
+                review_prompt = CURATOR_REVIEW_PROMPT
+                if trace_grounded:
+                    review_prompt = (
+                        f"{CURATOR_TRACE_GROUNDING_PREAMBLE}\n{CURATOR_REVIEW_PROMPT}"
+                    )
                 if dry_run:
                     prompt = (
                         f"{CURATOR_DRY_RUN_BANNER}\n\n"
-                        f"{CURATOR_REVIEW_PROMPT}\n\n"
+                        f"{review_prompt}\n\n"
                         f"{candidate_list}"
                     )
                 else:
-                    prompt = f"{CURATOR_REVIEW_PROMPT}\n\n{candidate_list}"
+                    prompt = f"{review_prompt}\n\n{candidate_list}"
                 llm_meta = _run_llm_review(prompt)
                 final_summary = (
                     f"{prefix}{auto_summary}; llm: {llm_meta.get('summary', 'no change')}"

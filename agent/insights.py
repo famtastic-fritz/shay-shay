@@ -157,6 +157,7 @@ class InsightsEngine:
         skills = self._compute_skill_breakdown(skill_usage)
         activity = self._compute_activity_patterns(sessions)
         top_sessions = self._compute_top_sessions(sessions)
+        cost_telemetry = self._compute_cost_telemetry(days)
 
         return {
             "days": days,
@@ -170,7 +171,28 @@ class InsightsEngine:
             "skills": skills,
             "activity": activity,
             "top_sessions": top_sessions,
+            "cost_telemetry": cost_telemetry,
         }
+
+    def _compute_cost_telemetry(self, days: int) -> Dict[str, Any]:
+        """Rolling daily $ spend per model/provider (cost/energy telemetry).
+
+        Delegates to ``agent.cost_telemetry.daily_cost_summary`` so the
+        ``/insights`` surface and any ``shay cost`` caller read the same
+        roll-up. Best-effort: a telemetry failure must never break insights.
+        """
+        try:
+            from agent.cost_telemetry import daily_cost_summary
+            return daily_cost_summary(self.db, days=days)
+        except Exception:
+            return {
+                "days": days,
+                "total_usd": 0.0,
+                "by_day": {},
+                "by_model": {},
+                "by_provider": {},
+                "today_usd": 0.0,
+            }
 
     # =========================================================================
     # Data gathering (SQL queries)
