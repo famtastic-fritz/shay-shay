@@ -266,6 +266,78 @@ class TestBuildSkillsSystemPrompt:
         assert "Debug Python scripts" in result
         assert "available_skills" in result
 
+    def _make_skill(self, tmp_path, name, *, scope=None, desc="A skill"):
+        d = tmp_path / "skills" / "lanes" / name
+        d.mkdir(parents=True, exist_ok=True)
+        fm = f"---\nname: {name}\ndescription: {desc}\n"
+        if scope is not None:
+            fm += f"scope: {scope}\n"
+        fm += "---\n"
+        (d / "SKILL.md").write_text(fm)
+
+    def test_worker_scoped_skill_absent_from_primary_lane(self, monkeypatch, tmp_path):
+        """scope: worker MUST NOT appear on the user-facing primary chat turn."""
+        monkeypatch.setenv("SHAY_HOME", str(tmp_path))
+        self._make_skill(tmp_path, "caveman", scope="worker", desc="Compress tokens")
+        self._make_skill(tmp_path, "normal-skill", desc="Always shown")
+
+        from agent.prompt_builder import clear_skills_system_prompt_cache
+
+        clear_skills_system_prompt_cache(clear_snapshot=True)
+        primary = build_skills_system_prompt(lane="primary")
+        assert "caveman" not in primary
+        # An unscoped skill is still present on the primary lane.
+        assert "normal-skill" in primary
+
+    def test_worker_scoped_skill_present_in_worker_lane(self, monkeypatch, tmp_path):
+        """scope: worker MUST appear on a delegated/sub-agent (worker) turn."""
+        monkeypatch.setenv("SHAY_HOME", str(tmp_path))
+        self._make_skill(tmp_path, "caveman", scope="worker", desc="Compress tokens")
+        self._make_skill(tmp_path, "normal-skill", desc="Always shown")
+
+        from agent.prompt_builder import clear_skills_system_prompt_cache
+
+        clear_skills_system_prompt_cache(clear_snapshot=True)
+        worker = build_skills_system_prompt(lane="worker")
+        assert "caveman" in worker
+        # Unscoped skills appear on the worker lane too.
+        assert "normal-skill" in worker
+
+    def test_primary_scoped_skill_absent_from_worker_lane(self, monkeypatch, tmp_path):
+        """scope: primary MUST NOT bleed into delegated/sub-agent turns."""
+        monkeypatch.setenv("SHAY_HOME", str(tmp_path))
+        self._make_skill(tmp_path, "chat-only", scope="primary", desc="UI helper")
+
+        from agent.prompt_builder import clear_skills_system_prompt_cache
+
+        clear_skills_system_prompt_cache(clear_snapshot=True)
+        assert "chat-only" in build_skills_system_prompt(lane="primary")
+        clear_skills_system_prompt_cache(clear_snapshot=True)
+        assert "chat-only" not in build_skills_system_prompt(lane="worker")
+
+    def test_default_lane_is_primary(self, monkeypatch, tmp_path):
+        """No lane arg defaults to primary — worker skills excluded (back-compat safe)."""
+        monkeypatch.setenv("SHAY_HOME", str(tmp_path))
+        self._make_skill(tmp_path, "caveman", scope="worker")
+        from agent.prompt_builder import clear_skills_system_prompt_cache
+
+        clear_skills_system_prompt_cache(clear_snapshot=True)
+        assert "caveman" not in build_skills_system_prompt()
+
+    def test_lane_cache_does_not_cross_contaminate(self, monkeypatch, tmp_path):
+        """Primary and worker lanes must NOT share a cache entry."""
+        monkeypatch.setenv("SHAY_HOME", str(tmp_path))
+        self._make_skill(tmp_path, "caveman", scope="worker")
+        from agent.prompt_builder import clear_skills_system_prompt_cache
+
+        clear_skills_system_prompt_cache(clear_snapshot=True)
+        # Build primary first (populates cache), then worker — worker must
+        # still see the worker-scoped skill despite the warmed primary cache.
+        primary = build_skills_system_prompt(lane="primary")
+        worker = build_skills_system_prompt(lane="worker")
+        assert "caveman" not in primary
+        assert "caveman" in worker
+
     def test_deduplicates_skills(self, monkeypatch, tmp_path):
         monkeypatch.setenv("SHAY_HOME", str(tmp_path))
         cat_dir = tmp_path / "skills" / "tools"

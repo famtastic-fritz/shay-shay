@@ -1027,6 +1027,51 @@ class TestBuildSystemPrompt:
         assert mock_skills.call_args.kwargs["available_tools"] == set(toolset_map)
         assert mock_skills.call_args.kwargs["available_toolsets"] == {"web", "skills"}
 
+    def _build_skills_agent(self, mock_skills):
+        tools = _make_tool_defs("skills_list", "skill_view", "skill_manage")
+        toolset_map = {"skills_list": "skills", "skill_view": "skills", "skill_manage": "skills"}
+        with (
+            patch("run_agent.get_tool_definitions", return_value=tools),
+            patch("run_agent.check_toolset_requirements", return_value={}),
+            patch("run_agent.get_toolset_for_tool", create=True, side_effect=toolset_map.get),
+            patch("run_agent.build_skills_system_prompt", mock_skills),
+            patch("run_agent.OpenAI"),
+        ):
+            agent = AIAgent(
+                api_key="test-k...7890",
+                base_url="https://openrouter.ai/api/v1",
+                quiet_mode=True,
+                skip_context_files=True,
+                skip_memory=True,
+            )
+            return agent
+
+    def test_primary_agent_uses_primary_lane(self):
+        mock_skills = MagicMock(return_value="SKILLS_PROMPT")
+        agent = self._build_skills_agent(mock_skills)
+        # Top-level agent: _delegate_depth defaults to 0 → primary lane.
+        with (
+            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("skills_list", "skill_view", "skill_manage")),
+            patch("run_agent.get_toolset_for_tool", create=True, side_effect={"skills_list": "skills", "skill_view": "skills", "skill_manage": "skills"}.get),
+            patch("run_agent.build_skills_system_prompt", mock_skills),
+        ):
+            agent._build_system_prompt()
+        assert mock_skills.call_args.kwargs["lane"] == "primary"
+
+    def test_worker_agent_uses_worker_lane(self):
+        mock_skills = MagicMock(return_value="SKILLS_PROMPT")
+        agent = self._build_skills_agent(mock_skills)
+        # Simulate delegation: delegate_tool sets _delegate_depth > 0 on the
+        # child after construction, before the prompt is built.
+        agent._delegate_depth = 1
+        with (
+            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("skills_list", "skill_view", "skill_manage")),
+            patch("run_agent.get_toolset_for_tool", create=True, side_effect={"skills_list": "skills", "skill_view": "skills", "skill_manage": "skills"}.get),
+            patch("run_agent.build_skills_system_prompt", mock_skills),
+        ):
+            agent._build_system_prompt()
+        assert mock_skills.call_args.kwargs["lane"] == "worker"
+
 
 class TestToolUseEnforcementConfig:
     """Tests for the agent.tool_use_enforcement config option."""

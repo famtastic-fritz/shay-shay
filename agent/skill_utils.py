@@ -301,6 +301,82 @@ def extract_skill_conditions(frontmatter: Dict[str, Any]) -> Dict[str, List]:
     }
 
 
+# ── Skill scope (lane) extraction ──────────────────────────────────────────
+
+# Valid lane-scope values for a skill. A skill is injected into a turn only
+# when the turn's lane is allowed by its scope:
+#   "all"     (default)  → injected into BOTH primary and worker/delegation turns
+#   "worker"             → injected ONLY into delegated/sub-agent (worker) turns;
+#                          EXCLUDED from the user-facing primary chat turn
+#   "primary"            → injected ONLY into the primary chat turn; EXCLUDED
+#                          from delegated/sub-agent turns
+# Aliases are accepted so skill authors can write the value naturally.
+_SCOPE_ALIASES = {
+    "all": "all",
+    "any": "all",
+    "both": "all",
+    "*": "all",
+    "": "all",
+    "worker": "worker",
+    "workers": "worker",
+    "delegation": "worker",
+    "delegation-only": "worker",
+    "delegation_only": "worker",
+    "subagent": "worker",
+    "sub-agent": "worker",
+    "primary": "primary",
+    "chat": "primary",
+    "user": "primary",
+    "user-facing": "primary",
+    "primary-only": "primary",
+}
+
+# Lanes a prompt build can run in.  build_skills_system_prompt(lane=...)
+LANE_PRIMARY = "primary"
+LANE_WORKER = "worker"
+
+
+def extract_skill_scope(frontmatter: Dict[str, Any]) -> str:
+    """Return the normalized lane-scope for a skill: ``all``/``worker``/``primary``.
+
+    The scope is read from a top-level ``scope:`` field in the SKILL.md
+    frontmatter, or from ``metadata.shay.scope`` if present (the top-level
+    field wins).  Unknown / missing values fall back to ``all`` (the
+    backward-compatible default — every existing skill keeps appearing on
+    every turn).
+    """
+    raw = frontmatter.get("scope")
+    if raw is None:
+        metadata = frontmatter.get("metadata")
+        if isinstance(metadata, dict):
+            shay = metadata.get("shay")
+            if isinstance(shay, dict):
+                raw = shay.get("scope")
+    if raw is None:
+        return "all"
+    key = str(raw).strip().lower()
+    return _SCOPE_ALIASES.get(key, "all")
+
+
+def scope_allows_lane(scope: str, lane: str) -> bool:
+    """Return True when a skill with *scope* should appear on a *lane* turn.
+
+    ``lane`` is one of ``LANE_PRIMARY`` / ``LANE_WORKER`` (anything else is
+    treated as primary).  ``all`` always matches; ``worker`` matches only the
+    worker lane; ``primary`` matches only the primary lane.
+    """
+    scope = (scope or "all").strip().lower()
+    if scope == "all":
+        return True
+    target_lane = LANE_WORKER if str(lane).strip().lower() == LANE_WORKER else LANE_PRIMARY
+    if scope == "worker":
+        return target_lane == LANE_WORKER
+    if scope == "primary":
+        return target_lane == LANE_PRIMARY
+    # Unknown scope — fail open (show everywhere), matching platform default.
+    return True
+
+
 # ── Skill config extraction ───────────────────────────────────────────────
 
 

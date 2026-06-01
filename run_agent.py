@@ -5819,9 +5819,17 @@ class AIAgent:
                 )
                 if toolset
             }
+            # Lane scoping: delegated/sub-agent turns (depth > 0) run the
+            # "worker" lane so worker-scoped skills (scope: worker) are
+            # injected there and EXCLUDED from the user-facing primary chat
+            # turn. _delegate_depth is set on the child after construction in
+            # delegate_tool._build_child_agent, before the system prompt is
+            # built lazily on first run — so this read is reliable.
+            _skills_lane = "worker" if getattr(self, "_delegate_depth", 0) > 0 else "primary"
             skills_prompt = build_skills_system_prompt(
                 available_tools=self.valid_tool_names,
                 available_toolsets=avail_toolsets,
+                lane=_skills_lane,
             )
         else:
             skills_prompt = ""

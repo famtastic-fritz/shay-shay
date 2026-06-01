@@ -16,12 +16,16 @@ from shay_constants import get_shay_home, get_skills_dir, is_wsl
 from typing import Optional
 
 from agent.skill_utils import (
+    LANE_PRIMARY,
+    LANE_WORKER,
     extract_skill_conditions,
     extract_skill_description,
+    extract_skill_scope,
     get_all_skills_dirs,
     get_disabled_skill_names,
     iter_skill_index_files,
     parse_frontmatter,
+    scope_allows_lane,
     skill_matches_platform,
 )
 from utils import atomic_json_write
@@ -833,7 +837,7 @@ CONTEXT_TRUNCATE_TAIL_RATIO = 0.2
 _SKILLS_PROMPT_CACHE_MAX = 8
 _SKILLS_PROMPT_CACHE: OrderedDict[tuple, str] = OrderedDict()
 _SKILLS_PROMPT_CACHE_LOCK = threading.Lock()
-_SKILLS_SNAPSHOT_VERSION = 1
+_SKILLS_SNAPSHOT_VERSION = 2  # bumped: snapshot entries now carry "scope" (lane)
 
 
 def _skills_prompt_snapshot_path() -> Path:
@@ -928,6 +932,7 @@ def _build_snapshot_entry(
         "description": description,
         "platforms": [str(p).strip() for p in platforms if str(p).strip()],
         "conditions": extract_skill_conditions(frontmatter),
+        "scope": extract_skill_scope(frontmatter),
     }
 
 
@@ -1052,8 +1057,17 @@ def _apply_skill_count_cap(
 def build_skills_system_prompt(
     available_tools: "set[str] | None" = None,
     available_toolsets: "set[str] | None" = None,
+    lane: str = LANE_PRIMARY,
 ) -> str:
     """Build a compact skill index for the system prompt.
+
+    *lane* selects which scoping lane this prompt is for:
+      - ``"primary"`` (default): the user-facing chat turn. Skills declaring
+        ``scope: worker`` are EXCLUDED.
+      - ``"worker"``: a delegated / sub-agent turn. Skills declaring
+        ``scope: primary`` are EXCLUDED; ``scope: worker`` skills ARE included.
+    Skills with no ``scope`` (or ``scope: all``) appear on every lane — the
+    backward-compatible default.
 
     Two-layer cache:
       1. In-process LRU dict keyed by (skills_dir, tools, toolsets)
@@ -1084,6 +1098,7 @@ def build_skills_system_prompt(
     )
     disabled = get_disabled_skill_names()
     _cap_max, _cap_always = _read_skills_cap_config()
+    _lane = LANE_WORKER if str(lane).strip().lower() == LANE_WORKER else LANE_PRIMARY
     cache_key = (
         str(skills_dir.resolve()),
         tuple(str(d) for d in external_dirs),
@@ -1093,6 +1108,7 @@ def build_skills_system_prompt(
         tuple(sorted(disabled)),
         _cap_max,
         tuple(sorted(_cap_always)),
+        _lane,
     )
     with _SKILLS_PROMPT_CACHE_LOCK:
         cached = _SKILLS_PROMPT_CACHE.get(cache_key)
@@ -1119,6 +1135,8 @@ def build_skills_system_prompt(
                 continue
             if frontmatter_name in disabled or skill_name in disabled:
                 continue
+            if not scope_allows_lane(entry.get("scope", "all"), _lane):
+                continue
             if not _skill_should_show(
                 entry.get("conditions") or {},
                 available_tools,
@@ -1143,6 +1161,8 @@ def build_skills_system_prompt(
                 continue
             skill_name = entry["skill_name"]
             if entry["frontmatter_name"] in disabled or skill_name in disabled:
+                continue
+            if not scope_allows_lane(entry.get("scope", "all"), _lane):
                 continue
             if not _skill_should_show(
                 extract_skill_conditions(frontmatter),
@@ -1198,6 +1218,8 @@ def build_skills_system_prompt(
                 if frontmatter_name in seen_skill_names:
                     continue
                 if frontmatter_name in disabled or skill_name in disabled:
+                    continue
+                if not scope_allows_lane(entry.get("scope", "all"), _lane):
                     continue
                 if not _skill_should_show(
                     extract_skill_conditions(frontmatter),
