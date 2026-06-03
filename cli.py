@@ -2915,6 +2915,23 @@ class ShayCLI:
                 return name
         return None
 
+    def _is_known_alias(self, name):
+        """True if *name* is a configured or built-in model alias name.
+
+        Used to validate the base of a `-think`/`-fast`/`-max` mode suffix
+        before stripping it, so real model ids ending in those tokens are
+        not mistaken for a mode request.
+        """
+        try:
+            from shay_cli.model_switch import (
+                _ensure_direct_aliases, DIRECT_ALIASES, MODEL_ALIASES,
+            )
+            _ensure_direct_aliases()
+        except Exception:
+            return False
+        n = (name or "").lower()
+        return bool(n) and (n in DIRECT_ALIASES or n in MODEL_ALIASES)
+
     @staticmethod
     def _status_bar_display_width(text: str) -> int:
         """Return terminal cell width for status-bar text.
@@ -6659,6 +6676,22 @@ class ShayCLI:
         # Parse --provider and --global flags
         model_input, explicit_provider, persist_global = parse_model_flags(raw_args)
 
+        # FAMtastic: optional mode suffix on the alias sets reasoning effort
+        # alongside the model switch — the 5th naming slot. -fast = light/no
+        # thinking, -think = high, -max = maximum. Only stripped when the base
+        # (minus suffix) is a known alias, so real model ids ending in these
+        # tokens are left alone.
+        mode_effort = None
+        if model_input:
+            _MODE_SUFFIX = {"-fast": "minimal", "-think": "high", "-max": "xhigh"}
+            for suf, eff in _MODE_SUFFIX.items():
+                if model_input.lower().endswith(suf):
+                    base = model_input[: -len(suf)]
+                    if self._is_known_alias(base):
+                        model_input = base
+                        mode_effort = eff
+                    break
+
         # Load providers for switch_model (picker path needs them below)
         user_provs = None
         custom_provs = None
@@ -6752,6 +6785,19 @@ class ShayCLI:
             except Exception as exc:
                 _cprint(f"  ⚠ Agent swap failed ({exc}); change applied to next session.")
 
+        # FAMtastic: apply the mode suffix's reasoning effort, if any. Mirrors
+        # /reasoning: set reasoning_config + force agent re-init so the new
+        # effort takes hold next turn. Persisted only with --global.
+        mode_label = None
+        if mode_effort:
+            parsed_rc = _parse_reasoning_config(mode_effort)
+            if parsed_rc is not None:
+                self.reasoning_config = parsed_rc
+                self.agent = None  # re-init with new reasoning config next turn
+                mode_label = mode_effort
+                if persist_global:
+                    save_config_value("agent.reasoning_effort", mode_effort)
+
         # Store a note to prepend to the next user message so the model
         # knows a switch occurred (avoids injecting system messages mid-history
         # which breaks providers and prompt caching).
@@ -6769,6 +6815,9 @@ class ShayCLI:
         if switch_alias:
             _cprint(f"    Model: {result.new_model}")
         _cprint(f"    Provider: {provider_label}")
+        if mode_label:
+            _cprint(f"    Mode: reasoning '{mode_label}'"
+                    f"{' (saved)' if persist_global else ' (session)'}")
 
         # Context: always resolve via the provider-aware chain so Codex OAuth,
         # Copilot, and Nous-enforced caps win over the raw models.dev entry
