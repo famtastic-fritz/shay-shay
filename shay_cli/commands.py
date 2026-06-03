@@ -1515,7 +1515,7 @@ class SlashCommandCompleter(Completer):
         # Config-based direct aliases (preferred — include provider info)
         try:
             from shay_cli.model_switch import (
-                _ensure_direct_aliases, DIRECT_ALIASES, MODEL_ALIASES,
+                _ensure_direct_aliases, DIRECT_ALIASES,
             )
             _ensure_direct_aliases()
             for name, da in DIRECT_ALIASES.items():
@@ -1527,18 +1527,12 @@ class SlashCommandCompleter(Completer):
                         display=name,
                         display_meta=f"{da.model} ({da.provider})",
                     )
-            # Built-in catalog aliases not already covered
-            for name in sorted(MODEL_ALIASES.keys()):
-                if name in seen:
-                    continue
-                if name.startswith(sub_lower) and name != sub_lower:
-                    identity = MODEL_ALIASES[name]
-                    yield Completion(
-                        name,
-                        start_position=-len(sub_text),
-                        display=name,
-                        display_meta=f"{identity.vendor}/{identity.family}",
-                    )
+            # FAMtastic: built-in vendor shortcut aliases (MODEL_ALIASES) are
+            # intentionally NOT surfaced in the /model picker. The picker shows
+            # ONLY the explicitly-configured brains from config.yaml
+            # model_aliases:, so every entry is a known, pinned model+provider.
+            # Built-in aliases still resolve for `shay -m <name>` via
+            # model_switch/models.py — only the picker display is trimmed.
         except Exception:
             pass
         # LM Studio: surface locally-loaded models. Gated on the user actually
