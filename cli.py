@@ -2829,6 +2829,18 @@ class ShayCLI:
         if len(model_short) > 26:
             model_short = f"{model_short[:23]}..."
 
+        # FAMtastic: show the configured alias the user picked (e.g.
+        # free-ntv-gem-flash) instead of the raw model id, so the status bar
+        # always matches the /model selection. Reverse-maps (model, provider)
+        # to a config alias; falls back to the model id when none matches.
+        try:
+            _provider = getattr(agent, "provider", None) or getattr(self, "provider", None) or ""
+            _alias = self._alias_for_model(model_name, _provider)
+            if _alias:
+                model_short = _alias if len(_alias) <= 26 else f"{_alias[:23]}..."
+        except Exception:
+            pass
+
         elapsed_seconds = max(0.0, (datetime.now() - self.session_start).total_seconds())
         snapshot = {
             "model_name": model_name,
@@ -2876,6 +2888,32 @@ class ShayCLI:
                 snapshot["context_percent"] = max(0, min(100, round((context_tokens / context_length) * 100)))
 
         return snapshot
+
+    def _alias_for_model(self, model_name, provider):
+        """Reverse-map a (model, provider) pair to its config alias name.
+
+        FAMtastic: the /model picker and status bar should display the
+        alias the user selected (cost-route-vendor-model, e.g.
+        free-ntv-gem-flash), not the raw resolved model id. Prefer an exact
+        model+provider match; fall back to a model-only match so a
+        canonicalized provider (e.g. ollama->custom) still resolves.
+        """
+        try:
+            from shay_cli.model_switch import _ensure_direct_aliases, DIRECT_ALIASES
+            _ensure_direct_aliases()
+        except Exception:
+            return None
+        ml = (model_name or "").lower()
+        pl = (provider or "").lower()
+        if not ml:
+            return None
+        for name, da in DIRECT_ALIASES.items():
+            if da.model.lower() == ml and pl and da.provider.lower() == pl:
+                return name
+        for name, da in DIRECT_ALIASES.items():
+            if da.model.lower() == ml:
+                return name
+        return None
 
     @staticmethod
     def _status_bar_display_width(text: str) -> int:
@@ -6417,6 +6455,34 @@ class ShayCLI:
         scroll_offset = max(0, min(scroll_offset, n - visible))
         return scroll_offset, visible
 
+    def _tier_usage_note(self, alias, result):
+        """Build an honest tier + usage/limit line from the alias prefix.
+
+        FAMtastic: replaces the per-token $/M rate card (meaningless on the
+        free tier) with what the user actually cares about — am I paying, and
+        what's my ceiling. Free-tier daily request caps mirror the values in
+        tests/agent/test_gemini_free_tier_gate.py.
+        """
+        a = (alias or "").lower()
+        model = (getattr(result, "new_model", "") or "").lower()
+        if a.startswith("free"):
+            if "flash-lite" in model:
+                cap = "~1000 requests/day"
+            elif "pro" in model:
+                cap = "~100 requests/day"
+            elif "flash" in model or "gemini" in model:
+                cap = "~250 requests/day"
+            else:
+                cap = "provider free quota"
+            return f"Usage: FREE tier — {cap}, then falls through to your fallback brain"
+        if a.startswith("sub"):
+            return "Usage: SUBSCRIPTION — covered by your plan, no per-token charge"
+        if a.startswith("local"):
+            return "Usage: LOCAL — unlimited, $0, runs on your machine"
+        if a.startswith("paid"):
+            return "Usage: PAID — metered, billed per token by the provider"
+        return None
+
     def _apply_model_switch_result(self, result, persist_global: bool) -> None:
         if not result.success:
             _cprint(f"  ✗ {result.error_message}")
@@ -6457,7 +6523,13 @@ class ShayCLI:
         )
 
         provider_label = result.provider_label or result.target_provider
-        _cprint(f"  ✓ Model switched: {result.new_model}")
+        # FAMtastic: headline the alias the user picked (e.g. free-ntv-gem-flash)
+        # so the confirmation matches the /model selection; show the resolved
+        # model id underneath when an alias was used.
+        switch_alias = getattr(result, "resolved_via_alias", "") or ""
+        _cprint(f"  ✓ Model switched: {switch_alias or result.new_model}")
+        if switch_alias:
+            _cprint(f"    Model: {result.new_model}")
         _cprint(f"    Provider: {provider_label}")
 
         # Context: always resolve via the provider-aware chain so Codex OAuth,
@@ -6481,9 +6553,12 @@ class ShayCLI:
         if mi:
             if mi.max_output:
                 _cprint(f"    Max output: {mi.max_output:,} tokens")
-            if mi.has_cost_data():
-                _cprint(f"    Cost: {mi.format_cost()}")
             _cprint(f"    Capabilities: {mi.format_capabilities()}")
+        # FAMtastic: replace the per-token $ rate card (confusing on free tier)
+        # with an honest tier + usage/limit readout derived from the alias.
+        usage_note = self._tier_usage_note(switch_alias, result)
+        if usage_note:
+            _cprint(f"    {usage_note}")
 
         cache_enabled = (
             (base_url_host_matches(result.base_url or "", "openrouter.ai") and "claude" in result.new_model.lower())
@@ -6688,7 +6763,11 @@ class ShayCLI:
 
         # Display confirmation with full metadata
         provider_label = result.provider_label or result.target_provider
-        _cprint(f"  ✓ Model switched: {result.new_model}")
+        # FAMtastic: headline the alias the user picked; show model id beneath.
+        switch_alias = getattr(result, "resolved_via_alias", "") or ""
+        _cprint(f"  ✓ Model switched: {switch_alias or result.new_model}")
+        if switch_alias:
+            _cprint(f"    Model: {result.new_model}")
         _cprint(f"    Provider: {provider_label}")
 
         # Context: always resolve via the provider-aware chain so Codex OAuth,
@@ -6709,9 +6788,11 @@ class ShayCLI:
         if mi:
             if mi.max_output:
                 _cprint(f"    Max output: {mi.max_output:,} tokens")
-            if mi.has_cost_data():
-                _cprint(f"    Cost: {mi.format_cost()}")
             _cprint(f"    Capabilities: {mi.format_capabilities()}")
+        # FAMtastic: tier + usage/limit readout instead of the $/M rate card.
+        usage_note = self._tier_usage_note(switch_alias, result)
+        if usage_note:
+            _cprint(f"    {usage_note}")
 
         # Cache notice
         cache_enabled = (
