@@ -645,9 +645,8 @@ def switch_model(
 
         # Resolve credentials for the target provider
         runtime = resolve_runtime_provider(
-            target_provider, user_providers=user_providers,
-            custom_providers=custom_providers,
-            api_key_env_vars=pdef.api_key_env_vars if pdef else None,
+            requested=target_provider,
+            target_model=new_model or None,
         )
         api_key = runtime.get("api_key", "")
         base_url = runtime.get("base_url", "")
@@ -716,11 +715,9 @@ def switch_model(
                     new_model = raw_input
 
         # Resolve credentials for the target provider
-        pdef = resolve_provider_full(target_provider, user_providers, custom_providers)
         runtime = resolve_runtime_provider(
-            target_provider, user_providers=user_providers,
-            custom_providers=custom_providers,
-            api_key_env_vars=pdef.api_key_env_vars if pdef else None,
+            requested=target_provider,
+            target_model=new_model or None,
         )
         api_key = runtime.get("api_key", "")
         base_url = runtime.get("base_url", "")
@@ -737,7 +734,7 @@ def switch_model(
     capabilities = get_model_capabilities(final_model, target_provider)
 
     # Resolve API mode
-    api_mode = determine_api_mode(final_model, target_provider, base_url)
+    api_mode = determine_api_mode(target_provider, base_url)
     if not api_mode:
         if target_provider == "openai-codex":
             api_mode = opencode_model_api_mode(final_model)
