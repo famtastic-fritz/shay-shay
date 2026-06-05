@@ -42,6 +42,11 @@ class _StubCLI:
     api_mode = ""
     _pending_model_switch_note = ""
 
+    def _tier_usage_note(self, alias, result):
+        # Real ShayCLI renders an honest tier/usage line here; irrelevant to the
+        # context-length assertions, so the stub returns nothing.
+        return ""
+
 
 def _run_display(monkeypatch, result):
     import cli as cli_mod

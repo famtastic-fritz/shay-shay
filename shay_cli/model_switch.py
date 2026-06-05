@@ -796,6 +796,46 @@ def get_context_length(
     return None
 
 
+def resolve_display_context_length(
+    model: str,
+    provider: str,
+    base_url: str = "",
+    api_key: str = "",
+    model_info=None,
+    custom_providers=None,
+    config_context_length: int | None = None,
+) -> int | None:
+    """Context length to DISPLAY for a ``/model`` switch — provider-aware.
+
+    Prefers ``agent.model_metadata.get_model_context_length`` — which knows
+    provider-enforced caps (Codex OAuth, Copilot, Nous, …) and ``custom_providers``
+    per-model overrides — over the raw models.dev ``ModelInfo.context_window``.
+    The latter reports the direct-vendor-API window and can lie for capped lanes
+    (e.g. gpt-5.5 is 1.05M direct but 272K on Codex OAuth). Falls back to
+    ``model_info.context_window`` when the resolver yields nothing or raises, and
+    returns ``None`` when neither source has a value.
+
+    ``model_info`` is duck-typed: any object exposing ``.context_window`` works.
+    """
+    try:
+        from agent import model_metadata
+        ctx = model_metadata.get_model_context_length(
+            model,
+            base_url=base_url,
+            api_key=api_key,
+            config_context_length=config_context_length,
+            provider=provider,
+            custom_providers=custom_providers,
+        )
+        if ctx:
+            return int(ctx)
+    except Exception:
+        pass
+    if model_info is not None and getattr(model_info, "context_window", None):
+        return int(model_info.context_window)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Authenticated providers listing (for /model no-args display)
 # ---------------------------------------------------------------------------
