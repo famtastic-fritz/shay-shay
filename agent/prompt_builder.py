@@ -1436,6 +1436,38 @@ def load_soul_md() -> Optional[str]:
         return None
 
 
+def load_persona_md() -> Optional[str]:
+    """Load PERSONA.md from SHAY_HOME and return its content, or None.
+
+    PERSONA.md is the voice layer — tone, cultural frame, speech patterns.
+    Loaded as slot #2 of the system prompt, right after SOUL.md (slot #1).
+    SOUL.md is the operational framework ("what"); PERSONA.md is the
+    voice ("how"). Both live in SHAY_HOME and are backed up to the repo.
+
+    Returns None if PERSONA.md is absent, empty, or unreadable — in that
+    case SOUL.md alone governs identity and no voice layer is appended.
+    """
+    try:
+        from shay_cli.config import ensure_shay_home
+        ensure_shay_home()
+    except Exception as e:
+        logger.debug("Could not ensure SHAY_HOME before loading PERSONA.md: %s", e)
+
+    persona_path = get_shay_home() / "PERSONA.md"
+    if not persona_path.exists():
+        return None
+    try:
+        content = persona_path.read_text(encoding="utf-8").strip()
+        if not content:
+            return None
+        content = _scan_context_content(content, "PERSONA.md")
+        content = _truncate_content(content, "PERSONA.md")
+        return content
+    except Exception as e:
+        logger.debug("Could not read PERSONA.md from %s: %s", persona_path, e)
+        return None
+
+
 def _load_shay_md(cwd_path: Path) -> str:
     """.shay.md / SHAY.md — walk to git root."""
     shay_md_path = _find_shay_md(cwd_path)

@@ -160,7 +160,7 @@ from agent.model_metadata import (
 from agent.context_compressor import ContextCompressor
 from agent.subdirectory_hints import SubdirectoryHintTracker
 from agent.prompt_caching import apply_anthropic_cache_control
-from agent.prompt_builder import build_skills_system_prompt, build_context_files_prompt, build_environment_hints, load_soul_md, TOOL_USE_ENFORCEMENT_GUIDANCE, TOOL_USE_ENFORCEMENT_MODELS, GOOGLE_MODEL_OPERATIONAL_GUIDANCE, OPENAI_MODEL_EXECUTION_GUIDANCE
+from agent.prompt_builder import build_skills_system_prompt, build_context_files_prompt, build_environment_hints, load_soul_md, load_persona_md, TOOL_USE_ENFORCEMENT_GUIDANCE, TOOL_USE_ENFORCEMENT_MODELS, GOOGLE_MODEL_OPERATIONAL_GUIDANCE, OPENAI_MODEL_EXECUTION_GUIDANCE
 from agent.usage_pricing import estimate_usage_cost, normalize_usage
 from agent.codex_responses_adapter import (
     _derive_responses_function_call_id as _codex_derive_responses_function_call_id,
@@ -5747,6 +5747,14 @@ class AIAgent:
                 stable_parts.append(SOUL_GOVERNS_PREAMBLE)
                 stable_parts.append(_soul_content)
                 _soul_loaded = True
+                # PERSONA.md — the voice layer (slot #2). Loaded only when SOUL
+                # is present, since PERSONA extends SOUL rather than replacing
+                # it. SOUL = operational framework ("what"); PERSONA = voice
+                # ("how"). Absent/empty PERSONA.md is fine — SOUL alone still
+                # governs.
+                _persona_content = load_persona_md()
+                if _persona_content:
+                    stable_parts.append(_persona_content)
 
         if not _soul_loaded:
             # Fallback to hardcoded identity (carries the generic concise default
