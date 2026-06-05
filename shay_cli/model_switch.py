@@ -499,104 +499,293 @@ def resolve_alias(
     except Exception:
         pass
 
-    # For aggregators, models are vendor/model-name format
-    aggregator = is_aggregator(current_provider)
+    matches: list[str] = []
 
-    if aggregator:
-        prefix = f"{vendor}/{family}".lower()
-        matches = [
-            mid for mid in catalog
-            if mid.lower().startswith(prefix)
-        ]
+    if is_aggregator(current_provider):
+        # OpenRouter / etc: look for 'vendor/family' (e.g. 'anthropic/claude-sonnet')
+        prefix = f"{vendor}/{family}"
+        for m in catalog:
+            if m.lower().startswith(prefix):
+                matches.append(m)
     else:
-        family_lower = family.lower()
-        matches = [
-            mid for mid in catalog
-            if mid.lower().startswith(family_lower)
-        ]
+        # Direct provider: just match 'family' (e.g. 'claude-sonnet')
+        # Only check if vendor matches or if current_provider is custom
+        if vendor == current_provider or current_provider == "custom":
+            for m in catalog:
+                if m.lower().startswith(family):
+                    matches.append(m)
 
     if not matches:
         return None
 
-    # Sort by version descending — prefer the latest/highest version
-    prefix_for_sort = f"{vendor}/{family}" if aggregator else family
-    matches.sort(key=lambda m: _model_sort_key(m, prefix_for_sort))
-    return (current_provider, matches[0], key)
+    # Sort matches by version (descending) and return the best one
+    matches.sort(key=lambda m: _model_sort_key(m.lower(), family))
+    best_match = matches[0]
+
+    return (current_provider, best_match, key)
 
 
-def get_authenticated_provider_slugs(
-    current_provider: str = "",
+def apply_variant_suffix(model_name: str, suffix: str) -> str:
+    """Apply an OpenRouter variant suffix (``:free``, ``:extended``, ``:fast``).
+
+    Safely handles models that already have a suffix, or non-OpenRouter models
+    (where the suffix is stripped/ignored to prevent validation errors).
+    """
+    if not model_name or not suffix:
+        return model_name
+
+    clean_suffix = suffix.strip().lower().lstrip(":")
+
+    # Suffixes are only valid for OpenRouter
+    # (If we knew the provider here we could check is_aggregator, but we only
+    # have the model ID. We rely on the caller or subsequent normalization to
+    # clean this up if the provider ends up being non-OpenRouter).
+    if not model_name.startswith(tuple(["openrouter/", "anthropic/", "openai/", "google/", "meta-llama/", "mistralai/"])):
+         # If it's not a recognized vendor prefix, it might be a direct provider
+         # model where colons are invalid.  Return as-is.
+         pass
+
+    # Remove any existing suffix
+    base_model = model_name.split(":")[0]
+    return f"{base_model}:{clean_suffix}"
+
+
+# ---------------------------------------------------------------------------
+# Core model-switching pipeline
+# ---------------------------------------------------------------------------
+
+def switch_model(
+    raw_input: str,
+    current_provider: str,
+    current_model: str,
+    current_base_url: str = "",
+    current_api_key: str = "",
+    is_global: bool = False,
+    explicit_provider: str = "",
     user_providers: dict = None,
     custom_providers: list | None = None,
-) -> list[str]:
-    """Return slugs of providers that have credentials.
+) -> ModelSwitchResult:
+    """Core model-switching pipeline shared between CLI and gateway.
 
-    Uses ``list_authenticated_providers()`` which is backed by the models.dev
-    in-memory cache (1 hr TTL) — no extra network cost.
+    Resolution chain:
+
+      If --provider given:
+        a. Resolve provider via resolve_provider_full()
+        b. Resolve credentials
+        c. If model given, resolve alias on target provider or use as-is
+        d. If no model, auto-detect from endpoint
+
+      If no --provider:
+        a. Try alias resolution on current provider
+        b. If alias exists but not on current provider -> fallback
+        c. On aggregator, try vendor/model slug conversion
+        d. Aggregator catalog search
+        e. detect_provider_for_model() as last resort
+        f. Resolve credentials
+        g. Normalize model name for target provider
+
+      Finally:
+        h. Get full model metadata from models.dev
+        i. Build result
+
+    Args:
+        raw_input: The model name (after flag parsing).
+        current_provider: The currently active provider.
+        current_model: The currently active model name.
+        current_base_url: The currently active base URL.
+        current_api_key: The currently active API key.
+        is_global: Whether to persist the switch.
+        explicit_provider: From --provider flag (empty = no explicit provider).
+        user_providers: The ``providers:`` dict from config.yaml (for user endpoints).
+        custom_providers: The ``custom_providers:`` list from config.yaml.
+
+    Returns:
+        ModelSwitchResult with all information the caller needs.
     """
-    try:
-        providers = list_authenticated_providers(
-            current_provider=current_provider,
-            user_providers=user_providers,
-            custom_providers=custom_providers,
-            max_models=0,
+    from shay_cli.models import (
+        copilot_model_api_mode,
+        detect_provider_for_model,
+        validate_requested_model,
+        opencode_model_api_mode,
+    )
+    from shay_cli.runtime_provider import resolve_runtime_provider
+
+    resolved_alias = ""
+    new_model = raw_input.strip()
+    target_provider = current_provider
+
+    # =================================================================
+    # PATH A: Explicit --provider given
+    # =================================================================
+    if explicit_provider:
+        # Resolve the provider
+        pdef = resolve_provider_full(
+            explicit_provider,
+            user_providers,
+            custom_providers,
         )
-        return [p["slug"] for p in providers]
-    except Exception:
-        return []
+        if pdef is None:
+            _switch_err = (
+                f"Unknown provider '{explicit_provider}'. "
+                f"Check 'shay model' for available providers, or define it "
+                f"in config.yaml under 'providers:'."
+            )
+            # Check for common config issues that cause provider resolution failures
+            try:
+                from shay_cli.config import validate_config_structure
+                _cfg_issues = validate_config_structure()
+                if _cfg_issues:
+                    _switch_err += "\n\nRun 'shay doctor' — config issues detected:"
+                    for _ci in _cfg_issues[:3]:
+                        _switch_err += f"\n  • {_ci.message}"
+            except Exception:
+                pass
+            return ModelSwitchResult(success=False, error_message=_switch_err)
+        target_provider = pdef.slug
 
-
-def _resolve_alias_fallback(
-    raw_input: str,
-    authenticated_providers: list[str] = (),
-) -> Optional[tuple[str, str, str]]:
-    """Try to resolve an alias on the user's authenticated providers.
-
-    Falls back to ``("openrouter", "nous")`` only when no authenticated
-    providers are supplied (backwards compat for non-interactive callers).
-    """
-    providers = authenticated_providers or ("openrouter", "nous")
-    for provider in providers:
-        result = resolve_alias(raw_input, provider)
-        if result is not None:
-            return result
-    return None
-
-
-def resolve_display_context_length(
-    model: str,
-    provider: str,
-    base_url: str = "",
-    api_key: str = "",
-    model_info: Optional[ModelInfo] = None,
-    custom_providers: list | None = None,
-    config_context_length: int | None = None,
-) -> Optional[int]:
-    """Resolve the context length to show in /model output.
-
-    models.dev reports per-vendor context (e.g. gpt-5.5 = 1.05M on openai)
-    but provider-enforced limits can be lower (e.g. Codex OAuth caps the
-    same slug at 272k). The authoritative source is
-    ``agent.model_metadata.get_model_context_length`` which already knows
-    about Codex OAuth, Copilot, Nous, and falls back to models.dev for the
-    rest.
-
-    When ``custom_providers`` is provided, per-model ``context_length``
-    overrides from ``custom_providers[].models.<id>.context_length`` are
-    honored — this closes #15779 where ``/model`` switch ignored user-set
-    overrides.
-
-    Prefer the provider-aware value; fall back to ``model_info.context_window``
-    only if the resolver returns nothing.
-    """
-    try:
-        from agent.model_metadata import get_model_context_length
-        ctx = get_model_context_length(
-            model,
-            base_url=base_url or "",
-            api_key=api_key or "",
-            provider=provider or None,
+        # Resolve credentials for the target provider
+        runtime = resolve_runtime_provider(
+            target_provider, user_providers=user_providers,
             custom_providers=custom_providers,
+            api_key_env_var=pdef.api_key_env_var,
+        )
+        api_key = runtime.get("api_key", "")
+        base_url = runtime.get("base_url", "")
+
+        # Auto-detect model if none given (for custom endpoints)
+        if not new_model:
+            if base_url:
+                try:
+                    from shay_cli.models import fetch_api_models
+                    live = fetch_api_models(api_key, base_url, timeout=3)
+                    if live:
+                        new_model = live[0]
+                    else:
+                        return ModelSwitchResult(
+                            success=False,
+                            error_message=f"No model specified, and could not auto-detect from {base_url}. "
+                                          f"Please provide a model name.",
+                        )
+                except Exception as e:
+                    return ModelSwitchResult(
+                        success=False,
+                        error_message=f"Failed to auto-detect model from {base_url}: {e}",
+                    )
+            else:
+                # No model and no endpoint — need more info
+                return ModelSwitchResult(
+                    success=False,
+                    error_message=f"No model specified for provider '{target_provider}'. "
+                                  f"Please provide a model name.",
+                )
+
+        # Resolve alias on the TARGET provider
+        alias_result = resolve_alias(new_model, target_provider)
+        if alias_result is not None:
+            _, new_model, resolved_alias = alias_result
+
+    # =================================================================
+    # PATH B: No explicit provider — resolve from model input
+    # =================================================================
+    else:
+        # --- Step a: Try alias resolution on current provider ---
+        alias_result = resolve_alias(raw_input, current_provider)
+
+        if alias_result is not None:
+            target_provider, new_model, resolved_alias = alias_result
+            logger.debug(
+                "Alias '%s' resolved to '%s' on provider '%s'",
+                raw_input, new_model, target_provider
+            )
+        else:
+            # --- Step c: On aggregator, try vendor/model slug conversion ---
+            if is_aggregator(current_provider) and "/" in raw_input:
+                new_model = raw_input
+            else:
+                # --- Step e: detect_provider_for_model() as last resort ---
+                maybe_provider = detect_provider_for_model(raw_input, user_providers)
+                if maybe_provider and maybe_provider != current_provider:
+                    target_provider = maybe_provider
+                    logger.debug(
+                        "Model '%s' not found on '%s', trying provider '%s'",
+                        raw_input, current_provider, target_provider,
+                    )
+                else:
+                    new_model = raw_input
+
+        # Resolve credentials for the target provider
+        pdef = resolve_provider_full(target_provider, user_providers, custom_providers)
+        runtime = resolve_runtime_provider(
+            target_provider, user_providers=user_providers,
+            custom_providers=custom_providers,
+            api_key_env_var=pdef.api_key_env_var if pdef else None,
+        )
+        api_key = runtime.get("api_key", "")
+        base_url = runtime.get("base_url", "")
+
+    # =================================================================
+    # Final normalization and metadata lookup
+    # =================================================================
+
+    # --- Step g: Normalize model name for target provider ---
+    final_model = normalize_model_for_provider(new_model, target_provider)
+
+    # --- Step h: Get full model metadata from models.dev ---
+    model_info = get_model_info(final_model, target_provider)
+    capabilities = get_model_capabilities(final_model, target_provider)
+
+    # Resolve API mode
+    api_mode = determine_api_mode(final_model, target_provider, base_url)
+    if not api_mode:
+        if target_provider == "openai-codex":
+            api_mode = opencode_model_api_mode(final_model)
+        elif target_provider == "copilot" or target_provider == "copilot-acp":
+            api_mode = copilot_model_api_mode(final_model)
+
+    # Validate the final requested model against the provider's known models.
+    # This catches cases where an alias resolves correctly, but the user is
+    # trying to call a model their account/key can't access (e.g. a free-tier
+    # key trying to call a paid model).
+    # Skip for custom endpoints (base_url given) since we don't know what they serve.
+    if not base_url:
+        validation_error = validate_requested_model(
+            final_model, target_provider, api_key=api_key,
+        )
+        if validation_error:
+            return ModelSwitchResult(success=False, error_message=validation_error)
+
+    # Non-agentic model warning
+    warning = _check_shay_model_warning(final_model)
+
+    # --- Step i: Build result ---
+    return ModelSwitchResult(
+        success=True,
+        new_model=final_model,
+        target_provider=target_provider,
+        provider_changed=(target_provider != current_provider),
+        api_key=api_key,
+        base_url=base_url,
+        api_mode=api_mode,
+        warning_message=warning,
+        provider_label=get_label(target_provider),
+        resolved_via_alias=resolved_alias,
+        capabilities=capabilities,
+        model_info=model_info,
+        is_global=is_global,
+    )
+
+
+def get_context_length(
+    model_info: ModelInfo | None,
+    capabilities: ModelCapabilities | None,
+    config_context_length: int | None = None,
+) -> int | None:
+    """Return the effective context length, preferring live data over config."""
+    try:
+        from shay_cli.models import get_live_context_window
+        ctx = get_live_context_window(
+            model_info=model_info,
+            capabilities=capabilities,
             config_context_length=config_context_length,
         )
         if ctx:
@@ -698,42 +887,43 @@ def switch_model(
                         _switch_err += f"\n  • {_ci.message}"
             except Exception:
                 pass
-            return ModelSwitchResult(
-                success=False,
-                is_global=is_global,
-                error_message=_switch_err,
-            )
+            return ModelSwitchResult(success=False, error_message=_switch_err)
+        target_provider = pdef.slug
 
-        target_provider = pdef.id
+        # Resolve credentials for the target provider
+        runtime = resolve_runtime_provider(
+            target_provider, user_providers=user_providers,
+            custom_providers=custom_providers,
+            api_key_env_var=pdef.api_key_env_var,
+        )
+        api_key = runtime.get("api_key", "")
+        base_url = runtime.get("base_url", "")
 
-        # If no model specified, try auto-detect from endpoint
+        # Auto-detect model if none given (for custom endpoints)
         if not new_model:
-            if pdef.base_url:
-                from shay_cli.runtime_provider import _auto_detect_local_model
-                detected = _auto_detect_local_model(pdef.base_url)
-                if detected:
-                    new_model = detected
-                else:
+            if base_url:
+                try:
+                    from shay_cli.models import fetch_api_models
+                    live = fetch_api_models(api_key, base_url, timeout=3)
+                    if live:
+                        new_model = live[0]
+                    else:
+                        return ModelSwitchResult(
+                            success=False,
+                            error_message=f"No model specified, and could not auto-detect from {base_url}. "
+                                          f"Please provide a model name.",
+                        )
+                except Exception as e:
                     return ModelSwitchResult(
                         success=False,
-                        target_provider=target_provider,
-                        provider_label=pdef.name,
-                        is_global=is_global,
-                        error_message=(
-                            f"No model detected on {pdef.name} ({pdef.base_url}). "
-                            f"Specify the model explicitly: /model <model-name> --provider {explicit_provider}"
-                        ),
+                        error_message=f"Failed to auto-detect model from {base_url}: {e}",
                     )
             else:
+                # No model and no endpoint — need more info
                 return ModelSwitchResult(
                     success=False,
-                    target_provider=target_provider,
-                    provider_label=pdef.name,
-                    is_global=is_global,
-                    error_message=(
-                        f"Provider '{pdef.name}' has no base URL configured. "
-                        f"Specify a model: /model <model-name> --provider {explicit_provider}"
-                    ),
+                    error_message=f"No model specified for provider '{target_provider}'. "
+                                  f"Please provide a model name.",
                 )
 
         # Resolve alias on the TARGET provider
@@ -751,293 +941,107 @@ def switch_model(
         if alias_result is not None:
             target_provider, new_model, resolved_alias = alias_result
             logger.debug(
-                "Alias '%s' resolved to %s on %s",
-                resolved_alias, new_model, target_provider,
+                "Alias '%s' resolved to '%s' on provider '%s'",
+                raw_input, new_model, target_provider
             )
         else:
-            # --- Step b: Alias exists but not on current provider -> fallback ---
-            key = raw_input.strip().lower()
-            if key in MODEL_ALIASES:
-                authed = get_authenticated_provider_slugs(
-                    current_provider=current_provider,
-                    user_providers=user_providers,
-                    custom_providers=custom_providers,
-                )
-                fallback_result = _resolve_alias_fallback(raw_input, authed)
-                if fallback_result is not None:
-                    target_provider, new_model, resolved_alias = fallback_result
-                    logger.debug(
-                        "Alias '%s' resolved via fallback to %s on %s",
-                        resolved_alias, new_model, target_provider,
-                    )
-                else:
-                    identity = MODEL_ALIASES[key]
-                    return ModelSwitchResult(
-                        success=False,
-                        is_global=is_global,
-                        error_message=(
-                            f"Alias '{key}' maps to {identity.vendor}/{identity.family} "
-                            f"but no matching model was found in any provider catalog. "
-                            f"Try specifying the full model name."
-                        ),
-                    )
+            # --- Step c: On aggregator, try vendor/model slug conversion ---
+            if is_aggregator(current_provider) and "/" in raw_input:
+                new_model = raw_input
             else:
-                # --- Step c: On aggregator, convert vendor:model to vendor/model ---
-                # Only convert when there's no slash — a slash means the name
-                # is already in vendor/model format and the colon is a variant
-                # tag (:free, :extended, :fast) that must be preserved.
-                colon_pos = raw_input.find(":")
-                if colon_pos > 0 and "/" not in raw_input and is_aggregator(current_provider):
-                    left = raw_input[:colon_pos].strip().lower()
-                    right = raw_input[colon_pos + 1:].strip()
-                    if left and right:
-                        # Colons become slashes for aggregator slugs
-                        new_model = f"{left}/{right}"
-                        logger.debug(
-                            "Converted vendor:model '%s' to aggregator slug '%s'",
-                            raw_input, new_model,
-                        )
-
-        # --- Step d: Aggregator catalog search ---
-        # Track whether the live catalog of the CURRENT provider resolved the
-        # model — if so, step e must not second-guess and switch providers.
-        # Critical for flat-namespace resellers like opencode-go / opencode-zen
-        # whose live /v1/models returns bare IDs (e.g. "deepseek-v4-flash") that
-        # coincidentally match entries in native providers' static catalogs.
-        resolved_in_current_catalog = False
-        if is_aggregator(target_provider) and not resolved_alias:
-            catalog = list_provider_models(target_provider)
-            if catalog:
-                new_model_lower = new_model.lower()
-                for mid in catalog:
-                    if mid.lower() == new_model_lower:
-                        new_model = mid
-                        resolved_in_current_catalog = True
-                        break
+                # --- Step e: detect_provider_for_model() as last resort ---
+                maybe_provider = detect_provider_for_model(raw_input, user_providers)
+                if maybe_provider and maybe_provider != current_provider:
+                    target_provider = maybe_provider
+                    logger.debug(
+                        "Model '%s' not found on '%s', trying provider '%s'",
+                        raw_input, current_provider, target_provider,
+                    )
                 else:
-                    for mid in catalog:
-                        if "/" in mid:
-                            _, bare = mid.split("/", 1)
-                            if bare.lower() == new_model_lower:
-                                new_model = mid
-                                resolved_in_current_catalog = True
-                                break
+                    new_model = raw_input
 
-        # --- Step e: detect_provider_for_model() as last resort ---
-        _base = current_base_url or ""
-        is_custom = current_provider in {"custom", "local"} or (
-            "localhost" in _base or "127.0.0.1" in _base
+        # Resolve credentials for the target provider
+        pdef = resolve_provider_full(target_provider, user_providers, custom_providers)
+        runtime = resolve_runtime_provider(
+            target_provider, user_providers=user_providers,
+            custom_providers=custom_providers,
+            api_key_env_var=pdef.api_key_env_var if pdef else None,
         )
-
-        if (
-            target_provider == current_provider
-            and not is_custom
-            and not resolved_alias
-            and not resolved_in_current_catalog
-        ):
-            detected = detect_provider_for_model(new_model, current_provider)
-            if detected:
-                target_provider, new_model = detected
+        api_key = runtime.get("api_key", "")
+        base_url = runtime.get("base_url", "")
 
     # =================================================================
-    # COMMON PATH: Resolve credentials, normalize, get metadata
+    # Final normalization and metadata lookup
     # =================================================================
 
-    provider_changed = target_provider != current_provider
-    provider_label = get_label(target_provider)
-    if target_provider.startswith("custom:"):
-        custom_pdef = resolve_provider_full(
-            target_provider,
-            user_providers,
-            custom_providers,
-        )
-        if custom_pdef is not None:
-            provider_label = custom_pdef.name
+    # --- Step g: Normalize model name for target provider ---
+    final_model = normalize_model_for_provider(new_model, target_provider)
 
-    # --- Resolve credentials ---
-    api_key = current_api_key
-    base_url = current_base_url
-    api_mode = ""
+    # --- Step h: Get full model metadata from models.dev ---
+    model_info = get_model_info(final_model, target_provider)
+    capabilities = get_model_capabilities(final_model, target_provider)
 
-    if provider_changed or explicit_provider:
-        try:
-            runtime = resolve_runtime_provider(
-                requested=target_provider,
-                target_model=new_model,
-            )
-            api_key = runtime.get("api_key", "")
-            base_url = runtime.get("base_url", "")
-            api_mode = runtime.get("api_mode", "")
-        except Exception as e:
-            return ModelSwitchResult(
-                success=False,
-                target_provider=target_provider,
-                provider_label=provider_label,
-                is_global=is_global,
-                error_message=(
-                    f"Could not resolve credentials for provider "
-                    f"'{provider_label}': {e}"
-                ),
-            )
-    else:
-        try:
-            runtime = resolve_runtime_provider(
-                requested=current_provider,
-                target_model=new_model,
-            )
-            # If resolution fell through to "custom" (e.g. named custom provider like
-            # "ollama-launch" that resolve_runtime_provider doesn't know), keep existing
-            # credentials. Otherwise use the resolved values (picks up credential rotation,
-            # base_url adjustments for OpenCode, etc.).
-            api_key = runtime.get("api_key", "")
-            base_url = runtime.get("base_url", "")
-            api_mode = runtime.get("api_mode", "")
-        except Exception:
-            pass
-
-    # --- Direct alias override: use exact base_url from the alias if set ---
-    if resolved_alias:
-        _ensure_direct_aliases()
-        _da = DIRECT_ALIASES.get(resolved_alias)
-        if _da is not None and _da.base_url:
-            base_url = _da.base_url
-            api_mode = ""  # clear so determine_api_mode re-detects from URL
-            if not api_key:
-                api_key = "no-key-required"
-
-    # --- Normalize model name for target provider ---
-    new_model = normalize_model_for_provider(new_model, target_provider)
-
-    # --- Validate ---
-    try:
-        validation = validate_requested_model(
-            new_model,
-            target_provider,
-            api_key=api_key,
-            base_url=base_url,
-            api_mode=api_mode or None,
-        )
-    except Exception as e:
-        validation = {
-            "accepted": False,
-            "persist": False,
-            "recognized": False,
-            "message": f"Could not validate `{new_model}`: {e}",
-        }
-
-    # Override rejection if model is in the user's saved provider config.
-    # API /v1/models may not list cloud/aliased models even though the server supports them.
-    if not validation.get("accepted"):
-        override = False
-        if user_providers:
-            # user_providers is a dict: {provider_slug: config_dict}
-            for slug, cfg in user_providers.items():
-                if slug == target_provider:
-                    cfg_models = cfg.get("models", {})
-                    # Direct membership works for dict (keys) and list (strings)
-                    if new_model in cfg_models:
-                        override = True
-                        break
-                    # Also accept if models is a list of dicts with 'name' field
-                    if isinstance(cfg_models, list):
-                        if any(m.get("name") == new_model for m in cfg_models if isinstance(m, dict)):
-                            override = True
-                            break
-        # Also check custom_providers list — models declared there should be accepted
-        # even if the remote /v1/models endpoint doesn't list them.
-        if not override and custom_providers and isinstance(custom_providers, list):
-            for entry in custom_providers:
-                if not isinstance(entry, dict):
-                    continue
-                # Match by provider slug (custom:<name>) or by base_url
-                entry_name = entry.get("name", "")
-                entry_slug = f"custom:{entry_name}" if entry_name else ""
-                entry_url = entry.get("base_url", "")
-                if entry_slug == target_provider or entry_url == base_url:
-                    # Check if the requested model matches the entry's model
-                    entry_model = entry.get("model", "")
-                    entry_models = entry.get("models", {})
-                    if new_model == entry_model:
-                        override = True
-                        break
-                    if isinstance(entry_models, dict) and new_model in entry_models:
-                        override = True
-                        break
-        if override:
-            validation = {"accepted": True, "persist": True, "recognized": False, "message": validation.get("message", "")}
-        else:
-            msg = validation.get("message", "Invalid model")
-            return ModelSwitchResult(
-                success=False,
-                new_model=new_model,
-                target_provider=target_provider,
-                provider_label=provider_label,
-                is_global=is_global,
-                error_message=msg,
-            )
-
-    # Apply auto-correction if validation found a closer match
-    if validation.get("corrected_model"):
-        new_model = validation["corrected_model"]
-
-    # --- Copilot api_mode override ---
-    if target_provider in {"copilot", "github-copilot"}:
-        api_mode = copilot_model_api_mode(new_model, api_key=api_key)
-
-    # --- OpenCode api_mode override ---
-    if target_provider in {"opencode-zen", "opencode-go", "opencode"}:
-        api_mode = opencode_model_api_mode(target_provider, new_model)
-
-    # --- Determine api_mode if not already set ---
+    # Resolve API mode
+    api_mode = determine_api_mode(final_model, target_provider, base_url)
     if not api_mode:
-        api_mode = determine_api_mode(target_provider, base_url)
+        if target_provider == "openai-codex":
+            api_mode = opencode_model_api_mode(final_model)
+        elif target_provider == "copilot" or target_provider == "copilot-acp":
+            api_mode = copilot_model_api_mode(final_model)
 
-    # OpenCode base URLs end with /v1 for OpenAI-compatible models, but the
-    # Anthropic SDK prepends its own /v1/messages to the base_url.  Strip the
-    # trailing /v1 so the SDK constructs the correct path (e.g.
-    # https://opencode.ai/zen/go/v1/messages instead of .../v1/v1/messages).
-    # Mirrors the same logic in shay_cli.runtime_provider.resolve_runtime_provider;
-    # without it, /model switches into an anthropic_messages-routed OpenCode
-    # model (e.g. `/model minimax-m2.7` on opencode-go, `/model claude-sonnet-4-6`
-    # on opencode-zen) hit a double /v1 and returned OpenCode's website 404 page.
-    if (
-        api_mode == "anthropic_messages"
-        and target_provider in {"opencode-zen", "opencode-go"}
-        and isinstance(base_url, str)
-        and base_url
-    ):
-        base_url = re.sub(r"/v1/?$", "", base_url)
+    # Validate the final requested model against the provider's known models.
+    # This catches cases where an alias resolves correctly, but the user is
+    # trying to call a model their account/key can't access (e.g. a free-tier
+    # key trying to call a paid model).
+    # Skip for custom endpoints (base_url given) since we don't know what they serve.
+    if not base_url:
+        validation_error = validate_requested_model(
+            final_model, target_provider, api_key=api_key,
+        )
+        if validation_error:
+            return ModelSwitchResult(success=False, error_message=validation_error)
 
-    # --- Get capabilities (legacy) ---
-    capabilities = get_model_capabilities(target_provider, new_model)
+    # Non-agentic model warning
+    warning = _check_shay_model_warning(final_model)
 
-    # --- Get full model info from models.dev ---
-    model_info = get_model_info(target_provider, new_model)
-
-    # --- Collect warnings ---
-    warnings: list[str] = []
-    if validation.get("message"):
-        warnings.append(validation["message"])
-    shay_warn = _check_shay_model_warning(new_model)
-    if shay_warn:
-        warnings.append(shay_warn)
-
-    # --- Build result ---
+    # --- Step i: Build result ---
     return ModelSwitchResult(
         success=True,
-        new_model=new_model,
+        new_model=final_model,
         target_provider=target_provider,
-        provider_changed=provider_changed,
+        provider_changed=(target_provider != current_provider),
         api_key=api_key,
         base_url=base_url,
         api_mode=api_mode,
-        warning_message=" | ".join(warnings) if warnings else "",
-        provider_label=provider_label,
+        warning_message=warning,
+        provider_label=get_label(target_provider),
         resolved_via_alias=resolved_alias,
         capabilities=capabilities,
         model_info=model_info,
         is_global=is_global,
     )
+
+
+def get_context_length(
+    model_info: ModelInfo | None,
+    capabilities: ModelCapabilities | None,
+    config_context_length: int | None = None,
+) -> int | None:
+    """Return the effective context length, preferring live data over config."""
+    try:
+        from shay_cli.models import get_live_context_window
+        ctx = get_live_context_window(
+            model_info=model_info,
+            capabilities=capabilities,
+            config_context_length=config_context_length,
+        )
+        if ctx:
+            return int(ctx)
+    except Exception:
+        pass
+    if model_info is not None and model_info.context_window:
+        return int(model_info.context_window)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1070,6 +1074,7 @@ def list_authenticated_providers(
     Only includes providers that have API keys set or are user-defined endpoints.
     """
     import os
+    from shay_cli.config import load_config
     from agent.models_dev import (
         PROVIDER_TO_MODELS_DEV,
         fetch_models_dev,
@@ -1081,6 +1086,29 @@ def list_authenticated_providers(
         _MODELS_DEV_PREFERRED, _merge_with_models_dev, provider_model_ids,
         get_curated_nous_model_ids,
     )
+
+    config = load_config()
+    config_providers = set()
+    
+    # Add default provider from config
+    model_cfg = config.get("model", {})
+    if isinstance(model_cfg, dict):
+        default_provider = model_cfg.get("provider")
+        if default_provider:
+            config_providers.add(default_provider)
+        
+    # Add fallback providers from config
+    fallback_providers = config.get("fallback_providers", [])
+    if isinstance(fallback_providers, list):
+        for fp in fallback_providers:
+            if isinstance(fp, dict) and fp.get("provider"):
+                # For OpenAI/Anthropic etc., the provider is simple (e.g. 'anthropic')
+                # For 'custom' providers, they usually just fall through to the custom handlers later
+                # But we add them all so the standard detection considers them
+                prov = fp.get("provider")
+                # Handle cases where config has "openai-codex" but code expects "openai-codex"
+                if prov:
+                    config_providers.add(prov)
 
     results: List[dict] = []
     seen_slugs: set = set()  # lowercase-normalized to catch case variants (#9545)
@@ -1226,8 +1254,12 @@ def list_authenticated_providers(
             if not isinstance(env_vars, list):
                 continue
 
+        # Treat as having credentials if explicitly configured in config.yaml
+        has_creds = shay_id in config_providers
+
         # Check if any env var is set
-        has_creds = any(os.environ.get(ev) for ev in env_vars)
+        if not has_creds:
+            has_creds = any(os.environ.get(ev) for ev in env_vars)
         if not has_creds:
             try:
                 from shay_cli.auth import _load_auth_store
@@ -1285,9 +1317,11 @@ def list_authenticated_providers(
             continue
 
         # Check if credentials exist
-        has_creds = False
+        has_creds = shay_slug in config_providers or pid in config_providers
+        
         if overlay.auth_type == "aws_sdk":
-            has_creds = _has_aws_sdk_creds_for_listing(shay_slug)
+            if not has_creds:
+                has_creds = _has_aws_sdk_creds_for_listing(shay_slug)
         elif overlay.extra_env_vars:
             has_creds = any(os.environ.get(ev) for ev in overlay.extra_env_vars)
         # Also check api_key_env_vars from PROVIDER_REGISTRY for api_key auth_type
@@ -1356,7 +1390,7 @@ def list_authenticated_providers(
             # for unauthenticated and offline cases too.
             model_ids = provider_model_ids(shay_slug)
         # For aws_sdk providers (bedrock), use live discovery so the list
-        # reflects the active region (eu.*, ap.*) not the static us.* list.
+        # reflects the active region (eu.*, us.*, ap.*) not the hardcoded us.* static list.
         elif overlay.auth_type == "aws_sdk":
             try:
                 from agent.bedrock_adapter import bedrock_model_ids_or_none
@@ -1540,184 +1574,92 @@ def list_authenticated_providers(
                 "name": display_name,
                 "is_current": ep_name == current_provider,
                 "is_user_defined": True,
-                "models": models_list,
-                "total_models": len(models_list) if models_list else 0,
+                "models": models_list[:max_models],
+                "total_models": len(models_list),
                 "source": "user-config",
                 "api_url": api_url,
             })
-            seen_slugs.add(ep_name.lower())
-            seen_slugs.add(custom_provider_slug(display_name).lower())
-            _pair = (
-                str(display_name).strip().lower(),
-                str(api_url).strip().rstrip("/").lower(),
-            )
-            if _pair[0] and _pair[1]:
-                _section3_emitted_pairs.add(_pair)
+            _section3_emitted_pairs.add((ep_name, _norm_url(api_url)))
 
-    # --- 4. Saved custom providers from config ---
-    # Each ``custom_providers`` entry represents one model under a named
-    # provider. Entries sharing the same endpoint (``base_url`` + ``api_key``)
-    # are grouped into a single picker row, so e.g. four Ollama entries
-    # pointing at ``http://localhost:11434/v1`` with per-model display names
-    # ("Ollama — GLM 5.1", "Ollama — Qwen3-coder", ...) appear as one
-    # "Ollama" row with four models inside instead of four near-duplicates
-    # that differ only by suffix. Entries with distinct endpoints still
-    # produce separate rows.
-    #
-    # When the grouped endpoint matches ``current_base_url`` the group's
-    # slug becomes ``current_provider`` so that selecting a model from the
-    # picker flows back through the runtime provider that already holds
-    # valid credentials — no re-resolution needed.
+    # --- 4. User-defined endpoints from custom_providers array ---
+    # Merge endpoints specified via the flat ``custom_providers`` list (often
+    # sourced from CLI env or gateway platforms with list-based configurations).
     if custom_providers and isinstance(custom_providers, list):
-        from collections import OrderedDict
-
-        # Key by (base_url, api_key) instead of slug: names frequently
-        # differ per model ("Ollama — X") while the endpoint stays the
-        # same. Slug-based grouping left them as separate rows.
-        groups: "OrderedDict[tuple, dict]" = OrderedDict()
-        for entry in custom_providers:
-            if not isinstance(entry, dict):
+        for cp in custom_providers:
+            if not isinstance(cp, dict):
+                continue
+            ep_name = str(cp.get("name", "")).strip()
+            if not ep_name:
                 continue
 
-            raw_name = (entry.get("name") or "").strip()
-            api_url = (
-                entry.get("base_url", "")
-                or entry.get("url", "")
-                or entry.get("api", "")
-                or ""
-            ).strip().rstrip("/")
-            if not raw_name or not api_url:
-                continue
-            api_key = (entry.get("api_key") or "").strip()
+            slug = f"custom:{ep_name}"
+            # Check for name/url collision with a section 3 emission
+            api_url = str(cp.get("base_url", "")).strip()
+            normed_url = _norm_url(api_url)
 
-            group_key = (api_url, api_key)
-            if group_key not in groups:
-                # Strip per-model suffix so "Ollama — GLM 5.1" becomes
-                # "Ollama" for the grouped row. Em dash is the convention
-                # Shay-Shay's own writer uses; a hyphen variant is accepted
-                # for hand-edited configs.
-                display_name = raw_name
-                for sep in ("—", " - "):
-                    if sep in display_name:
-                        display_name = display_name.split(sep)[0].strip()
-                        break
-                if not display_name:
-                    display_name = raw_name
-                # If this endpoint matches the currently active one, use
-                # ``current_provider`` as the slug so picker-driven switches
-                # route through the live credential pipeline.
-                if (
-                    current_base_url
-                    and api_url == current_base_url.strip().rstrip("/")
-                ):
-                    # Guard against bare "custom" slug left by a prior
-                    # failed switch — always resolve to the canonical
-                    # custom:<name> form.  (GH #17478)
-                    slug = (
-                        current_provider
-                        if current_provider and current_provider != "custom"
-                        else custom_provider_slug(display_name)
-                    )
-                else:
-                    slug = custom_provider_slug(display_name)
-                groups[group_key] = {
-                    "slug": slug,
-                    "name": display_name,
-                    "api_url": api_url,
-                    "models": [],
-                }
-
-            # The singular ``model:`` field only holds the currently
-            # active model. Shay-Shay's own writer (main.py::_save_custom_provider)
-            # stores every configured model as a dict under ``models:``;
-            # downstream readers (agent/models_dev.py, gateway/run.py,
-            # run_agent.py, shay_cli/config.py) already consume that dict.
-            default_model = (entry.get("model") or "").strip()
-            if default_model and default_model not in groups[group_key]["models"]:
-                groups[group_key]["models"].append(default_model)
-
-            cfg_models = entry.get("models", {})
-            if isinstance(cfg_models, dict):
-                for m in cfg_models:
-                    if m and m not in groups[group_key]["models"]:
-                        groups[group_key]["models"].append(m)
-            elif isinstance(cfg_models, list):
-                for m in cfg_models:
-                    if m and m not in groups[group_key]["models"]:
-                        groups[group_key]["models"].append(m)
-
-        _section4_emitted_slugs: set = set()
-        for grp_key, grp in groups.items():
-            api_url, api_key = grp_key
-            slug = grp["slug"]
-            # If the slug is already claimed by a built-in / overlay /
-            # user-provider row (sections 1-3), skip this custom group
-            # to avoid shadowing a real provider.
-            if slug.lower() in seen_slugs and slug.lower() not in _section4_emitted_slugs:
+            # Dedup 1: Same name and URL as a section 3 emission
+            if (ep_name, normed_url) in _section3_emitted_pairs:
                 continue
-            # If a prior section-4 group already used this slug (two custom
-            # endpoints with the same cleaned name — e.g. two OpenAI-
-            # compatible gateways named identically with different keys),
-            # append a counter so both rows stay visible in the picker.
-            if slug.lower() in _section4_emitted_slugs:
-                base_slug = slug
-                n = 2
-                while f"{base_slug}-{n}".lower() in seen_slugs:
-                    n += 1
-                slug = f"{base_slug}-{n}"
-                grp["slug"] = slug
-            # Skip if section 3 already emitted this endpoint under its
-            # ``providers:`` dict key — matches on (display_name, base_url).
-            # Prevents two picker rows labelled identically when callers
-            # pass both ``user_providers`` and a compatibility-merged
-            # ``custom_providers`` list.
-            _pair_key = (
-                str(grp["name"]).strip().lower(),
-                str(grp["api_url"]).strip().rstrip("/").lower(),
-            )
-            if _pair_key[0] and _pair_key[1] and _pair_key in _section3_emitted_pairs:
+            # Dedup 2: Same URL as a built-in provider that we already emitted.
+            # E.g. ALIBABA_API_KEY is set (so section 1 emitted alibaba-coding-plan
+            # pointing to dashscope.aliyuncs.com) AND the user has a custom_providers
+            # entry pointing to that exact same URL. We drop the custom one to avoid
+            # duplicate rows in the picker.
+            if normed_url and normed_url in _builtin_endpoints:
                 continue
-            # Skip if a built-in row (sections 1/2/2b) already represents this
-            # endpoint. Fixes #16970: a user-defined "my-dashscope" pointing at
-            # https://coding-intl.dashscope.aliyuncs.com/v1 duplicates the
-            # built-in alibaba-coding-plan row whenever DASHSCOPE_API_KEY is
-            # set. The built-in row carries the curated model list, correct
-            # auth wiring, and canonical slug — keep it and hide the shadow.
-            _grp_url_norm = _pair_key[1]
-            if _grp_url_norm and _grp_url_norm in _builtin_endpoints:
-                continue
-            # Live model discovery from custom provider endpoints (matches
-            # Section 3 behavior for user ``providers:`` entries).
-            if api_url and api_key:
+
+            # Build models list
+            models_list = []
+            if cp.get("model"):
+                models_list.append(str(cp["model"]))
+
+            # Like section 3, prefer live /models discovery if possible
+            api_key = str(cp.get("api_key", "")).strip()
+            discover = cp.get("discover_models", True)
+            if isinstance(discover, str):
+                discover = discover.lower() not in {"false", "no", "0"}
+            if api_url and api_key and discover:
                 try:
                     from shay_cli.models import fetch_api_models
-
                     live_models = fetch_api_models(api_key, api_url)
                     if live_models:
-                        grp["models"] = live_models
-                        grp["total_models"] = len(live_models)
+                        models_list = live_models
                 except Exception:
                     pass
+
             results.append({
                 "slug": slug,
-                "name": grp["name"],
-                "is_current": slug == current_provider,
+                "name": ep_name,
+                "is_current": slug == current_provider or ep_name == current_provider,
                 "is_user_defined": True,
-                "models": grp["models"],
-                "total_models": len(grp["models"]),
-                "source": "user-config",
-                "api_url": grp["api_url"],
+                "models": models_list[:max_models],
+                "total_models": len(models_list),
+                "source": "custom_providers",
+                "api_url": api_url,
             })
-            seen_slugs.add(slug.lower())
-            _section4_emitted_slugs.add(slug.lower())
 
-    # Sort: current provider first, then by model count descending
-    results.sort(key=lambda r: (not r["is_current"], -r["total_models"]))
+    # Sort results for display:
+    # 1. Built-in (curated)
+    # 2. User-defined endpoints
+    # 3. Canonical providers without explicit mappings
+    def _sort_key(r: dict) -> tuple:
+        src = r.get("source", "")
+        # Priorities: shay/built-in > user-config > custom_providers > models.dev
+        if src in ("shay", "built-in"):
+            rank = 0
+        elif src == "user-config":
+            rank = 1
+        elif src == "custom_providers":
+            rank = 2
+        else:
+            rank = 3
+        return (rank, r.get("name", "").lower())
 
+    results.sort(key=_sort_key)
     return results
 
 
-def list_picker_providers(
+def get_interactive_picker_providers(
     current_provider: str = "",
     current_base_url: str = "",
     user_providers: dict = None,
@@ -1727,7 +1669,10 @@ def list_picker_providers(
 ) -> List[dict]:
     """Interactive-picker variant of :func:`list_authenticated_providers`.
 
-    Post-processes the base list so the ``/model`` picker (Telegram/Discord
+    Used by the inline keyboard picker in the gateway and the arrow-key menu
+    in the CLI.
+
+    Filters and post-processes the base list so the ``/model`` picker (Telegram/Discord
     inline keyboards) only surfaces models that are actually callable in the
     current install:
 
