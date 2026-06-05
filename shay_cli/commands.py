@@ -1514,7 +1514,6 @@ class SlashCommandCompleter(Completer):
         seen = set()
         try:
             from shay_cli.config import load_config
-            from shay_cli.model_switch import MODEL_ALIASES
             cfg = load_config()
 
             # 1. Add default model
@@ -1547,19 +1546,40 @@ class SlashCommandCompleter(Completer):
                                     display_meta=f"Fallback ({p.get('provider', 'auto')})",
                                 )
             
-            # 3. Add model aliases
+            # 3. Add model aliases from the top-level ``model_aliases:`` block —
+            #    the canonical /model switchboard, the SAME source the resolver
+            #    (_load_direct_aliases / DIRECT_ALIASES) reads.  Previously this
+            #    read ``model.aliases`` (a different, legacy key), so configured
+            #    brains never appeared in the picker.
+            model_aliases = cfg.get("model_aliases", {})
+            if isinstance(model_aliases, dict):
+                for name, entry in model_aliases.items():
+                    if not name.startswith(sub_lower) or name == sub_lower or name in seen:
+                        continue
+                    seen.add(name)
+                    if isinstance(entry, dict):
+                        meta = f"{entry.get('model', '?')} ({entry.get('provider', 'auto')})"
+                    else:
+                        meta = str(entry)
+                    yield Completion(
+                        name,
+                        start_position=-len(sub_text),
+                        display=name,
+                        display_meta=meta,
+                    )
+
+            # 3b. Legacy ``model.aliases`` (string-format, from `shay config set`).
             aliases = model_cfg.get("aliases", {})
             if isinstance(aliases, dict):
                 for name, value in aliases.items():
-                    if name.startswith(sub_lower) and name != sub_lower:
-                         if name not in seen:
-                            seen.add(name)
-                            yield Completion(
-                                name,
-                                start_position=-len(sub_text),
-                                display=name,
-                                display_meta=str(value),
-                            )
+                    if name.startswith(sub_lower) and name != sub_lower and name not in seen:
+                        seen.add(name)
+                        yield Completion(
+                            name,
+                            start_position=-len(sub_text),
+                            display=name,
+                            display_meta=str(value),
+                        )
 
         except Exception:
             pass
