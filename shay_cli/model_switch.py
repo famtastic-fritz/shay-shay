@@ -647,7 +647,7 @@ def switch_model(
         runtime = resolve_runtime_provider(
             target_provider, user_providers=user_providers,
             custom_providers=custom_providers,
-            api_key_env_var=pdef.api_key_env_var,
+            api_key_env_vars=pdef.api_key_env_vars if pdef else None,
         )
         api_key = runtime.get("api_key", "")
         base_url = runtime.get("base_url", "")
@@ -703,9 +703,11 @@ def switch_model(
                 new_model = raw_input
             else:
                 # --- Step e: detect_provider_for_model() as last resort ---
-                maybe_provider = detect_provider_for_model(raw_input, user_providers)
-                if maybe_provider and maybe_provider != current_provider:
-                    target_provider = maybe_provider
+                maybe_result = detect_provider_for_model(raw_input, current_provider)
+                if maybe_result is not None:
+                    detected_provider, detected_model = maybe_result
+                    target_provider = detected_provider
+                    new_model = detected_model
                     logger.debug(
                         "Model '%s' not found on '%s', trying provider '%s'",
                         raw_input, current_provider, target_provider,
@@ -718,254 +720,7 @@ def switch_model(
         runtime = resolve_runtime_provider(
             target_provider, user_providers=user_providers,
             custom_providers=custom_providers,
-            api_key_env_var=pdef.api_key_env_var if pdef else None,
-        )
-        api_key = runtime.get("api_key", "")
-        base_url = runtime.get("base_url", "")
-
-    # =================================================================
-    # Final normalization and metadata lookup
-    # =================================================================
-
-    # --- Step g: Normalize model name for target provider ---
-    final_model = normalize_model_for_provider(new_model, target_provider)
-
-    # --- Step h: Get full model metadata from models.dev ---
-    model_info = get_model_info(final_model, target_provider)
-    capabilities = get_model_capabilities(final_model, target_provider)
-
-    # Resolve API mode
-    api_mode = determine_api_mode(final_model, target_provider, base_url)
-    if not api_mode:
-        if target_provider == "openai-codex":
-            api_mode = opencode_model_api_mode(final_model)
-        elif target_provider == "copilot" or target_provider == "copilot-acp":
-            api_mode = copilot_model_api_mode(final_model)
-
-    # Validate the final requested model against the provider's known models.
-    # This catches cases where an alias resolves correctly, but the user is
-    # trying to call a model their account/key can't access (e.g. a free-tier
-    # key trying to call a paid model).
-    # Skip for custom endpoints (base_url given) since we don't know what they serve.
-    if not base_url:
-        validation_error = validate_requested_model(
-            final_model, target_provider, api_key=api_key,
-        )
-        if validation_error:
-            return ModelSwitchResult(success=False, error_message=validation_error)
-
-    # Non-agentic model warning
-    warning = _check_shay_model_warning(final_model)
-
-    # --- Step i: Build result ---
-    return ModelSwitchResult(
-        success=True,
-        new_model=final_model,
-        target_provider=target_provider,
-        provider_changed=(target_provider != current_provider),
-        api_key=api_key,
-        base_url=base_url,
-        api_mode=api_mode,
-        warning_message=warning,
-        provider_label=get_label(target_provider),
-        resolved_via_alias=resolved_alias,
-        capabilities=capabilities,
-        model_info=model_info,
-        is_global=is_global,
-    )
-
-
-def get_context_length(
-    model_info: ModelInfo | None,
-    capabilities: ModelCapabilities | None,
-    config_context_length: int | None = None,
-) -> int | None:
-    """Return the effective context length, preferring live data over config."""
-    try:
-        from shay_cli.models import get_live_context_window
-        ctx = get_live_context_window(
-            model_info=model_info,
-            capabilities=capabilities,
-            config_context_length=config_context_length,
-        )
-        if ctx:
-            return int(ctx)
-    except Exception:
-        pass
-    if model_info is not None and model_info.context_window:
-        return int(model_info.context_window)
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Core model-switching pipeline
-# ---------------------------------------------------------------------------
-
-def switch_model(
-    raw_input: str,
-    current_provider: str,
-    current_model: str,
-    current_base_url: str = "",
-    current_api_key: str = "",
-    is_global: bool = False,
-    explicit_provider: str = "",
-    user_providers: dict = None,
-    custom_providers: list | None = None,
-) -> ModelSwitchResult:
-    """Core model-switching pipeline shared between CLI and gateway.
-
-    Resolution chain:
-
-      If --provider given:
-        a. Resolve provider via resolve_provider_full()
-        b. Resolve credentials
-        c. If model given, resolve alias on target provider or use as-is
-        d. If no model, auto-detect from endpoint
-
-      If no --provider:
-        a. Try alias resolution on current provider
-        b. If alias exists but not on current provider -> fallback
-        c. On aggregator, try vendor/model slug conversion
-        d. Aggregator catalog search
-        e. detect_provider_for_model() as last resort
-        f. Resolve credentials
-        g. Normalize model name for target provider
-
-      Finally:
-        h. Get full model metadata from models.dev
-        i. Build result
-
-    Args:
-        raw_input: The model name (after flag parsing).
-        current_provider: The currently active provider.
-        current_model: The currently active model name.
-        current_base_url: The currently active base URL.
-        current_api_key: The currently active API key.
-        is_global: Whether to persist the switch.
-        explicit_provider: From --provider flag (empty = no explicit provider).
-        user_providers: The ``providers:`` dict from config.yaml (for user endpoints).
-        custom_providers: The ``custom_providers:`` list from config.yaml.
-
-    Returns:
-        ModelSwitchResult with all information the caller needs.
-    """
-    from shay_cli.models import (
-        copilot_model_api_mode,
-        detect_provider_for_model,
-        validate_requested_model,
-        opencode_model_api_mode,
-    )
-    from shay_cli.runtime_provider import resolve_runtime_provider
-
-    resolved_alias = ""
-    new_model = raw_input.strip()
-    target_provider = current_provider
-
-    # =================================================================
-    # PATH A: Explicit --provider given
-    # =================================================================
-    if explicit_provider:
-        # Resolve the provider
-        pdef = resolve_provider_full(
-            explicit_provider,
-            user_providers,
-            custom_providers,
-        )
-        if pdef is None:
-            _switch_err = (
-                f"Unknown provider '{explicit_provider}'. "
-                f"Check 'shay model' for available providers, or define it "
-                f"in config.yaml under 'providers:'."
-            )
-            # Check for common config issues that cause provider resolution failures
-            try:
-                from shay_cli.config import validate_config_structure
-                _cfg_issues = validate_config_structure()
-                if _cfg_issues:
-                    _switch_err += "\n\nRun 'shay doctor' — config issues detected:"
-                    for _ci in _cfg_issues[:3]:
-                        _switch_err += f"\n  • {_ci.message}"
-            except Exception:
-                pass
-            return ModelSwitchResult(success=False, error_message=_switch_err)
-        target_provider = pdef.slug
-
-        # Resolve credentials for the target provider
-        runtime = resolve_runtime_provider(
-            target_provider, user_providers=user_providers,
-            custom_providers=custom_providers,
-            api_key_env_var=pdef.api_key_env_var,
-        )
-        api_key = runtime.get("api_key", "")
-        base_url = runtime.get("base_url", "")
-
-        # Auto-detect model if none given (for custom endpoints)
-        if not new_model:
-            if base_url:
-                try:
-                    from shay_cli.models import fetch_api_models
-                    live = fetch_api_models(api_key, base_url, timeout=3)
-                    if live:
-                        new_model = live[0]
-                    else:
-                        return ModelSwitchResult(
-                            success=False,
-                            error_message=f"No model specified, and could not auto-detect from {base_url}. "
-                                          f"Please provide a model name.",
-                        )
-                except Exception as e:
-                    return ModelSwitchResult(
-                        success=False,
-                        error_message=f"Failed to auto-detect model from {base_url}: {e}",
-                    )
-            else:
-                # No model and no endpoint — need more info
-                return ModelSwitchResult(
-                    success=False,
-                    error_message=f"No model specified for provider '{target_provider}'. "
-                                  f"Please provide a model name.",
-                )
-
-        # Resolve alias on the TARGET provider
-        alias_result = resolve_alias(new_model, target_provider)
-        if alias_result is not None:
-            _, new_model, resolved_alias = alias_result
-
-    # =================================================================
-    # PATH B: No explicit provider — resolve from model input
-    # =================================================================
-    else:
-        # --- Step a: Try alias resolution on current provider ---
-        alias_result = resolve_alias(raw_input, current_provider)
-
-        if alias_result is not None:
-            target_provider, new_model, resolved_alias = alias_result
-            logger.debug(
-                "Alias '%s' resolved to '%s' on provider '%s'",
-                raw_input, new_model, target_provider
-            )
-        else:
-            # --- Step c: On aggregator, try vendor/model slug conversion ---
-            if is_aggregator(current_provider) and "/" in raw_input:
-                new_model = raw_input
-            else:
-                # --- Step e: detect_provider_for_model() as last resort ---
-                maybe_provider = detect_provider_for_model(raw_input, user_providers)
-                if maybe_provider and maybe_provider != current_provider:
-                    target_provider = maybe_provider
-                    logger.debug(
-                        "Model '%s' not found on '%s', trying provider '%s'",
-                        raw_input, current_provider, target_provider,
-                    )
-                else:
-                    new_model = raw_input
-
-        # Resolve credentials for the target provider
-        pdef = resolve_provider_full(target_provider, user_providers, custom_providers)
-        runtime = resolve_runtime_provider(
-            target_provider, user_providers=user_providers,
-            custom_providers=custom_providers,
-            api_key_env_var=pdef.api_key_env_var if pdef else None,
+            api_key_env_vars=pdef.api_key_env_vars if pdef else None,
         )
         api_key = runtime.get("api_key", "")
         base_url = runtime.get("base_url", "")

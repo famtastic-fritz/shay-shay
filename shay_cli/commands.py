@@ -1510,34 +1510,61 @@ class SlashCommandCompleter(Completer):
             pass
 
     def _model_completions(self, sub_text: str, sub_lower: str):
-        """Yield completions for /model from config aliases + built-in aliases."""
+        """Yield completions for /model from config (default, fallbacks, aliases)."""
         seen = set()
-        # Config-based direct aliases (preferred — include provider info)
         try:
-            from shay_cli.model_switch import (
-                _ensure_direct_aliases, DIRECT_ALIASES,
-            )
-            _ensure_direct_aliases()
-            for name, da in DIRECT_ALIASES.items():
-                if name.startswith(sub_lower) and name != sub_lower:
-                    seen.add(name)
-                    yield Completion(
-                        name,
-                        start_position=-len(sub_text),
-                        display=name,
-                        display_meta=f"{da.model} ({da.provider})",
-                    )
-            # FAMtastic: built-in vendor shortcut aliases (MODEL_ALIASES) are
-            # intentionally NOT surfaced in the /model picker. The picker shows
-            # ONLY the explicitly-configured brains from config.yaml
-            # model_aliases:, so every entry is a known, pinned model+provider.
-            # Built-in aliases still resolve for `shay -m <name>` via
-            # model_switch/models.py — only the picker display is trimmed.
+            from shay_cli.config import load_config
+            from shay_cli.model_switch import MODEL_ALIASES
+            cfg = load_config()
+
+            # 1. Add default model
+            model_cfg = cfg.get("model", {})
+            if isinstance(model_cfg, dict):
+                default_model = model_cfg.get("default")
+                if default_model and default_model.startswith(sub_lower) and default_model != sub_lower:
+                    if default_model not in seen:
+                        seen.add(default_model)
+                        yield Completion(
+                            default_model,
+                            start_position=-len(sub_text),
+                            display=default_model,
+                            display_meta=f"Default ({model_cfg.get('provider', 'auto')})",
+                        )
+
+            # 2. Add fallback models
+            fallback_providers = cfg.get("fallback_providers", [])
+            if isinstance(fallback_providers, list):
+                for p in fallback_providers:
+                    if isinstance(p, dict) and "model" in p:
+                        model_name = p["model"]
+                        if model_name.startswith(sub_lower) and model_name != sub_lower:
+                            if model_name not in seen:
+                                seen.add(model_name)
+                                yield Completion(
+                                    model_name,
+                                    start_position=-len(sub_text),
+                                    display=model_name,
+                                    display_meta=f"Fallback ({p.get('provider', 'auto')})",
+                                )
+            
+            # 3. Add model aliases
+            aliases = model_cfg.get("aliases", {})
+            if isinstance(aliases, dict):
+                for name, value in aliases.items():
+                    if name.startswith(sub_lower) and name != sub_lower:
+                         if name not in seen:
+                            seen.add(name)
+                            yield Completion(
+                                name,
+                                start_position=-len(sub_text),
+                                display=name,
+                                display_meta=str(value),
+                            )
+
         except Exception:
             pass
-        # LM Studio: surface locally-loaded models. Gated on the user actually
-        # having LM Studio configured (env var or auth-store entry) so we
-        # don't probe 127.0.0.1 on every keystroke for users who don't use it.
+        
+        # LM Studio: surface locally-loaded models
         for name in _lmstudio_completion_models():
             if name in seen:
                 continue
