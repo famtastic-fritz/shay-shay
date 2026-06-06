@@ -26,7 +26,11 @@ from typing import Dict, Any, List, Optional, Union
 
 from agent.auxiliary_client import async_call_llm, extract_content_or_reasoning
 MAX_SESSION_CHARS = 100_000
-MAX_SUMMARY_TOKENS = 10000
+# A recall summary needs ~1–2k tokens, not 10k. The 10k ceiling made each
+# per-session summary a multi-minute generation on the local aux model — with
+# 3 sessions x 3 retries that blew past the timeout (httpx.ReadTimeout) and made
+# session_search appear hung/broken. 2k keeps summaries useful and fast.
+MAX_SUMMARY_TOKENS = 2000
 
 
 def _get_session_search_max_concurrency(default: int = 3) -> int:
