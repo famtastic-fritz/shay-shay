@@ -915,6 +915,7 @@ def _cmd_boards_switch(args: argparse.Namespace) -> int:
         )
         return 1
     kb.set_current_board(normed)
+    os.environ["SHAY_KANBAN_BOARD"] = normed
     print(f"Active board is now {normed!r}.")
     return 0
 
@@ -1060,12 +1061,29 @@ def _cmd_create(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    # Default the assignee to the active profile when none is given (and the
+    # task isn't headed for triage). The embedded dispatcher only spawns
+    # ready+assigned tasks whose assignee maps to a real profile — an
+    # unassigned task is treated as "correctly idle" and sits in `ready`
+    # forever (the bug that left phone-created tasks stuck). Triage tasks stay
+    # unassigned on purpose: the specifier promotes + assigns them. Only
+    # assign to a profile that actually exists; if introspection fails we
+    # leave it None to preserve the prior behavior rather than guess.
+    assignee = args.assignee
+    if assignee is None and not bool(getattr(args, "triage", False)):
+        try:
+            from shay_cli.profiles import get_active_profile_name, profile_exists
+            _cand = get_active_profile_name()
+            if _cand and profile_exists(_cand):
+                assignee = _cand
+        except Exception:
+            pass
     with kb.connect() as conn:
         task_id = kb.create_task(
             conn,
             title=args.title,
             body=args.body,
-            assignee=args.assignee,
+            assignee=assignee,
             created_by=args.created_by or _profile_author(),
             workspace_kind=ws_kind,
             workspace_path=ws_path,
