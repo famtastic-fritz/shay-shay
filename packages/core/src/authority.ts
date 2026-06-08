@@ -1,9 +1,10 @@
 import { EventBus } from './event-bus.js';
 
 export enum TrustTier {
+  Observe = 0,
   Suggest = 1,
-  Observe = 2,
-  Act = 3,
+  Draft = 2,
+  Confirm = 3,
   Auto = 4,
 }
 

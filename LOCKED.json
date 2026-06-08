@@ -68,6 +68,29 @@
         "additive_only": true,
         "req14": true
       }
+    },
+    "phase-4-ingestion": {
+      "phase": 4,
+      "status": "verified",
+      "date": "2026-06-08",
+      "ships": [
+        "@shay/ingestion: 4-stage protocol (DISCOVER->TRANSLATE->INGEST->VERIFY)",
+        "Skill Adapter Layer: Hermes SKILL.md, Claude, MCP tool, A2A card adapters + registry",
+        "HermesSource read-only discover (~/.shay/skills)",
+        "IngestedCapabilityStore (default trustTier Suggest=1) + Ingestion Manifest persistence",
+        "VERIFY stage (schema conformance; live-exec deferred to Ph7)",
+        "schemas ingestion-manifest + skill-record"
+      ],
+      "fixes": [
+        "corrected TrustTier enum to canonical Observe=0/Suggest=1/Draft=2/Confirm=3/Auto=4 (affected core/brain) ",
+        "added cross-package source resolution: vitest alias + tsconfig paths @shay/* -> packages/*/src",
+        "npm workspace protocol workspace:* -> *"
+      ],
+      "gate": {
+        "typecheck": "clean",
+        "tests": "127 passing (18 files)",
+        "additive_only": true
+      }
     }
   }
 }

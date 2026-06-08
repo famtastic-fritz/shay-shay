@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "shay:ingestion-manifest",
+  "title": "Ingestion Manifest",
+  "description": "Record of an ingestion run, including source metadata, expected vs actual counts, and validation results",
+  "type": "object",
+  "required": [
+    "source",
+    "version",
+    "ingestionDate",
+    "expected",
+    "actual",
+    "passed",
+    "failed",
+    "untested",
+    "rollbackPlan"
+  ],
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "The source of the ingestion (e.g., directory path, repository URL, or identifier)"
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version of the source being ingested",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "ingestionDate": {
+      "type": "string",
+      "description": "ISO 8601 date-time string indicating when the ingestion occurred",
+      "format": "date-time"
+    },
+    "expected": {
+      "type": "object",
+      "description": "Expected counts of ingested artifacts",
+      "required": [
+        "capabilities",
+        "skills",
+        "tools",
+        "memoryRecords"
+      ],
+      "properties": {
+        "capabilities": {
+          "type": "integer",
+          "description": "Expected number of capabilities",
+          "minimum": 0
+        },
+        "skills": {
+          "type": "integer",
+          "description": "Expected number of skills",
+          "minimum": 0
+        },
+        "tools": {
+          "type": "integer",
+          "description": "Expected number of tools",
+          "minimum": 0
+        },
+        "memoryRecords": {
+          "type": "integer",
+          "description": "Expected number of memory records",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "actual": {
+      "type": "object",
+      "description": "Actual counts of successfully ingested artifacts",
+      "required": [
+        "capabilities",
+        "skills",
+        "tools",
+        "memoryRecords"
+      ],
+      "properties": {
+        "capabilities": {
+          "type": "integer",
+          "description": "Actual number of capabilities ingested",
+          "minimum": 0
+        },
+        "skills": {
+          "type": "integer",
+          "description": "Actual number of skills ingested",
+          "minimum": 0
+        },
+        "tools": {
+          "type": "integer",
+          "description": "Actual number of tools ingested",
+          "minimum": 0
+        },
+        "memoryRecords": {
+          "type": "integer",
+          "description": "Actual number of memory records ingested",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "passed": {
+      "type": "integer",
+      "description": "Total number of items that passed validation",
+      "minimum": 0
+    },
+    "failed": {
+      "type": "array",
+      "description": "Items that failed ingestion or validation",
+      "items": {
+        "type": "object",
+        "required": [
+          "item",
+          "error"
+        ],
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "Identifier or path of the failed item"
+          },
+          "error": {
+            "type": "string",
+            "description": "Description of the error that occurred"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "untested": {
+      "type": "array",
+      "description": "Items that were not tested during ingestion",
+      "items": {
+        "type": "object",
+        "required": [
+          "item",
+          "reason"
+        ],
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "Identifier or path of the untested item"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason why the item was not tested"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "rollbackPlan": {
+      "type": "string",
+      "description": "Instructions for rolling back the ingestion if issues are discovered"
+    }
+  },
+  "additionalProperties": false
+}

@@ -59,8 +59,8 @@ export class AnticipationEngine {
       // Observe tier: confirm for medium and high risk
       requiresConfirmation =
         anticipation.risk === RiskLevel.Medium || anticipation.risk === RiskLevel.High;
-    } else if (tier === TrustTier.Act) {
-      // Act tier: no confirmation needed
+    } else if (tier === TrustTier.Confirm) {
+      // Confirm tier: no confirmation needed
       requiresConfirmation = false;
     }
 
@@ -246,15 +246,15 @@ describe('AnticipationEngine', () => {
     expect(surfaced[0].requires_confirmation).toBe(true);
   });
 
-  it('TrustTier.Act never requires confirmation regardless of risk', () => {
-    authority.setTier('agent-act', TrustTier.Act, { manual: true });
+  it('TrustTier.Confirm never requires confirmation regardless of risk', () => {
+    authority.setTier('agent-confirm', TrustTier.Confirm, { manual: true });
 
     const highRisk: Anticipation = {
-      id: 'act-high',
+      id: 'confirm-high',
       action: 'destroy',
       confidence: 0.8,
       risk: RiskLevel.High,
-      subject: 'agent-act',
+      subject: 'agent-confirm',
       requires_confirmation: false,
     };
 

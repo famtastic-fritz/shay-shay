@@ -1,0 +1,15 @@
+{
+  "name": "example-a2a-agent",
+  "description": "An example A2A Agent Card for testing schema parsing",
+  "version": "1.0.0",
+  "capabilities": [
+    {
+      "name": "query-knowledge",
+      "description": "Query a knowledge base with natural language"
+    },
+    {
+      "name": "execute-task",
+      "description": "Execute a task with specified parameters"
+    }
+  ]
+}

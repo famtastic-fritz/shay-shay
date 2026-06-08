@@ -424,6 +424,109 @@ export async function runGate(targetDir: string): Promise<GateVerdict> {
     );
   }
 
+  // Check 15: @shay/ingestion exports IngestionProtocol and adapters
+  let check15Pass = false;
+  try {
+    const ingestionIndexSourcePath = path.join(
+      targetDir,
+      'packages',
+      'ingestion',
+      'src',
+      'index.ts'
+    );
+    const ingestionSourceContent = fs.readFileSync(ingestionIndexSourcePath, 'utf-8');
+    const requiredIngestionExports = [
+      'IngestionProtocol',
+      'HermesSkillAdapter',
+      'ClaudeSkillAdapter',
+      'McpToolAdapter',
+      'A2aCardAdapter',
+      'AdapterRegistry',
+    ];
+    const missingIngestionExports: string[] = [];
+    for (const exportName of requiredIngestionExports) {
+      if (!ingestionSourceContent.includes(exportName)) {
+        missingIngestionExports.push(exportName);
+      }
+    }
+    check15Pass = missingIngestionExports.length === 0;
+    checks.push({
+      name: '@shay/ingestion exports IngestionProtocol and adapters',
+      pass: check15Pass,
+      message: check15Pass
+        ? 'All required exports found in @shay/ingestion/src/index.ts: IngestionProtocol, HermesSkillAdapter, ClaudeSkillAdapter, McpToolAdapter, A2aCardAdapter, AdapterRegistry'
+        : `Missing exports: ${missingIngestionExports.join(', ')}`,
+    });
+    if (!check15Pass) {
+      issues.push(`Missing exports in @shay/ingestion/src/index.ts: ${missingIngestionExports.join(', ')}`);
+    }
+  } catch (err) {
+    checks.push({
+      name: '@shay/ingestion exports IngestionProtocol and adapters',
+      pass: false,
+      message: `Failed to read @shay/ingestion source: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    issues.push(
+      `Failed to read @shay/ingestion/src/index.ts: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  // Check 16: IngestionManifest schema exists at schemas/ingestion-manifest.schema.json
+  let check16Pass = false;
+  try {
+    const ingestionManifestSchemaPath = path.join(targetDir, 'schemas', 'ingestion-manifest.schema.json');
+    if (fs.existsSync(ingestionManifestSchemaPath)) {
+      const schemaContent = fs.readFileSync(ingestionManifestSchemaPath, 'utf-8');
+      const schema = JSON.parse(schemaContent);
+
+      // Verify $id equals 'shay:ingestion-manifest'
+      const hasCorrectId = schema.$id === 'shay:ingestion-manifest';
+
+      // Verify required array includes 'source', 'version', 'ingestionDate'
+      const hasRequiredFields =
+        Array.isArray(schema.required) &&
+        schema.required.includes('source') &&
+        schema.required.includes('version') &&
+        schema.required.includes('ingestionDate');
+
+      check16Pass = hasCorrectId && hasRequiredFields;
+
+      if (check16Pass) {
+        checks.push({
+          name: 'IngestionManifest schema exists at schemas/ingestion-manifest.schema.json',
+          pass: true,
+          message: 'ingestion-manifest.schema.json is valid with correct $id and required fields',
+        });
+      } else {
+        const missingDetails: string[] = [];
+        if (!hasCorrectId) missingDetails.push('$id is not "shay:ingestion-manifest"');
+        if (!hasRequiredFields) missingDetails.push('required array missing source/version/ingestionDate');
+        checks.push({
+          name: 'IngestionManifest schema exists at schemas/ingestion-manifest.schema.json',
+          pass: false,
+          message: `ingestion-manifest.schema.json is invalid: ${missingDetails.join(', ')}`,
+        });
+        issues.push(`ingestion-manifest.schema.json validation failed: ${missingDetails.join(', ')}`);
+      }
+    } else {
+      checks.push({
+        name: 'IngestionManifest schema exists at schemas/ingestion-manifest.schema.json',
+        pass: false,
+        message: 'ingestion-manifest.schema.json not found',
+      });
+      issues.push('ingestion-manifest.schema.json is missing');
+    }
+  } catch (err) {
+    checks.push({
+      name: 'IngestionManifest schema exists at schemas/ingestion-manifest.schema.json',
+      pass: false,
+      message: `Failed to read or parse ingestion-manifest.schema.json: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    issues.push(
+      `Failed to validate ingestion-manifest.schema.json: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
   const pass = checks.every((c) => c.pass);
 
   return {

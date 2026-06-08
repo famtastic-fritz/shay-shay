@@ -47,7 +47,7 @@ export interface AnticipationResult {
  * - requires_confirmation is set based on TrustTier:
  *   - TrustTier.Suggest: all anticipations require confirmation
  *   - TrustTier.Observe: only high-risk anticipations require confirmation
- *   - TrustTier.Act: all anticipations require confirmation
+ *   - TrustTier.Confirm: all anticipations require confirmation
  *   - TrustTier.Auto: only high-risk anticipations require confirmation
  */
 export class AnticipationEngine {
@@ -111,7 +111,7 @@ export class AnticipationEngine {
    * Gating logic:
    * - TrustTier.Suggest: requires confirmation for any risk_level
    * - TrustTier.Observe: requires confirmation only for 'high' risk
-   * - TrustTier.Act: requires confirmation for all risk_levels
+   * - TrustTier.Confirm: requires confirmation for all risk_levels
    * - TrustTier.Auto: requires confirmation only for 'high' risk
    */
   private applyTrustTierGating(
@@ -126,8 +126,8 @@ export class AnticipationEngine {
     } else if (tier === TrustTier.Observe || tier === TrustTier.Auto) {
       // Observe/Auto tiers: require confirmation only for high risk
       requires_confirmation = anticipation.risk_level === 'high';
-    } else if (tier === TrustTier.Act) {
-      // Act tier: always require confirmation
+    } else if (tier === TrustTier.Confirm) {
+      // Confirm tier: always require confirmation
       requires_confirmation = true;
     }
 

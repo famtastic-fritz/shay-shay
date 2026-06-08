@@ -18,14 +18,14 @@ describe('AuthorityRegistry', () => {
     const tier = registry.getTier('test-subject');
 
     expect(tier).toBe(TrustTier.Observe);
-    expect(tier).toBe(2);
+    expect(tier).toBe(0);
   });
 
   it('setTier() with manual:false throws an Error', () => {
     const registry = new AuthorityRegistry();
 
     expect(() => {
-      registry.setTier('test-subject', TrustTier.Act, { manual: false });
+      registry.setTier('test-subject', TrustTier.Confirm, { manual: false });
     }).toThrow();
   });
 
@@ -33,18 +33,18 @@ describe('AuthorityRegistry', () => {
     const registry = new AuthorityRegistry();
 
     expect(() => {
-      registry.setTier('test-subject', TrustTier.Act, undefined as any);
+      registry.setTier('test-subject', TrustTier.Confirm, undefined as any);
     }).toThrow();
   });
 
-  it('can(subject, TrustTier.Observe) is false for default tier', () => {
+  it('can(subject, TrustTier.Observe) is true for default tier (Observe < Suggest)', () => {
     const registry = new AuthorityRegistry();
     const canObserve = registry.can('any-subject', TrustTier.Observe);
 
-    expect(canObserve).toBe(false);
+    expect(canObserve).toBe(true);
   });
 
-  it('can(subject, TrustTier.Auto) is false for default tier', () => {
+  it('can(subject, TrustTier.Auto) is false for default tier (Auto > Suggest)', () => {
     const registry = new AuthorityRegistry();
     const canAuto = registry.can('any-subject', TrustTier.Auto);
 
@@ -54,17 +54,17 @@ describe('AuthorityRegistry', () => {
   it('promote() with manual:true sets tier', () => {
     const registry = new AuthorityRegistry();
 
-    registry.promote('subject', TrustTier.Act, { manual: true });
+    registry.promote('subject', TrustTier.Confirm, { manual: true });
     const tier = registry.getTier('subject');
 
-    expect(tier).toBe(TrustTier.Act);
+    expect(tier).toBe(TrustTier.Confirm);
   });
 
   it('promote() with manual:false throws', () => {
     const registry = new AuthorityRegistry();
 
     expect(() => {
-      registry.promote('subject', TrustTier.Act, { manual: false });
+      registry.promote('subject', TrustTier.Confirm, { manual: false });
     }).toThrow();
   });
 

@@ -13,7 +13,24 @@
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "jsx": "react-jsx",
-    "lib": ["ES2022"]
+    "lib": [
+      "ES2022"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@shay/*": [
+        "packages/*/src/index.ts"
+      ]
+    }
   },
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "ui-tui", "web", "website"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "ui-tui",
+    "web",
+    "website",
+    "vitest.config.ts",
+    "**/*.config.ts"
+  ]
 }

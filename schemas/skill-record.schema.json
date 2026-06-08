@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "shay:skill-record",
+  "title": "Skill Record",
+  "description": "Record of a skill ingested into the system, with metadata and trust tier assignment",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "version",
+    "description",
+    "source",
+    "trustTier",
+    "ingestionDate"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the skill"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable name of the skill"
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version of the skill",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description of what the skill does"
+    },
+    "source": {
+      "type": "string",
+      "description": "Source location or origin of the skill (e.g., file path, repository URL)"
+    },
+    "trustTier": {
+      "type": "integer",
+      "description": "Trust tier classification for the skill (0=Observe, 1=Suggest, 2=Draft, 3=Confirm, 4=Auto)",
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    "ingestionDate": {
+      "type": "string",
+      "description": "ISO 8601 date-time string indicating when the skill was ingested",
+      "format": "date-time"
+    },
+    "permissions": {
+      "type": "array",
+      "description": "List of permissions required or granted to this skill",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tags": {
+      "type": "array",
+      "description": "Categorical tags describing the skill's function or domain",
+      "items": {
+        "type": "string"
+      }
+    },
+    "entrypoint": {
+      "type": "string",
+      "description": "Path or identifier for the skill's entry point or main function"
+    }
+  },
+  "additionalProperties": false
+}
