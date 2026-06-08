@@ -143,6 +143,24 @@
         "additive_only": true,
         "gate_intact": true
       }
+    },
+    "phase-8-skin": {
+      "phase": 8,
+      "status": "verified",
+      "date": "2026-06-08",
+      "ships": [
+        "@shay/surfaces thin gateway clients (ZERO brain/memory logic — verified by import grep)",
+        "GatewayClient contract + LocalGatewayClient (injected brain handle fn), RemoteGatewayClient (injected transport), MockGatewayClient",
+        "adapters: CLI, Web (framework-agnostic handler), Phone (Telegram-style, injected sender), MCP (tool-call)",
+        "schema surface-message",
+        "doctor phase-8 thin-client check"
+      ],
+      "gate": {
+        "typecheck": "clean",
+        "tests": "260 passing (33 files)",
+        "additive_only": true,
+        "thin_client": true
+      }
     }
   }
 }

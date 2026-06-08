@@ -691,6 +691,143 @@ export async function runGate(targetDir: string): Promise<GateVerdict> {
     issues.push(`Missing Phase-6 schema files: ${missingPhase6Schemas.join(', ')}`);
   }
 
+  // ---------------------------------------------------------------------------
+  // Phase-8 checks
+  // ---------------------------------------------------------------------------
+
+  // Check 22 (Phase 8): @shay/surfaces exports GatewayClient + all four adapters
+  let check22Pass = false;
+  try {
+    const surfacesIndexSourcePath = path.join(
+      targetDir,
+      'packages',
+      'surfaces',
+      'src',
+      'index.ts'
+    );
+    const surfacesSourceContent = fs.readFileSync(surfacesIndexSourcePath, 'utf-8');
+    const requiredSurfacesExports = [
+      'GatewayClient',
+      'CliSurface',
+      'WebSurface',
+      'PhoneSurface',
+      'McpSurface',
+    ];
+    const missingSurfacesExports: string[] = [];
+    for (const exportName of requiredSurfacesExports) {
+      if (!surfacesSourceContent.includes(exportName)) {
+        missingSurfacesExports.push(exportName);
+      }
+    }
+    check22Pass = missingSurfacesExports.length === 0;
+    checks.push({
+      name: '@shay/surfaces exports GatewayClient + CLI/web/phone/mcp adapters',
+      pass: check22Pass,
+      message: check22Pass
+        ? 'All Phase-8 exports found in @shay/surfaces/src/index.ts: GatewayClient, CliSurface, WebSurface, PhoneSurface, McpSurface'
+        : `Missing Phase-8 surfaces exports: ${missingSurfacesExports.join(', ')}`,
+    });
+    if (!check22Pass) {
+      issues.push(`Missing exports in @shay/surfaces/src/index.ts: ${missingSurfacesExports.join(', ')}`);
+    }
+  } catch (err) {
+    checks.push({
+      name: '@shay/surfaces exports GatewayClient + CLI/web/phone/mcp adapters',
+      pass: false,
+      message: `Failed to read @shay/surfaces source: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    issues.push(
+      `Failed to read @shay/surfaces/src/index.ts: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  // Check 23 (Phase 8): @shay/surfaces source contains no @shay/brain or @shay/memory imports
+  let check23Pass = false;
+  try {
+    const surfacesSrcDir = path.join(targetDir, 'packages', 'surfaces', 'src');
+
+    function collectTsFiles(dir: string): string[] {
+      const files: string[] = [];
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) files.push(...collectTsFiles(full));
+        else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts'))
+          files.push(full);
+      }
+      return files;
+    }
+
+    const tsFiles = collectTsFiles(surfacesSrcDir);
+    const brainViolations: string[] = [];
+    const memoryViolations: string[] = [];
+
+    for (const f of tsFiles) {
+      const content = fs.readFileSync(f, 'utf-8');
+      if (content.includes('@shay/brain')) brainViolations.push(path.relative(targetDir, f));
+      if (content.includes('@shay/memory')) memoryViolations.push(path.relative(targetDir, f));
+    }
+
+    const allViolations = [...brainViolations, ...memoryViolations];
+    check23Pass = allViolations.length === 0;
+    checks.push({
+      name: '@shay/surfaces source contains no @shay/brain or @shay/memory imports',
+      pass: check23Pass,
+      message: check23Pass
+        ? 'No @shay/brain or @shay/memory imports found in @shay/surfaces source'
+        : `Forbidden imports found in: ${allViolations.join(', ')}`,
+    });
+    if (!check23Pass) {
+      issues.push(`@shay/surfaces contains forbidden brain/memory imports: ${allViolations.join(', ')}`);
+    }
+  } catch (err) {
+    checks.push({
+      name: '@shay/surfaces source contains no @shay/brain or @shay/memory imports',
+      pass: false,
+      message: `Failed to scan @shay/surfaces source: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    issues.push(
+      `Failed to scan @shay/surfaces/src for forbidden imports: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  // Check 24 (Phase 8): surface-message.schema.json exists at schemas/
+  let check24Pass = false;
+  try {
+    const surfaceSchemaPath = path.join(targetDir, 'schemas', 'surface-message.schema.json');
+    if (fs.existsSync(surfaceSchemaPath)) {
+      const schemaContent = fs.readFileSync(surfaceSchemaPath, 'utf-8');
+      const schema = JSON.parse(schemaContent);
+      const hasCorrectId = schema.$id === 'shay:surface-message';
+      check24Pass = hasCorrectId;
+      checks.push({
+        name: 'surface-message.schema.json exists with correct $id',
+        pass: check24Pass,
+        message: check24Pass
+          ? 'surface-message.schema.json is valid with $id "shay:surface-message"'
+          : 'surface-message.schema.json found but $id is not "shay:surface-message"',
+      });
+      if (!check24Pass) {
+        issues.push('surface-message.schema.json has wrong $id');
+      }
+    } else {
+      checks.push({
+        name: 'surface-message.schema.json exists with correct $id',
+        pass: false,
+        message: 'surface-message.schema.json not found in schemas/',
+      });
+      issues.push('surface-message.schema.json is missing from schemas/');
+    }
+  } catch (err) {
+    checks.push({
+      name: 'surface-message.schema.json exists with correct $id',
+      pass: false,
+      message: `Failed to read or parse surface-message.schema.json: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    issues.push(
+      `Failed to validate surface-message.schema.json: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
   const pass = checks.every((c) => c.pass);
 
   return {

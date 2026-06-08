@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "shay:surface-message",
+  "title": "SurfaceMessage",
+  "description": "A message sent from any Shay surface to the gateway.",
+  "type": "object",
+  "required": ["id", "text", "surface"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Caller-assigned correlation id.",
+      "minLength": 1
+    },
+    "text": {
+      "type": "string",
+      "description": "Human-readable text payload.",
+      "minLength": 1
+    },
+    "surface": {
+      "type": "string",
+      "description": "Originating surface identifier (e.g. cli, web, phone, mcp).",
+      "enum": ["cli", "web", "phone", "mcp", "tui", "desktop"]
+    },
+    "meta": {
+      "type": "object",
+      "description": "Optional caller-provided metadata (platform-specific).",
+      "additionalProperties": true
+    }
+  }
+}
