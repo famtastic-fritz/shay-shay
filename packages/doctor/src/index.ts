@@ -1,4 +1,7 @@
-export * from './gate.js';
+export * from './types.js';
+export { runGate, GateVerdict } from './gate.js';
+export { Doctor } from './doctor.js';
+export { memoryCheck, capabilityCheck, ingestionCheck, connectorCheck, authorityCheck, currencyCheck, configCheck } from './checks/index.js';
 
 export function printVerdict(verdict: any): void {
   const status = verdict.pass ? '✓ PASS' : '✗ FAIL';

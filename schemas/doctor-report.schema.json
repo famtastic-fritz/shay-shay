@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "shay:doctor-report",
+  "title": "DoctorReport",
+  "description": "System health report emitted by the Doctor diagnostic system. Contains timestamp, overall health status, and detailed check results.",
+  "type": "object",
+  "required": ["timestamp", "healthy", "checks"],
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 date-time when the health check was performed"
+    },
+    "healthy": {
+      "type": "boolean",
+      "description": "Overall system health status. True if all checks passed."
+    },
+    "checks": {
+      "type": "array",
+      "description": "Array of individual check results",
+      "items": {
+        "type": "object",
+        "required": ["name", "domain", "status", "detail"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Human-readable name of the check"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Logical domain or subsystem being checked (e.g., memory, capability, ingestion, connector, authority, currency, config)"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pass", "warn", "fail"],
+            "description": "Check result status: pass (healthy), warn (degraded), or fail (critical)"
+          },
+          "detail": {
+            "type": "string",
+            "description": "Detailed message explaining the check result"
+          },
+          "remediation": {
+            "type": "string",
+            "description": "Optional suggested action to resolve the issue if status is not pass"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

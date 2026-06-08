@@ -14,10 +14,16 @@
     "build": "tsc",
     "test": "vitest"
   },
-  "dependencies": {
-    "@shay/core": "*"
+  "peerDependencies": {
+    "@shay/core": "*",
+    "@shay/memory": "*",
+    "@shay/capabilities": "*",
+    "@shay/ingestion": "*",
+    "@shay/bridge": "*",
+    "@shay/senses": "*"
   },
   "devDependencies": {
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "*"
   }
 }

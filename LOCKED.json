@@ -126,6 +126,23 @@
         "tests": "201 passing",
         "additive_only": true
       }
+    },
+    "phase-7-immune": {
+      "phase": 7,
+      "status": "verified",
+      "date": "2026-06-08",
+      "ships": [
+        "@shay/doctor full continuous diagnostic (Immune): Doctor.runAll/run(domain)/runContinuous(injected scheduler) emits doctor:report",
+        "7 health checks: memory, capability(invoke/handler-crash), ingestion(post-ingestion contract conformance untested->passed), connector(MCP), authority(ingested<=Suggest, no ungranted Confirm/Auto), currency(Senses breaking-release -> re-ingest flag), config(schema + model-id consistency)",
+        "existing structural gate.ts preserved + exported",
+        "schema doctor-report"
+      ],
+      "gate": {
+        "typecheck": "clean",
+        "tests": "227 passing (32 files)",
+        "additive_only": true,
+        "gate_intact": true
+      }
     }
   }
 }

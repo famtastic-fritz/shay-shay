@@ -629,6 +629,68 @@ export async function runGate(targetDir: string): Promise<GateVerdict> {
     issues.push(`Missing Phase-5 schema files: ${missingPhase5Schemas.join(', ')}`);
   }
 
+  // Check 20 (Phase 6): @shay/senses exports ReleaseMonitor and fetcher types
+  let check20Pass = false;
+  try {
+    const sensesIndexSourcePath = path.join(
+      targetDir,
+      'packages',
+      'senses',
+      'src',
+      'index.ts'
+    );
+    const sensesSourceContent = fs.readFileSync(sensesIndexSourcePath, 'utf-8');
+    const requiredSensesExports = ['ReleaseMonitor', 'GithubReleasesFetcher', 'MockFetcher'];
+    const missingSensesExports: string[] = [];
+    for (const exportName of requiredSensesExports) {
+      if (!sensesSourceContent.includes(exportName)) {
+        missingSensesExports.push(exportName);
+      }
+    }
+    check20Pass = missingSensesExports.length === 0;
+    checks.push({
+      name: '@shay/senses exports ReleaseMonitor + fetcher',
+      pass: check20Pass,
+      message: check20Pass
+        ? 'ReleaseMonitor, GithubReleasesFetcher, MockFetcher exports found in @shay/senses/src/index.ts'
+        : `Missing senses exports: ${missingSensesExports.join(', ')}`,
+    });
+    if (!check20Pass) {
+      issues.push(`Missing exports in @shay/senses/src/index.ts: ${missingSensesExports.join(', ')}`);
+    }
+  } catch (err) {
+    checks.push({
+      name: '@shay/senses exports ReleaseMonitor + fetcher',
+      pass: false,
+      message: `Failed to read @shay/senses source: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    issues.push(
+      `Failed to read @shay/senses/src/index.ts: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  // Check 21 (Phase 6): Phase-6 schemas exist (release-event + release-alert)
+  let check21Pass = false;
+  const requiredPhase6Schemas = ['release-event.schema.json', 'release-alert.schema.json'];
+  const missingPhase6Schemas: string[] = [];
+  for (const schemaFile of requiredPhase6Schemas) {
+    const schemaPath = path.join(schemasDir, schemaFile);
+    if (!fs.existsSync(schemaPath)) {
+      missingPhase6Schemas.push(schemaFile);
+    }
+  }
+  check21Pass = missingPhase6Schemas.length === 0;
+  checks.push({
+    name: 'Phase-6 schemas exist (release-event, release-alert)',
+    pass: check21Pass,
+    message: check21Pass
+      ? 'release-event.schema.json and release-alert.schema.json found'
+      : `Missing Phase-6 schema files: ${missingPhase6Schemas.join(', ')}`,
+  });
+  if (!check21Pass) {
+    issues.push(`Missing Phase-6 schema files: ${missingPhase6Schemas.join(', ')}`);
+  }
+
   const pass = checks.every((c) => c.pass);
 
   return {
