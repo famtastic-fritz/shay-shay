@@ -108,6 +108,24 @@
         "additive_only": true,
         "no_circular_dep": true
       }
+    },
+    "phase-6-senses": {
+      "phase": 6,
+      "status": "verified",
+      "date": "2026-06-08",
+      "ships": [
+        "NEW package @shay/senses (Release Monitor) — beyond the original 8; flag for Shay",
+        "ReleaseMonitor: registerFeed, poll(fetcher), classify (security/breaking/deprecation/feature), scoreRelevance, linkToIngested -> emits senses:re-ingest-needed on event bus + ReleaseAlert(re-ingest)",
+        "ReleaseFetcher interface + GithubReleasesFetcher (injected http) + MockFetcher",
+        "DEFAULT_WATCHLIST (claude-code, codex, hermes, MCP, A2A, netlify, @shay packages)",
+        "schemas release-event + release-alert",
+        "doctor phase-6 checks"
+      ],
+      "gate": {
+        "typecheck": "clean",
+        "tests": "201 passing",
+        "additive_only": true
+      }
     }
   }
 }
