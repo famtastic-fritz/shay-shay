@@ -215,6 +215,99 @@ export async function runGate(targetDir: string): Promise<GateVerdict> {
     issues.push(`Missing src/index.ts in: ${packagesWithoutIndex.join(', ')}`);
   }
 
+  // Check 9: schemas/ directory exists at repo root
+  const schemasDir = path.join(targetDir, 'schemas');
+  let check9Pass = false;
+  try {
+    const stat = fs.statSync(schemasDir);
+    check9Pass = stat.isDirectory();
+    checks.push({
+      name: 'schemas/ directory exists at repo root',
+      pass: check9Pass,
+      message: check9Pass ? 'schemas/ directory found' : 'schemas/ is not a directory',
+    });
+  } catch {
+    checks.push({
+      name: 'schemas/ directory exists at repo root',
+      pass: false,
+      message: 'schemas/ directory does not exist',
+    });
+    issues.push('schemas/ directory not found at repo root');
+  }
+
+  // Check 10: spine schema files present
+  const requiredSchemaFiles = [
+    'event.schema.json',
+    'config.schema.json',
+    'capability-manifest.schema.json',
+  ];
+  let check10Pass = true;
+  const missingSchemaFiles: string[] = [];
+  for (const schemaFile of requiredSchemaFiles) {
+    const schemaPath = path.join(schemasDir, schemaFile);
+    if (!fs.existsSync(schemaPath)) {
+      check10Pass = false;
+      missingSchemaFiles.push(schemaFile);
+    }
+  }
+  checks.push({
+    name: 'spine schema files present',
+    pass: check10Pass,
+    message: check10Pass
+      ? 'All required schema files found'
+      : `Missing schema files: ${missingSchemaFiles.join(', ')}`,
+  });
+  if (!check10Pass) {
+    issues.push(`Missing schema files: ${missingSchemaFiles.join(', ')}`);
+  }
+
+  // Check 11: core exports spine contracts
+  let check11Pass = false;
+  const missingExports: string[] = [];
+  try {
+    const coreIndexPath = path.join(
+      targetDir,
+      'packages',
+      'core',
+      'dist',
+      'index.js'
+    );
+    const coreModule = await import(coreIndexPath);
+
+    const requiredExports = [
+      'loadConfig',
+      'SchemaRegistry',
+      'EventBus',
+      'CredentialVault',
+      'ValidationError',
+      'CredentialNotFoundError',
+    ];
+
+    for (const exportName of requiredExports) {
+      if (!(exportName in coreModule)) {
+        missingExports.push(exportName);
+      }
+    }
+
+    check11Pass = missingExports.length === 0;
+    checks.push({
+      name: 'core exports spine contracts',
+      pass: check11Pass,
+      message: check11Pass
+        ? 'All required exports found in @shay/core'
+        : `Missing exports: ${missingExports.join(', ')}`,
+    });
+  } catch (err) {
+    checks.push({
+      name: 'core exports spine contracts',
+      pass: false,
+      message: `Failed to import @shay/core: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    issues.push(
+      `Failed to import @shay/core or verify exports: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
   const pass = checks.every((c) => c.pass);
 
   return {

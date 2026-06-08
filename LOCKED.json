@@ -15,6 +15,24 @@
         "additive_only": true,
         "readme_untouched": true
       }
+    },
+    "phase-1-spine": {
+      "phase": 1,
+      "status": "verified",
+      "date": "2026-06-08",
+      "ships": [
+        "schemas/ (event, config, capability-manifest — JSON Schema 2020-12)",
+        "@shay/core schema-registry (ajv validate, typed ValidationError)",
+        "@shay/core event-bus (append-only JSONL + subscribe + validated)",
+        "@shay/core credential-vault (get + redact, no enumeration)",
+        "@shay/core config validation on load",
+        "@shay/doctor spine-contracts gate check"
+      ],
+      "gate": {
+        "typecheck": "clean",
+        "tests": "21 passing (vitest)",
+        "additive_only": true
+      }
     }
   }
 }

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "shay:event",
+  "title": "ShayEvent",
+  "description": "Wire shape for events emitted through the EventBus. Validated by SchemaRegistry before appending to event log.",
+  "type": "object",
+  "required": ["id", "type", "payload", "timestamp", "source"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for the event, RFC 4122 UUID format"
+    },
+    "type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Event type classifier, non-empty string"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Event data, arbitrary object structure",
+      "additionalProperties": true
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 date-time when the event occurred"
+    },
+    "source": {
+      "type": "string",
+      "description": "Origin component or system that emitted the event"
+    }
+  },
+  "additionalProperties": false
+}

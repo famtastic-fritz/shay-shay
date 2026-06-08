@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "shay:capability-manifest",
+  "title": "Capability Manifest",
+  "description": "Descriptor shipped by a capability package to advertise itself. Used by future capability-loader and doctor checks.",
+  "type": "object",
+  "required": ["id", "version", "name", "description"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the capability"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d?)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$",
+      "description": "Semantic version string"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable name for the capability"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description of what the capability provides"
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional list of required permissions"
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional list of capability IDs this depends on"
+    },
+    "entrypoint": {
+      "type": "string",
+      "description": "Optional path to the main export file"
+    }
+  },
+  "additionalProperties": false
+}

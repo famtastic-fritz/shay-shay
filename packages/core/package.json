@@ -12,7 +12,15 @@
   },
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ajv": "^8.x",
+    "ajv-formats": "^3.x"
+  },
+  "devDependencies": {
+    "vitest": "^1.x"
   },
   "keywords": [
     "shay",

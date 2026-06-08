@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "shay:config",
+  "title": "ShayConfig",
+  "description": "Runtime configuration schema for Shay. Validated by loadConfig() after parsing YAML.",
+  "type": "object",
+  "required": ["version", "name"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d?)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$",
+      "description": "Semantic version string"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Configuration name, non-empty string"
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional human-readable description"
+    },
+    "paths": {
+      "type": "object",
+      "description": "Path configuration for workspace and data storage",
+      "properties": {
+        "workspace": {
+          "type": "string",
+          "description": "Root workspace directory"
+        },
+        "config": {
+          "type": "string",
+          "description": "Configuration directory"
+        },
+        "schemas": {
+          "type": "string",
+          "description": "JSON schemas directory"
+        },
+        "eventLog": {
+          "type": "string",
+          "description": "Event log file path where EventBus appends events"
+        }
+      },
+      "additionalProperties": false
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Default runtime settings",
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Default LLM model identifier"
+        },
+        "timeout": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Default timeout in milliseconds"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

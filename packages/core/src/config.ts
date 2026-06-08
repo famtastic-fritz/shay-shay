@@ -1,5 +1,7 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { SchemaRegistry } from './schema-registry.js';
 
 export interface ShayConfig {
   version: string;
@@ -22,6 +24,8 @@ export class ShayConfigError extends Error {
     this.name = 'ShayConfigError';
   }
 }
+
+let activeConfig: ShayConfig | undefined;
 
 function parseYamlLike(content: string): Record<string, any> {
   const lines = content.split('\n');
@@ -81,5 +85,30 @@ export function loadConfig(configPath?: string): ShayConfig {
     defaults: parsed.defaults ? parseYamlLike(parsed.defaults) : undefined,
   };
 
+  const registry = new SchemaRegistry();
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const schemasDir = path.resolve(__dirname, '../../schemas');
+
+  try {
+    registry.loadFromDir(schemasDir);
+    registry.validate('shay:config', config);
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new ShayConfigError(
+        `Config validation failed: ${error.message}`
+      );
+    }
+    throw error;
+  }
+
+  activeConfig = config;
   return config;
+}
+
+export function getActiveContext(): ShayConfig {
+  if (!activeConfig) {
+    throw new ShayConfigError('No config loaded');
+  }
+  return activeConfig;
 }

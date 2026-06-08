@@ -1,37 +1,66 @@
-export interface Credential {
-  key: string;
-  value: string;
-  source: 'env' | 'file' | 'injected';
+import fs from 'node:fs';
+
+export class CredentialNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CredentialNotFoundError';
+  }
 }
 
 export class CredentialVault {
-  private vault: Map<string, Credential> = new Map();
+  private secretsFilePath?: string;
+  private secretsCache?: Record<string, string>;
 
-  set(key: string, value: string, source: Credential['source'] = 'injected'): void {
-    if (!key || !value) {
-      throw new Error('Credential key and value must not be empty');
+  constructor(options?: { secretsFilePath?: string }) {
+    this.secretsFilePath = options?.secretsFilePath;
+  }
+
+  get(name: string): string {
+    const envValue = process.env[name];
+    if (envValue) {
+      return envValue;
     }
-    this.vault.set(key, { key, value, source });
+
+    if (this.secretsFilePath && fs.existsSync(this.secretsFilePath)) {
+      if (!this.secretsCache) {
+        const content = fs.readFileSync(this.secretsFilePath, 'utf-8');
+        this.secretsCache = JSON.parse(content);
+      }
+      const value = this.secretsCache?.[name];
+      if (value) {
+        return value;
+      }
+    }
+
+    throw new CredentialNotFoundError(
+      `Credential '${name}' not found in environment or secrets file`
+    );
   }
 
-  get(key: string): Credential | undefined {
-    return this.vault.get(key);
-  }
-
-  has(key: string): boolean {
-    return this.vault.has(key);
-  }
-
-  fromEnv(key: string): boolean {
-    const value = process.env[key];
-    if (value) {
-      this.set(key, value, 'env');
+  has(name: string): boolean {
+    if (process.env[name]) {
       return true;
     }
+
+    if (this.secretsFilePath && fs.existsSync(this.secretsFilePath)) {
+      if (!this.secretsCache) {
+        try {
+          const content = fs.readFileSync(this.secretsFilePath, 'utf-8');
+          this.secretsCache = JSON.parse(content);
+        } catch {
+          return false;
+        }
+      }
+      return this.secretsCache ? name in this.secretsCache : false;
+    }
+
     return false;
   }
 
-  // TODO(phase 3) — integrate with secrets store.
-  // TODO(phase 3) — add encryption for sensitive values.
-  // TODO(phase 3) — add disk persistence and secure deletion.
+  redact(value: string): string {
+    if (value.length <= 8) {
+      return '****';
+    }
+    return value.substring(0, 4) + '*'.repeat(value.length - 4);
+  }
 }
