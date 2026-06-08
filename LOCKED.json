@@ -91,6 +91,23 @@
         "tests": "127 passing (18 files)",
         "additive_only": true
       }
+    },
+    "phase-5-organs": {
+      "phase": 5,
+      "status": "verified",
+      "date": "2026-06-08",
+      "ships": [
+        "@shay/capabilities: CapabilityRegistry (register/validate-manifest/invoke/unregister; internal default Confirm, external Suggest), importIngested() pulls IngestedCapabilityStore tagged external+Suggest",
+        "@shay/bridge: McpClient (mock-transport discoverCapabilities -> manifests, callTool proxy), A2A AgentCard parse/produce/round-trip, OASF descriptor<->manifest round-trip",
+        "schemas agent-card + oasf-descriptor",
+        "doctor phase-5 checks"
+      ],
+      "gate": {
+        "typecheck": "clean",
+        "tests": "167 passing (23 files)",
+        "additive_only": true,
+        "no_circular_dep": true
+      }
     }
   }
 }

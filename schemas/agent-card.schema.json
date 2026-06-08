@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "shay:agent-card",
+  "title": "A2A Agent Card",
+  "description": "Agent Card descriptor as defined by the Agent-to-Agent (A2A) protocol. Advertises an agent's identity, version, and capabilities.",
+  "type": "object",
+  "required": ["name", "version", "capabilities"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human-readable name of the agent"
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional description of what the agent does"
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version string for this agent card"
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "List of capability IDs advertised by this agent",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

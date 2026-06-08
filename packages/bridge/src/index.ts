@@ -1,11 +1,15 @@
-// TODO(phase 6) — bridge: MCP server adapter, A2A protocol handler, OASF schema translation.
+/**
+ * @shay/bridge
+ *
+ * External bridge layer: MCP client, A2A agent card protocol, OASF translation.
+ * All external capability discovery flows through this package.
+ */
 
-export interface McpAdapter {
-  // Placeholder for MCP adapter implementation
-}
+export type { McpTool, McpTransport } from './mcp-client.js';
+export { McpClient } from './mcp-client.js';
 
-export interface A2aHandler {
-  // Placeholder for A2A protocol handler implementation
-}
+export type { AgentCard } from './a2a.js';
+export { parseAgentCard, toCapabilityManifests, produceAgentCard } from './a2a.js';
 
-export const BRIDGE_STUB = 'not-implemented' as const;
+export type { OasfDescriptor } from './oasf.js';
+export { oasfToManifest, manifestToOasf } from './oasf.js';

@@ -527,6 +527,108 @@ export async function runGate(targetDir: string): Promise<GateVerdict> {
     );
   }
 
+  // Check 17 (Phase 5): @shay/capabilities exports CapabilityRegistry
+  let check17Pass = false;
+  try {
+    const capIndexSourcePath = path.join(
+      targetDir,
+      'packages',
+      'capabilities',
+      'src',
+      'index.ts'
+    );
+    const capSourceContent = fs.readFileSync(capIndexSourcePath, 'utf-8');
+    check17Pass = capSourceContent.includes('CapabilityRegistry');
+    checks.push({
+      name: '@shay/capabilities exports CapabilityRegistry',
+      pass: check17Pass,
+      message: check17Pass
+        ? 'CapabilityRegistry export found in @shay/capabilities/src/index.ts'
+        : 'CapabilityRegistry export not found in @shay/capabilities/src/index.ts',
+    });
+    if (!check17Pass) {
+      issues.push('CapabilityRegistry export missing from @shay/capabilities/src/index.ts');
+    }
+  } catch (err) {
+    checks.push({
+      name: '@shay/capabilities exports CapabilityRegistry',
+      pass: false,
+      message: `Failed to read @shay/capabilities source: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    issues.push(
+      `Failed to read @shay/capabilities/src/index.ts: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  // Check 18 (Phase 5): @shay/bridge exports McpClient, a2a helpers, and oasf helpers
+  let check18Pass = false;
+  try {
+    const bridgeIndexSourcePath = path.join(
+      targetDir,
+      'packages',
+      'bridge',
+      'src',
+      'index.ts'
+    );
+    const bridgeSourceContent = fs.readFileSync(bridgeIndexSourcePath, 'utf-8');
+    const requiredBridgeExports = [
+      'McpClient',
+      'parseAgentCard',
+      'toCapabilityManifests',
+      'produceAgentCard',
+      'oasfToManifest',
+      'manifestToOasf',
+    ];
+    const missingBridgeExports: string[] = [];
+    for (const exportName of requiredBridgeExports) {
+      if (!bridgeSourceContent.includes(exportName)) {
+        missingBridgeExports.push(exportName);
+      }
+    }
+    check18Pass = missingBridgeExports.length === 0;
+    checks.push({
+      name: '@shay/bridge exports McpClient + a2a + oasf helpers',
+      pass: check18Pass,
+      message: check18Pass
+        ? 'All required Phase-5 bridge exports found in @shay/bridge/src/index.ts'
+        : `Missing bridge exports: ${missingBridgeExports.join(', ')}`,
+    });
+    if (!check18Pass) {
+      issues.push(`Missing exports in @shay/bridge/src/index.ts: ${missingBridgeExports.join(', ')}`);
+    }
+  } catch (err) {
+    checks.push({
+      name: '@shay/bridge exports McpClient + a2a + oasf helpers',
+      pass: false,
+      message: `Failed to read @shay/bridge source: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    issues.push(
+      `Failed to read @shay/bridge/src/index.ts: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  // Check 19 (Phase 5): Phase-5 schemas exist (agent-card + oasf-descriptor)
+  let check19Pass = false;
+  const requiredPhase5Schemas = ['agent-card.schema.json', 'oasf-descriptor.schema.json'];
+  const missingPhase5Schemas: string[] = [];
+  for (const schemaFile of requiredPhase5Schemas) {
+    const schemaPath = path.join(schemasDir, schemaFile);
+    if (!fs.existsSync(schemaPath)) {
+      missingPhase5Schemas.push(schemaFile);
+    }
+  }
+  check19Pass = missingPhase5Schemas.length === 0;
+  checks.push({
+    name: 'Phase-5 schemas exist (agent-card, oasf-descriptor)',
+    pass: check19Pass,
+    message: check19Pass
+      ? 'agent-card.schema.json and oasf-descriptor.schema.json found'
+      : `Missing Phase-5 schema files: ${missingPhase5Schemas.join(', ')}`,
+  });
+  if (!check19Pass) {
+    issues.push(`Missing Phase-5 schema files: ${missingPhase5Schemas.join(', ')}`);
+  }
+
   const pass = checks.every((c) => c.pass);
 
   return {
