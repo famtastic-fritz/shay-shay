@@ -379,6 +379,51 @@ export async function runGate(targetDir: string): Promise<GateVerdict> {
     );
   }
 
+  // Check 14: @shay/brain exports Phase-3 exports (BrainRouter, ResumableRunner, ContextBudgetManager, AnticipationEngine)
+  let check14Pass = false;
+  try {
+    const brainIndexSourcePath = path.join(
+      targetDir,
+      'packages',
+      'brain',
+      'src',
+      'index.ts'
+    );
+    const brainSourceContent = fs.readFileSync(brainIndexSourcePath, 'utf-8');
+    const requiredPhase3Exports = [
+      'BrainRouter',
+      'ResumableRunner',
+      'ContextBudgetManager',
+      'AnticipationEngine',
+    ];
+    const missingPhase3Exports: string[] = [];
+    for (const exportName of requiredPhase3Exports) {
+      if (!brainSourceContent.includes(exportName)) {
+        missingPhase3Exports.push(exportName);
+      }
+    }
+    check14Pass = missingPhase3Exports.length === 0;
+    checks.push({
+      name: '@shay/brain exports Phase-3 exports',
+      pass: check14Pass,
+      message: check14Pass
+        ? 'All Phase-3 exports found in @shay/brain/src/index.ts: BrainRouter, ResumableRunner, ContextBudgetManager, AnticipationEngine'
+        : `Missing Phase-3 exports: ${missingPhase3Exports.join(', ')}`,
+    });
+    if (!check14Pass) {
+      issues.push(`Missing Phase-3 exports in @shay/brain/src/index.ts: ${missingPhase3Exports.join(', ')}`);
+    }
+  } catch (err) {
+    checks.push({
+      name: '@shay/brain exports Phase-3 exports',
+      pass: false,
+      message: `Failed to read @shay/brain source: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    issues.push(
+      `Failed to read @shay/brain/src/index.ts: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
   const pass = checks.every((c) => c.pass);
 
   return {

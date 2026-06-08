@@ -49,6 +49,25 @@
         "tests": "56 passing (8 files)",
         "additive_only": true
       }
+    },
+    "phase-3-brain": {
+      "phase": 3,
+      "status": "verified",
+      "date": "2026-06-08",
+      "ships": [
+        "@shay/brain BrainRouter (subscription>local>metered; failover only on availability, never on length; cap tracking)",
+        "REQ-14 ResumableRunner (checkpointed JSONL, resume-from-last, heartbeat stall detection, same-lane resume — no fallback-because-long)",
+        "ContextBudgetManager (priority trim + drop reporting)",
+        "Anticipation Engine v1 (turn-outcome -> surfaced/queued, TrustTier-gated)",
+        "schemas brain-request + anticipation",
+        "doctor phase-3 check"
+      ],
+      "gate": {
+        "typecheck": "clean",
+        "tests": "83 passing (12 files)",
+        "additive_only": true,
+        "req14": true
+      }
     }
   }
 }

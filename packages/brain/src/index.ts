@@ -1,12 +1,36 @@
-// TODO(phase 4) — brain router: intent routing, anticipation cross-cut.
-// Anticipation is a behavioral pattern, not a separate package — it lives here.
+/**
+ * @shay/brain
+ * Brain Router and Anticipation Engine
+ * Reasoning chain orchestration and proactive cross-cutting
+ */
 
-export interface BrainRouter {
-  // Placeholder for brain router implementation
-}
+export {
+  BrainRouter,
+  Lane,
+  LaneKind,
+  CapState,
+  BrainRequest,
+  BrainResponse,
+  createMockLane,
+} from './router.js';
 
-export interface Anticipation {
-  // Placeholder for anticipation pattern implementation
-}
+export {
+  ResumableRunner,
+  RunStep,
+  CheckpointRecord,
+  StallPolicy,
+  BrainCallFn,
+} from './resume.js';
 
-export const BRAIN_STUB = 'not-implemented' as const;
+export {
+  ContextBudgetManager,
+  ContextItem,
+  BudgetResult,
+} from './context-budget.js';
+
+export {
+  AnticipationEngine,
+  Anticipation,
+  TurnOutcome,
+  AnticipationResult,
+} from './anticipation.js';

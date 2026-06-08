@@ -8,8 +8,11 @@
     "build": "tsc",
     "dev": "tsc --watch"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@shay/core": "*"
+  },
   "devDependencies": {
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "*"
   }
 }

@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BrainRequest",
+  "description": "A request to the brain subsystem for processing with context and optional routing hints",
+  "type": "object",
+  "required": ["id", "prompt", "contextItems"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for this brain request"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "The prompt or query to send to the brain"
+    },
+    "contextItems": {
+      "type": "array",
+      "description": "Array of context items to include in the brain request",
+      "items": {
+        "type": "object",
+        "required": ["id", "priority", "tokens"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for this context item"
+          },
+          "priority": {
+            "type": "number",
+            "description": "Priority weight for this context item (typically 0-1)"
+          },
+          "tokens": {
+            "type": "integer",
+            "description": "Estimated token count for this context item"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "laneHint": {
+      "type": "string",
+      "description": "Optional routing hint for the brain lane or processing path"
+    },
+    "maxTokens": {
+      "type": "integer",
+      "description": "Optional maximum token budget for the response"
+    }
+  },
+  "additionalProperties": false
+}
