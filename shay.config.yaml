@@ -1,0 +1,19 @@
+# Shay Runtime Configuration (Ph0)
+
+# Filesystem paths
+paths:
+  # Root directory for all packages in the monorepo
+  packages: ./packages
+  # JSON Schema definitions directory
+  schemas: ./schemas
+
+# Runtime context — currently inactive for Ph0
+# Set to null to disable context switching; future phases will support multiple contexts
+activeContext: null
+
+# Feature flags — experimental and future capabilities
+flags:
+  # Experimental bridge layer (MCP, A2A, OASF) — disabled for Ph0
+  experimentalBridge: false
+  # Memory fabric integration — disabled for Ph0
+  memoryEnabled: false

@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false
+  },
+  "references": [
+    { "path": "packages/core/tsconfig.json" },
+    { "path": "packages/memory/tsconfig.json" },
+    { "path": "packages/brain/tsconfig.json" },
+    { "path": "packages/ingestion/tsconfig.json" },
+    { "path": "packages/doctor/tsconfig.json" },
+    { "path": "packages/capabilities/tsconfig.json" },
+    { "path": "packages/bridge/tsconfig.json" },
+    { "path": "packages/surfaces/tsconfig.json" }
+  ]
+}

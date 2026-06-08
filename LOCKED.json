@@ -1,0 +1,20 @@
+{
+  "subsystems": {
+    "phase-0-harness": {
+      "phase": 0,
+      "status": "verified",
+      "date": "2026-06-08",
+      "ships": [
+        "@shay/* monorepo scaffold (8 packages)",
+        "@shay/core kernel skeleton (config, schema-registry, event-bus, credential-vault)",
+        "@shay/doctor stub gate",
+        "build harness: ANATOMY.md, LOCKED.json, GUARDRAILS.md, PHASE-WORKFLOW-TEMPLATE.md, provenance.mjs"
+      ],
+      "gate": {
+        "typecheck": "clean",
+        "additive_only": true,
+        "readme_untouched": true
+      }
+    }
+  }
+}
