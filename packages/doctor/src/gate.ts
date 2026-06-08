@@ -308,6 +308,77 @@ export async function runGate(targetDir: string): Promise<GateVerdict> {
     );
   }
 
+  // Check 12: authority exports present in @shay/core source
+  let check12Pass = false;
+  try {
+    const coreIndexSourcePath = path.join(
+      targetDir,
+      'packages',
+      'core',
+      'src',
+      'index.ts'
+    );
+    const coreSourceContent = fs.readFileSync(coreIndexSourcePath, 'utf-8');
+    check12Pass = coreSourceContent.includes('authority.js');
+    checks.push({
+      name: 'authority exports present in @shay/core source',
+      pass: check12Pass,
+      message: check12Pass
+        ? 'authority.js export found in @shay/core/src/index.ts'
+        : 'authority.js export not found in @shay/core/src/index.ts',
+    });
+    if (!check12Pass) {
+      issues.push('authority.js export missing from @shay/core/src/index.ts');
+    }
+  } catch (err) {
+    checks.push({
+      name: 'authority exports present in @shay/core source',
+      pass: false,
+      message: `Failed to read @shay/core source: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    issues.push(
+      `Failed to read @shay/core/src/index.ts: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  // Check 13: @shay/memory exports MemoryStore and EmbeddingProvider
+  let check13Pass = false;
+  try {
+    const memoryIndexSourcePath = path.join(
+      targetDir,
+      'packages',
+      'memory',
+      'src',
+      'index.ts'
+    );
+    const memorySourceContent = fs.readFileSync(memoryIndexSourcePath, 'utf-8');
+    const hasMemoryStore = memorySourceContent.includes('MemoryStore');
+    const hasEmbeddingProvider = memorySourceContent.includes('EmbeddingProvider');
+    check13Pass = hasMemoryStore && hasEmbeddingProvider;
+    checks.push({
+      name: '@shay/memory exports MemoryStore and EmbeddingProvider',
+      pass: check13Pass,
+      message: check13Pass
+        ? 'Both MemoryStore and EmbeddingProvider exports found in @shay/memory/src/index.ts'
+        : `Missing exports: ${!hasMemoryStore ? 'MemoryStore' : ''}${!hasMemoryStore && !hasEmbeddingProvider ? ', ' : ''}${!hasEmbeddingProvider ? 'EmbeddingProvider' : ''}`,
+    });
+    if (!check13Pass) {
+      const missing: string[] = [];
+      if (!hasMemoryStore) missing.push('MemoryStore');
+      if (!hasEmbeddingProvider) missing.push('EmbeddingProvider');
+      issues.push(`Missing exports in @shay/memory/src/index.ts: ${missing.join(', ')}`);
+    }
+  } catch (err) {
+    checks.push({
+      name: '@shay/memory exports MemoryStore and EmbeddingProvider',
+      pass: false,
+      message: `Failed to read @shay/memory source: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    issues.push(
+      `Failed to read @shay/memory/src/index.ts: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
   const pass = checks.every((c) => c.pass);
 
   return {

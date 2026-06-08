@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "shay:authority-record",
+  "title": "AuthorityRecord",
+  "description": "Authority record defining trust tier and audit metadata for a subject",
+  "type": "object",
+  "required": ["subject", "tier", "updatedAt"],
+  "properties": {
+    "subject": {
+      "type": "string",
+      "description": "Subject identifier for which trust tier is assigned"
+    },
+    "tier": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Trust tier level: 0=Observe, 1=Suggest, 2=Draft, 3=Confirm, 4=Auto"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the record was last updated"
+    },
+    "updatedBy": {
+      "type": "string",
+      "description": "Optional identifier of who made the update"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "shay:memory-record",
+  "title": "MemoryRecord",
+  "description": "A single record in the Shay memory fabric. Supports 4-tier recall hierarchy (T0/T1/T2/T3) with optional embeddings and entity extraction.",
+  "type": "object",
+  "required": [
+    "id",
+    "content",
+    "tier",
+    "importance",
+    "source",
+    "validityStart"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for this record (UUID v4 or similar)"
+    },
+    "content": {
+      "type": "string",
+      "description": "The text/data payload of the memory"
+    },
+    "tier": {
+      "type": "string",
+      "enum": [
+        "T0",
+        "T1",
+        "T2",
+        "T3"
+      ],
+      "description": "Recall tier: T0=always-in-context, T1=session-active, T2=recalled-on-demand, T3=archived"
+    },
+    "importance": {
+      "type": "number",
+      "description": "Numerical importance score (interpretation up to consumer, typically 0-1 or 0-100)"
+    },
+    "source": {
+      "type": "string",
+      "description": "Origin/author of the record (e.g. 'claude-code-session-123', 'user-input', 'system')"
+    },
+    "validityStart": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when this record became valid"
+    },
+    "validityEnd": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Optional ISO 8601 timestamp after which this record is no longer authoritative"
+    },
+    "embedding": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "description": "Optional vector representation of the content for semantic search (e.g., 384D or 768D embeddings)"
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional array of extracted entities or tags (e.g. ['task-123', 'feature-brainstorm'])"
+    }
+  }
+}

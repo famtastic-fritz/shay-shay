@@ -33,6 +33,22 @@
         "tests": "21 passing (vitest)",
         "additive_only": true
       }
+    },
+    "phase-2-heart-memory": {
+      "phase": 2,
+      "status": "verified",
+      "date": "2026-06-08",
+      "ships": [
+        "Heart/Authority in @shay/core: TrustTier 0-4, AuthorityRegistry, manual-only promote, default Suggest(1)",
+        "@shay/memory MVP: MemoryRecord, tiered MemoryStore (JSONL persist, cosine recall), EmbeddingProvider (Ollama nomic-embed-text + deterministic fallback), read-only BasicMemoryBridge",
+        "schemas authority + memory-record",
+        "doctor phase-2 checks"
+      ],
+      "gate": {
+        "typecheck": "clean",
+        "tests": "56 passing (8 files)",
+        "additive_only": true
+      }
     }
   }
 }
