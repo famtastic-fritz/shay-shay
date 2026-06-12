@@ -353,7 +353,8 @@ The registry of record is `shay_cli/commands.py` — every consumer
 ~/.shay/config.yaml       Main configuration
 ~/.shay/.env              API keys and secrets
 $SHAY_HOME/skills/        Installed skills
-~/.shay/sessions/         Session transcripts
+~/.shay/state.db          Canonical session/history store
+~/.shay/sessions/         Legacy/auxiliary session artifacts
 ~/.shay/logs/             Gateway and error logs
 ~/.shay/auth.json         OAuth tokens and credential pools
 ~/.shay/shay-shay/     Source code (if git-installed)

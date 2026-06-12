@@ -336,7 +336,8 @@ The registry of record is `shay_cli/commands.py` — every consumer
 ~/.shay/config.yaml       Main configuration
 ~/.shay/.env              API keys and secrets
 $SHAY_HOME/skills/        Installed skills
-~/.shay/sessions/         Session transcripts
+~/.shay/state.db          Canonical session/history store
+~/.shay/sessions/         Legacy/auxiliary session artifacts
 ~/.shay/logs/             Gateway and error logs
 ~/.shay/auth.json         OAuth tokens and credential pools
 ~/.shay/shay-shay/     Source code (if git-installed)
@@ -861,7 +862,8 @@ shay config set auxiliary.vision.model <model_name>
 | Env variables | `shay config env-path` or [Env vars reference](https://shay-shay.nousresearch.com/docs/reference/environment-variables) |
 | CLI commands | `shay --help` or [CLI reference](https://shay-shay.nousresearch.com/docs/reference/cli-commands) |
 | Gateway logs | `~/.shay/logs/gateway.log` |
-| Session files | `~/.shay/sessions/` or `shay sessions browse` |
+| Session history | `~/.shay/state.db` via `shay sessions browse` (canonical recall) |
+| Gateway session artifacts | `~/.shay/sessions/` |
 | Source code | `~/.shay/shay-shay/` |
 
 ---
