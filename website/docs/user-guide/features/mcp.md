@@ -530,7 +530,7 @@ shay mcp serve --verbose    # Debug logging on stderr
 
 ### How it works
 
-The MCP server reads conversation data directly from Shay-Shay's session store (`~/.shay/sessions/sessions.json` and the SQLite database). A background thread polls the database for new messages and maintains an in-memory event queue. For sending messages, it uses the same `send_message` infrastructure as the Shay-Shay itself.
+The MCP server reads conversation data primarily from Shay-Shay's SQLite session store (`~/.shay/state.db`) and also consults gateway bookkeeping in `~/.shay/sessions/sessions.json` where needed for session mapping. A background thread polls the database for new messages and maintains an in-memory event queue. For sending messages, it uses the same `send_message` infrastructure as the Shay-Shay itself.
 
 The gateway does NOT need to be running for read operations (listing conversations, reading history, polling events). It DOES need to be running for send operations, since the platform adapters need active connections.
 

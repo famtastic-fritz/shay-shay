@@ -420,7 +420,8 @@ shay gateway stop && shay gateway start
 | Cron job output | `~/.shay/cron/output/{job_id}/{timestamp}.md` |
 | Cron job definitions | `~/.shay/cron/jobs.json` |
 | Pairing data | `~/.shay/pairing/` |
-| Session history | `~/.shay/sessions/` |
+| Session history (canonical recall) | `~/.shay/state.db` |
+| Gateway session artifacts | `~/.shay/sessions/` |
 
 ---
 
