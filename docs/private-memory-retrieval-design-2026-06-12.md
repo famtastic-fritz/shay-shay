@@ -137,9 +137,18 @@ Operational meaning:
 9. If the request can be answered from non-private sources first, prefer those first unless Fritz specifically asks for the private vault.
 10. Permission expires at the end of the current session/task unless Fritz explicitly says otherwise.
 
-## What counts as explicit permission from Fritz
+## Explicit permission standard
 
-Valid explicit permission examples:
+Explicit permission is the bright-line rule for any access to `~/.shay/private/`.
+If permission is ambiguous, implied, stale, inherited, or inferred from task relevance, private memory must not be accessed.
+
+### Valid permission examples
+
+The following count as valid explicit permission because they directly name private notes, private memory, the private vault, or `~/.shay/private/`:
+- "Read my private notes about X."
+- "Search `~/.shay/private/strategy` for X."
+- "Use my private vault for this task."
+- "Look in private memory for context on X."
 - "Check the private vault for this."
 - "Read `~/.shay/private/thoughts/...`"
 - "Look in our private notes about May 29."
@@ -147,19 +156,43 @@ Valid explicit permission examples:
 - "Use private memory for this question."
 - "You can consult the private vault in this session."
 
-Borderline but acceptable if clearly tied to private memory:
-- "See what we wrote in the private vault about this."
-- "Pull up your private thinking logs on that night."
+### Invalid permission examples
 
-Not explicit permission:
-- "Remember what we said before."
-- "Search your notes."
-- "Use whatever context you have."
-- "Figure it out."
+The following do not count as explicit permission:
+- vague references like "you know what I mean"
+- normal memory recall requests such as "remember what we said before"
+- generic note requests such as "search your notes"
+- project research requests that do not explicitly mention private memory
+- background review tasks
+- "use whatever context you have"
+- "figure it out"
+- subagent tasks unless private access is explicitly included in the delegated task
 - a task that merely seems emotionally relevant
-- a previous session's permission with no current-session renewal
+- old permission from a previous session
 
-If the user intent is ambiguous, do not retrieve private memory.
+### Scope rules
+
+1. Permission applies only to the current task and current session unless Fritz explicitly renews or restates it.
+2. Permission must name private notes, private memory, private vault, or `~/.shay/private/`.
+3. Access must be limited to the smallest folder, file, or query scope needed for the task.
+4. If a request is explicit but broad, narrow it before retrieval when possible.
+   - Example: prefer `~/.shay/private/strategy/` or one named file over the whole vault.
+5. Broad access requires stronger wording from Fritz.
+   - Example: "Use my private vault for this task" is explicit, but `read the whole private vault` should still be narrowed unless Fritz clearly insists on broad review.
+6. Permission does not automatically transfer to subagents, background jobs, cron jobs, or later follow-up tasks.
+
+### Required disclosure
+
+1. Shay must say when private memory was consulted.
+2. Shay must state the scope used.
+3. Shay must state the permission basis in plain language when relevant.
+4. Shay must not silently blend private notes into normal answers as if they came from default memory or shared context.
+5. If private retrieval materially informed the answer, the response should make that boundary visible.
+
+### Deny-by-default rule
+
+If permission is ambiguous, do not access private memory.
+Ask for clearer authorization or proceed without private memory.
 
 ## Logging and audit requirements
 
