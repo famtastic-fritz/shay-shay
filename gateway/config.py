@@ -461,8 +461,8 @@ class GatewayConfig:
     # Streaming configuration
     streaming: StreamingConfig = field(default_factory=StreamingConfig)
 
-    # Session store pruning: drop SessionEntry records older than this many
-    # days from the in-memory dict and sessions.json.  Keeps the store from
+    # Gateway session-index pruning: drop SessionEntry records older than this
+    # many days from the in-memory dict and sessions.json. Keeps the gateway
     # growing unbounded in gateways serving many chats/threads/users over
     # months.  Pruning is invisible to users — if they resume, they get a
     # fresh session exactly as if the reset policy had fired.  0 = disabled.

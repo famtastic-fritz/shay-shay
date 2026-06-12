@@ -424,9 +424,11 @@ def build_session_context_prompt(
 @dataclass
 class SessionEntry:
     """
-    Entry in the session store.
-    
-    Maps a session key to its current session ID and metadata.
+    Entry in the gateway session index.
+
+    Maps a session key to its current session ID and routing metadata.
+    This supports gateway resume/mapping behavior; canonical conversation
+    history lives in state.db.
     """
     session_key: str
     session_id: str
@@ -676,21 +678,21 @@ class SessionStore:
         self._lock = threading.Lock()
         self._has_active_processes_fn = has_active_processes_fn
         
-        # Initialize SQLite session database
+        # Initialize the canonical SQLite session/history database
         self._db = None
         try:
             from shay_state import SessionDB
             self._db = SessionDB()
         except Exception as e:
-            print(f"[gateway] Warning: SQLite session store unavailable, falling back to JSONL: {e}")
+            print(f"[gateway] Warning: canonical SQLite session history unavailable, falling back to legacy gateway JSONL persistence: {e}")
     
     def _ensure_loaded(self) -> None:
-        """Load sessions index from disk if not already loaded."""
+        """Load the gateway sessions index from disk if not already loaded."""
         with self._lock:
             self._ensure_loaded_locked()
 
     def _ensure_loaded_locked(self) -> None:
-        """Load sessions index from disk. Must be called with self._lock held."""
+        """Load the gateway sessions index from disk. Must be called with self._lock held."""
         if self._loaded:
             return
 

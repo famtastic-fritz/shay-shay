@@ -69,7 +69,7 @@ def _get_sessions_dir() -> Path:
 
 
 def _get_session_db():
-    """Get a SessionDB instance for reading message transcripts."""
+    """Get a SessionDB instance for reading canonical message history."""
     try:
         from shay_state import SessionDB
         return SessionDB()
@@ -79,10 +79,12 @@ def _get_session_db():
 
 
 def _load_sessions_index() -> dict:
-    """Load the gateway sessions.json index directly.
+    """Load the gateway sessions.json bookkeeping index directly.
 
     Returns a dict of session_key -> entry_dict with platform routing info.
-    This avoids importing the full SessionStore which needs GatewayConfig.
+    This is auxiliary gateway mapping data, not the canonical conversation
+    recall store. It avoids importing the full SessionStore which needs
+    GatewayConfig.
     """
     sessions_file = _get_sessions_dir() / "sessions.json"
     if not sessions_file.exists():
@@ -346,10 +348,11 @@ class EventBridge:
     def _poll_once(self, db):
         """Check for new messages across all sessions.
 
-        Uses mtime checks on sessions.json and state.db to skip work
-        when nothing has changed — makes 200ms polling essentially free.
+        Uses mtime checks on the gateway sessions.json bookkeeping index and
+        the canonical state.db history store to skip work when nothing has
+        changed — makes 200ms polling essentially free.
         """
-        # Check if sessions.json has changed (mtime check is ~1μs)
+        # Check if sessions.json bookkeeping changed (mtime check is ~1μs)
         sessions_file = _get_sessions_dir() / "sessions.json"
         try:
             sj_mtime = sessions_file.stat().st_mtime if sessions_file.exists() else 0.0
@@ -360,7 +363,7 @@ class EventBridge:
             self._sessions_json_mtime = sj_mtime
             self._cached_sessions_index = _load_sessions_index()
 
-        # Check if state.db has changed
+        # Check if the canonical state.db history store changed
         try:
             from shay_constants import get_shay_home
             db_file = get_shay_home() / "state.db"
