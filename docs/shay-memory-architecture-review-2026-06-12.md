@@ -1,5 +1,7 @@
 # Shay-Shay memory architecture review
 
+Banner: This document is a diagnostic snapshot from 2026-06-12. Canonical memory policy now lives in `docs/shay-memory-hierarchy.md` and its companion policy docs.
+
 Date: 2026-06-12
 Repo root reviewed: `/Users/famtasticfritz/famtastic/shay-shay-build`
 Runtime home reviewed: `/Users/famtasticfritz/.shay`
