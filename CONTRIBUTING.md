@@ -195,8 +195,8 @@ shay-shay/
 | `~/.shay/auth.json` | OAuth credentials (Nous Portal) |
 | `~/.shay/skills/` | All active skills (bundled + hub-installed + agent-created) |
 | `~/.shay/memories/` | Persistent memory (MEMORY.md, USER.md) |
-| `~/.shay/state.db` | SQLite session database |
-| `~/.shay/sessions/` | JSON session logs |
+| `~/.shay/state.db` | Canonical SQLite session/history database for recall and `session_search` |
+| `~/.shay/sessions/` | Legacy/auxiliary JSON session artifacts and gateway bookkeeping |
 | `~/.shay/cron/` | Scheduled job data |
 | `~/.shay/whatsapp/session/` | WhatsApp bridge credentials |
 
@@ -225,7 +225,8 @@ User message → AIAgent._run_agent_loop()
 
 - **Self-registering tools**: Each tool file calls `registry.register()` at import time. `model_tools.py` triggers discovery by importing all tool modules.
 - **Toolset grouping**: Tools are grouped into toolsets (`web`, `terminal`, `file`, `browser`, etc.) that can be enabled/disabled per platform.
-- **Session persistence**: All conversations are stored in SQLite (`shay_state.py`) with full-text search and unique session titles. JSON logs go to `~/.shay/sessions/`.
+- **Session persistence**: All conversations are stored in SQLite (`shay_state.py`) with full-text search and unique session titles. `~/.shay/sessions/` remains for legacy/auxiliary JSON artifacts and gateway bookkeeping, not as the canonical recall layer.
+- **Memory hierarchy reference**: For the current repo-level memory classification, see `docs/shay-memory-hierarchy.md`, `docs/shay-session-artifact-policy.md`, and `docs/shay-db-status.md`.
 - **Ephemeral injection**: System prompts and prefill messages are injected at API call time, never persisted to the database or logs.
 - **Provider abstraction**: The agent works with any OpenAI-compatible API. Provider resolution happens at init time (Nous Portal OAuth, OpenRouter API key, or custom endpoint).
 - **Provider routing**: When using OpenRouter, `provider_routing` in config.yaml controls provider selection (sort by throughput/latency/price, allow/ignore specific providers, data retention policies). These are injected as `extra_body.provider` in API requests.
