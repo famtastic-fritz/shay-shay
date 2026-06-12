@@ -183,4 +183,3 @@ Rules:
 - Before writing anything, back up both files to a timestamped folder under `~/.shay/backups/`.
 - After backup, apply only the approved MEMORY.md and USER.md text.
 - Then show final character counts, `git diff --no-index` output against the backups, and any rejected recommendations left unapplied.
-```
