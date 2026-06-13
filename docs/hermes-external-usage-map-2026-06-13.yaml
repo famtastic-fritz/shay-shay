@@ -1,0 +1,110 @@
+generated_at: '2026-06-13'
+lane: hermes-removal-sandbox
+scope: read-only inspection only
+summary:
+  wrapper_load_bearing: true
+  launchd_direct_hermes_usage_found: false
+  cron_direct_hermes_usage_found: false
+  key_findings:
+    - live hermes wrapper directly execs legacy Hermes binary under ~/.shay/hermes-agent
+    - shay-desktop still calls `hermes desktop`
+    - zsh startup still exports HERMES_HOME=~/.shay
+    - ~/.shay/hermes-agent and ~/.hermes remain remove-last surfaces
+references:
+  - surface: /Users/famtasticfritz/.local/bin/hermes
+    classification:
+      - active external dependency
+      - command wrapper
+      - candidate for forwarding shim
+    risk: high
+    evidence:
+      - line: 1
+        text: '#!/usr/bin/env bash'
+      - line: 4
+        text: 'exec "/Users/famtasticfritz/.shay/hermes-agent/venv/bin/hermes" "$@"'
+  - surface: /Users/famtasticfritz/.local/bin/shay-desktop
+    classification:
+      - command wrapper
+      - active external dependency
+      - candidate for later removal
+    risk: medium
+    evidence:
+      - line: 7
+        text: 'export HERMES_HOME="/Users/famtasticfritz/.shay"'
+      - line: 8
+        text: 'exec hermes desktop "$@"'
+  - surface: /Users/famtasticfritz/.zshrc
+    classification:
+      - compatibility shim
+      - active external dependency
+    risk: medium
+    evidence:
+      - line: 29
+        text: '# Shay / Hermes'
+      - line: 30
+        text: 'export HERMES_HOME=~/.shay'
+      - line: 31-34
+        text: 'sources $HOME/.shay/.env (secret-bearing file not expanded in this map)'
+  - surface: /Users/famtasticfritz/Library/LaunchAgents
+    classification:
+      - safe to ignore
+    risk: low
+    evidence:
+      - ai.shay.gateway.plist runs shay_cli.main gateway run directly
+      - no inspected plist invoked ~/.local/bin/hermes
+  - surface: crontab
+    classification:
+      - safe to ignore
+    risk: low
+    evidence:
+      - '`crontab -l` returned no Hermes-related invocation in this pass'
+  - surface: /Users/famtasticfritz/.shay/hermes-agent
+    classification:
+      - active external dependency
+      - candidate for forwarding shim support
+      - candidate for later removal
+    risk: high
+    evidence:
+      - live hermes wrapper target points here directly
+      - top-level checkout and venv remain present
+  - surface: /Users/famtasticfritz/.hermes
+    classification:
+      - unknown/high-risk
+      - active external dependency
+      - candidate for later removal
+    risk: high
+    evidence:
+      - top-level entries include .env, config.yaml, state.db, sessions/, skills/, logs/, gateway_state.json, hermes-agent/
+  - surface: _docs/SHAY-DESKTOP-WIRE-BRAND-PHASE1-DISCOVERY.md
+    classification:
+      - docs/runbook reference
+    risk: medium
+    evidence:
+      - documents ~/.hermes fallback and HERMES_HOME reliance in desktop pathing
+  - surface: _docs/SHAY-DESKTOP-WIRE-BRAND-PHASE1-STATUS.md
+    classification:
+      - docs/runbook reference
+    risk: medium
+    evidence:
+      - records getHermesRoot() defaulting to ~/.hermes
+  - surface: _refs/hermes-webui-v0.51/**
+    classification:
+      - historical reference
+    risk: low
+    evidence:
+      - reference-copy tree with many Hermes mentions but no proof of local live wrapper invocation
+planning_doc_audit:
+  - path: docs/hermes-external-compatibility-plan-2026-06-13.md
+    classification: partially_superseded_by_usage_map
+  - path: docs/hermes-live-cutover-proposal-2026-06-13.md
+    classification: still_relevant_but_high_level_only
+  - path: docs/hermes-removal-promotion-plan-2026-06-13.md
+    classification: needs_pr_ancestry_update
+  - path: docs/shay-global-capability-matrix-draft-2026-06-13.yaml
+    classification: draft_control_only
+bottom_line:
+  recommendation: preserve Hermes surfaces for now; plan forwarding before removal
+  unknowns_remaining:
+    - whether any uninspected human habits or ad hoc scripts still call `hermes`
+    - whether ~/.hermes still has live consumers beyond fallback/default behavior
+    - whether desktop/runtime fallback code outside this wave still assumes Hermes naming

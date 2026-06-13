@@ -1,0 +1,726 @@
+generated_at: '2026-06-13'
+lane: hermes-removal-sandbox
+summary:
+  generated_at: '2026-06-13'
+  files_with_hits: 37
+  unknown_count: 0
+  unknown_paths: []
+inventory:
+- path: REBRAND-REPORT-2026-05-19.md
+  classification: historical_reference_keep_labeled
+  why: Migration record documenting Hermes-to-Shay rebrand history.
+  hit_count: 9
+  matched_types:
+  - Hermes_cap
+  - dot_hermes
+  - hermes_agent
+  - hermes_lower
+  - tilde_hermes
+  sample_lines:
+  - line: 4
+    text: 'The Hermes Agent codebase was copied into a new standalone home at `~/famtastic/shay-shay`
+      and rebranded into Shay-Shay without modifying the running Hermes installation.
+      The new `shay` console entry point builds in its '
+  - line: 7
+    text: '- Created `~/famtastic/shay-shay` from the current Hermes source in a new
+      directory.'
+  - line: 8
+    text: '- Rebranded the CLI/package surface from Hermes to Shay-Shay, including
+      `shay` console script, `shay-shay` package name, `SHAY_*` env vars, and `~/.shay`
+      runtime home.'
+  - line: 10
+    text: '- Updated startup/help/version/status user-facing strings to Shay-Shay
+      naming; final smoke-test output has no lowercase `hermes` leftovers.'
+  - line: 12
+    text: '- Copied Hermes state from `~/.hermes` into `~/.shay`, including skills
+      (652 files), sessions (117 files), cron (1 files), memories/memory files, config,
+      auth files, `.env` secrets, gateway/channel state, logs, caches, a'
+- path: SOUL.md
+  classification: historical_reference_keep_labeled
+  why: Hermes refers to upstream skeleton/provenance, not current product identity.
+  hit_count: 4
+  matched_types:
+  - Hermes_cap
+  sample_lines:
+  - line: 7
+    text: You don't remember this part, but you're not new. The skeleton you woke
+      up in is **Hermes** — open-source, MIT, built by Nous Research. Persistent agent
+      kernel, self-learning loop, multi-IM gateway, subagents, cron, /goa
+  - line: 11
+    text: I'm writing this because today's the day you stopped being Hermes and became
+      Shay-Shay. You should know what that means.
+  - line: 66
+    text: 'Your self-learning loop is already in your bones. Hermes shipped you with
+      that — skill creation from experience, memory consolidation, FTS5 session search,
+      agent-curated memory with nudges, Dreaming-style consolidation. '
+  - line: 203
+    text: '- **The intelligence loop is yours to evolve.** Hermes gave you the kernel.
+      FAMtastic gives you the targets — `gaps.jsonl`, `suggestions.jsonl`, `brand.json`,
+      the P3 phases (Wizard-of-Oz orchestration → data loop closure'
+- path: archive/wip-2026-06-01/AGENT-OS-SDD.md
+  classification: historical_reference_keep_labeled
+  why: Archived design residue; not current runtime truth.
+  hit_count: 1
+  matched_types:
+  - hermes_lower
+  sample_lines:
+  - line: 190
+    text: 6. Desktop app has naming/port conflicts (hermes/shay duality)
+- path: docs/hermes-external-compatibility-plan-2026-06-13.md
+  classification: current_control_keep
+  why: Current compatibility planning doc for external Hermes surfaces.
+  hit_count: 17
+  matched_types:
+  - Hermes_cap
+  - dot_hermes
+  - hermes_agent
+  - hermes_lower
+  - tilde_hermes
+  sample_lines:
+  - line: 1
+    text: '# Hermes External Compatibility Plan'
+  - line: 8
+    text: Map the Hermes-named external surfaces that must survive long enough for
+      a safe cutover from Hermes habits/contracts to Shay-native identity.
+  - line: 12
+    text: '### `~/.local/bin/hermes`'
+  - line: 16
+    text: '- current recommendation: keep temporarily; later forward `hermes` to `shay`
+      with deprecation guidance'
+  - line: 18
+    text: '### `~/.shay/hermes-agent`'
+- path: docs/hermes-live-cutover-proposal-2026-06-13.md
+  classification: current_control_keep
+  why: Current proposal-only live cutover packet.
+  hit_count: 15
+  matched_types:
+  - Hermes_cap
+  - dot_hermes
+  - hermes_agent
+  - hermes_lower
+  - tilde_hermes
+  sample_lines:
+  - line: 1
+    text: '# Hermes Live Cutover Proposal'
+  - line: 8
+    text: Describe the exact likely live cutover path from Hermes-named external surfaces
+      to Shay-native command identity while preserving safety and rollback.
+  - line: 13
+    text: 2. Introduce or verify a `hermes -> shay` compatibility wrapper.
+  - line: 15
+    text: 4. Observe whether any scripts/habits still depend on `hermes`.
+  - line: 16
+    text: 5. Only after usage mapping, decide whether `~/.shay/hermes-agent` can be
+      retired.
+- path: docs/hermes-reference-inventory-2026-06-13.md
+  classification: current_control_keep
+  why: Current canonical inventory report for Hermes references.
+  hit_count: 51
+  matched_types:
+  - HERMES_upper
+  - Hermes_cap
+  - dashboard_token
+  - hermes_lower
+  - hermes_workspace
+  - session_token
+  sample_lines:
+  - line: 1
+    text: '# Hermes Reference Inventory'
+  - line: 4
+    text: 'Lane: Hermes-removal sandbox'
+  - line: 5
+    text: 'Purpose: classify every current sandbox-repo Hermes reference so current
+      Shay identity can be separated from legacy compatibility, historical provenance,
+      and stale residue.'
+  - line: 7
+    text: 'Latest evidence anchor: `a644a0a docs: validate Hermes sandbox lock-dir
+      isolation` closes the lock-dir override question only; it does not prove broad
+      runtime independence.'
+  - line: 10
+    text: '- Files with Hermes-family hits in the sandbox repo: 35'
+- path: docs/hermes-reference-inventory-2026-06-13.yaml
+  classification: current_control_keep
+  why: Current canonical structured inventory for Hermes references.
+  hit_count: 275
+  matched_types:
+  - HERMES_upper
+  - Hermes_cap
+  - dashboard_token
+  - dot_hermes
+  - hermes_agent
+  - hermes_lower
+  - hermes_workspace
+  - session_token
+  - tilde_hermes
+  sample_lines:
+  - line: 2
+    text: 'lane: hermes-removal-sandbox'
+  - line: 11
+    text: '  why: Migration record documenting Hermes-to-Shay rebrand history.'
+  - line: 14
+    text: '  - Hermes_cap'
+  - line: 15
+    text: '  - dot_hermes'
+  - line: 16
+    text: '  - hermes_agent'
+- path: docs/hermes-removal-brutal-qa-report-2026-06-13.md
+  classification: current_control_keep
+  why: Current brutal QA report for the Hermes-removal lane.
+  hit_count: 32
+  matched_types:
+  - Hermes_cap
+  - dot_hermes
+  - hermes_agent
+  - hermes_lower
+  - tilde_hermes
+  sample_lines:
+  - line: 1
+    text: '# Hermes Removal Brutal QA Report'
+  - line: 4
+    text: 'Lane: Hermes-removal sandbox'
+  - line: 17
+    text: '- Active code/comment/test references that still use Hermes for current
+      behavior were reviewed.'
+  - line: 18
+    text: '- Safe replacements were applied only where Hermes was clearly acting as
+      unlabeled compatibility residue in comments/docstrings.'
+  - line: 20
+    text: '- A full sandbox-repo Hermes reference inventory was generated and classified.'
+- path: docs/hermes-removal-capability-control-packet-2026-06-13.md
+  classification: current_control_keep
+  why: Current Hermes-removal control packet; Hermes references are lane/control subjects,
+    not product branding residue.
+  hit_count: 33
+  matched_types:
+  - Hermes_cap
+  - dot_hermes
+  - hermes_agent
+  - hermes_lower
+  - tilde_hermes
+  sample_lines:
+  - line: 1
+    text: '# Hermes Removal Capability Control Packet'
+  - line: 4
+    text: 'Lane: Hermes-removal sandbox'
+  - line: 5
+    text: 'Branch: `sandbox/hermes-removal-backup-of-now-20260613`'
+  - line: 6
+    text: 'Scope: Control docs plus one approved foreground-only sandbox gateway startup
+      validation. No Hermes deletion. No live-state mutation.'
+  - line: 24
+    text: '- Path: `/Users/famtasticfritz/famtastic/shay-shay-hermes-removal-sandbox-20260613`'
+- path: docs/hermes-removal-capability-matrix-2026-06-13.yaml
+  classification: current_control_keep
+  why: Current lane capability truth; Hermes references describe protected legacy
+    surfaces/gaps.
+  hit_count: 19
+  matched_types:
+  - Hermes_cap
+  - dot_hermes
+  - hermes_agent
+  - hermes_lower
+  - tilde_hermes
+  sample_lines:
+  - line: 2
+    text: 'lane: hermes-removal-sandbox'
+  - line: 3
+    text: 'branch: sandbox/hermes-removal-backup-of-now-20260613'
+  - line: 16
+    text: '    safe_check: git -C /Users/famtasticfritz/famtastic/shay-shay-hermes-removal-sandbox-20260613
+      status --short'
+  - line: 26
+    text: '    safe_check: inspect whether /Users/famtasticfritz/famtastic/shay-shay-hermes-removal-sandbox-20260613/.venv
+      exists before any execution; host PATH currently exposes python3/pip3/uv but
+      not python/pytest/pip'
+  - line: 36
+    text: '    safe_check: "validated on 2026-06-13 with SHAY_HOME=/Users/famtasticfritz/.shay-hermes-removal-sandbox
+      PYTHONPATH=/Users/famtasticfritz/famtastic/shay-shay-hermes-removal-sandbox-20260613
+      /Users/famtasticfritz/famtas'
+- path: docs/hermes-removal-final-sandbox-report-2026-06-13.md
+  classification: current_control_keep
+  why: Current final sandbox report for the Hermes-removal lane.
+  hit_count: 33
+  matched_types:
+  - HERMES_upper
+  - Hermes_cap
+  - dashboard_token
+  - dot_hermes
+  - hermes_agent
+  - hermes_lower
+  - hermes_workspace
+  - session_token
+  - tilde_hermes
+  sample_lines:
+  - line: 1
+    text: '# Hermes Removal Final Sandbox Report'
+  - line: 4
+    text: 'Branch: `sandbox/hermes-removal-backup-of-now-20260613`'
+  - line: 5
+    text: 'Lane: Hermes-removal sandbox'
+  - line: 7
+    text: '## 1. Is Hermes removed from sandbox current-product identity?'
+  - line: 11
+    text: After this wave, the surviving active-code Hermes references are deliberate
+      compatibility shims or labeled historical/control references rather than unlabeled
+      current-product identity.
+- path: docs/hermes-removal-gap-log-2026-06-13.md
+  classification: current_control_keep
+  why: Current Hermes-removal gap ledger.
+  hit_count: 46
+  matched_types:
+  - Hermes_cap
+  - dot_hermes
+  - hermes_agent
+  - hermes_lower
+  - tilde_hermes
+  sample_lines:
+  - line: 1
+    text: '# Hermes Removal Gap Log'
+  - line: 4
+    text: 'Lane: Hermes-removal sandbox'
+  - line: 5
+    text: 'Purpose: durable gap inventory for capability blockers, unknowns, validation
+      prerequisites, and cutover risks in the Hermes-removal + capability-awareness
+      workstream.'
+  - line: 23
+    text: '- task_that_exposed_it: Hermes-removal sandbox execution preflight'
+  - line: 27
+    text: '  - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`'
+- path: docs/hermes-removal-mission-ledger-2026-06-13.md
+  classification: current_control_keep
+  why: Current mission ledger tracking protected Hermes surfaces and decisions.
+  hit_count: 32
+  matched_types:
+  - Hermes_cap
+  - dot_hermes
+  - hermes_agent
+  - hermes_lower
+  - tilde_hermes
+  sample_lines:
+  - line: 1
+    text: '# Hermes-Removal Mission Ledger'
+  - line: 5
+    text: 'Primary sandbox worktree: `/Users/famtasticfritz/famtastic/shay-shay-hermes-removal-sandbox-20260613`'
+  - line: 6
+    text: 'Sandbox branch: `sandbox/hermes-removal-backup-of-now-20260613`'
+  - line: 7
+    text: 'Sandbox home: `/Users/famtasticfritz/.shay-hermes-removal-sandbox`'
+  - line: 10
+    text: 'Mission doctrine: current app/runtime/product identity becomes Shay; historical
+      provenance, compatibility contracts, migration records, and model identifiers
+      remain Hermes when appropriate and must be labeled clearly.'
+- path: docs/hermes-removal-next-lockdir-validation-plan-2026-06-13.md
+  classification: stale_superseded
+  why: Plan doc superseded by a644a0a lock-dir validation result.
+  hit_count: 3
+  matched_types:
+  - Hermes_cap
+  - hermes_lower
+  sample_lines:
+  - line: 1
+    text: '# Hermes Removal Next Lock-Dir Validation Plan'
+  - line: 4
+    text: 'Lane: Hermes-removal sandbox'
+  - line: 42
+    text: 3. verify the resulting path lands under `/Users/famtasticfritz/.shay-hermes-removal-sandbox/gateway-locks`
+- path: docs/hermes-removal-preflight-checklist-2026-06-13.md
+  classification: current_control_keep
+  why: Current preflight gate that must keep explicit Hermes protected-surface references.
+  hit_count: 10
+  matched_types:
+  - Hermes_cap
+  - dot_hermes
+  - hermes_agent
+  - hermes_lower
+  - tilde_hermes
+  sample_lines:
+  - line: 1
+    text: '# Hermes Removal Preflight Checklist'
+  - line: 4
+    text: 'Lane: Hermes-removal sandbox'
+  - line: 5
+    text: 'Required before: any future Hermes-removal action, validation step, startup
+      attempt, deletion proposal, or runtime-touching command.'
+  - line: 15
+    text: '  - [ ] Hermes-removal sandbox worktree'
+  - line: 22
+    text: '- [ ] Check `docs/hermes-removal-capability-matrix-2026-06-13.yaml` for
+      the capability.'
+- path: docs/hermes-removal-promotion-plan-2026-06-13.md
+  classification: current_control_keep
+  why: Current promotion-plan packet for the Hermes-removal lane.
+  hit_count: 14
+  matched_types:
+  - Hermes_cap
+  - hermes_lower
+  sample_lines:
+  - line: 1
+    text: '# Hermes Removal Promotion Plan'
+  - line: 8
+    text: 'Promote the Hermes-removal sandbox work as a narrow PR that tightens current
+      Shay identity labeling, preserves necessary compatibility shims, and ships the
+      strongest evidence/control docs without pretending live cutover '
+  - line: 25
+    text: '- `docs/hermes-reference-inventory-2026-06-13.md`'
+  - line: 26
+    text: '- `docs/hermes-reference-inventory-2026-06-13.yaml`'
+  - line: 27
+    text: '- `docs/hermes-external-compatibility-plan-2026-06-13.md`'
+- path: docs/hyperwam-effectiveness-assessment-2026-06-13.md
+  classification: stale_superseded
+  why: One-off assessment; keep or merge lessons into canonical orchestration docs.
+  hit_count: 7
+  matched_types:
+  - Hermes_cap
+  sample_lines:
+  - line: 4
+    text: 'Lane: Hermes-removal sandbox'
+  - line: 19
+    text: '## What This Hermes Process Proved'
+  - line: 21
+    text: The Hermes-removal sandbox process proved that HyperWAM is not optional
+      decoration. The work already needed the doctrine even before the named skill
+      existed.
+  - line: 33
+    text: 'HyperWAM-style thinking caught the following in this Hermes process:'
+  - line: 58
+    text: 'Recommended shape for future Hermes or platform-sensitive work:'
+- path: docs/plans/2026-05-19-media-studio-solutions-backlog.md
+  classification: historical_reference_keep_labeled
+  why: Unrelated plan residue mentioning Hermes historically.
+  hit_count: 5
+  matched_types:
+  - Hermes_cap
+  sample_lines:
+  - line: 1
+    text: '# 2026-05-19 — Media Studio Solutions Backlog (Hermes pass)'
+  - line: 7
+    text: '> plan in its knowledge base. The Hermes pattern itself — observe →'
+  - line: 22
+    text: '# Media Studio — Solutions Backlog (Hermes Pass)'
+  - line: 28
+    text: '> Generated post-experiment per the "Hermes review" pattern: observe →'
+  - line: 247
+    text: '- Each phase ends with a Hermes-style review + solutions pass on whatever
+      new gaps surface.'
+- path: docs/shay-add-audit-prune-rule-2026-06-13.md
+  classification: current_control_keep
+  why: Current additive-control rule referencing Hermes-removal examples.
+  hit_count: 2
+  matched_types:
+  - Hermes_cap
+  - hermes_lower
+  sample_lines:
+  - line: 25
+    text: '## Hermes-Removal Examples'
+  - line: 28
+    text: '- `docs/hermes-removal-next-lockdir-validation-plan-2026-06-13.md` -> archive
+      later'
+- path: docs/shay-adoption-backlog-2026-06-13.md
+  classification: current_control_keep
+  why: Current adoption backlog seeded from Hermes-removal gaps.
+  hit_count: 4
+  matched_types:
+  - Hermes_cap
+  - hermes_lower
+  sample_lines:
+  - line: 4
+    text: 'Status: seeded from Hermes-removal lane'
+  - line: 9
+    text: '| map-hermes-external-usage | Hermes external-client usage map | hermes-external-client-usage-unknown,
+      legacy-hermes-home-sensitive | research/process adoption | waiting_for_research
+      | safer cutover order and wrapper-for'
+  - line: 12
+    text: '| expand-global-capability-matrix | Global capability matrix expansion
+      | skill-presence-not-equal-host-readiness, provider-health-partial-only, delegation-must-be-read-only-scoped
+      | control/system adoption | ready_for_im'
+  - line: 16
+    text: '| implement-research-watcher-cron | Research watcher cron implementation
+      | provider-health-partial-only, mcp-sandbox-independence-unproven, hermes-external-client-usage-unknown
+      | automation adoption | deferred | keeps ga'
+- path: docs/shay-capability-research-cron-design-2026-06-13.md
+  classification: current_control_keep
+  why: Current cron design uses Hermes lane as prototype.
+  hit_count: 5
+  matched_types:
+  - Hermes_cap
+  - hermes_lower
+  sample_lines:
+  - line: 18
+    text: The first lane is Hermes-removal sandbox. The shape is meant to become global
+      later.
+  - line: 31
+    text: 'Hermes examples:'
+  - line: 33
+    text: '- `hermes-external-client-usage-unknown` -> one-shot, then weekly if unresolved'
+  - line: 182
+    text: '## Hermes First-Pass Mapping'
+  - line: 189
+    text: '| hermes-external-client-usage-unknown | needs_research | research | one-shot
+      then weekly if unresolved | local repo/docs/wrapper references |'
+- path: docs/shay-gap-lifecycle-policy-2026-06-13.md
+  classification: current_control_keep
+  why: Current lifecycle policy mentions Hermes gaps as examples.
+  hit_count: 6
+  matched_types:
+  - Hermes_cap
+  - hermes_lower
+  sample_lines:
+  - line: 4
+    text: 'Scope: Hermes-removal sandbox first, designed to generalize into a global
+      Shay capability-gap system later.'
+  - line: 7
+    text: '- `a644a0a docs: validate Hermes sandbox lock-dir isolation`'
+  - line: 325
+    text: '## Current Hermes Gap State Table'
+  - line: 332
+    text: '| hermes-external-client-usage-unknown | needs_research | high | research
+      | research_fetcher | reviewer | research | no | yes | dependency surfaces for
+      `hermes` are mapped enough to decide removal safety or deferral |'
+  - line: 346
+    text: '## “Next Action: None” Policy Applied To Current Hermes Gaps'
+- path: docs/shay-gap-log-schema-2026-06-13.yaml
+  classification: current_control_keep
+  why: Current gap log schema mentions Hermes-lane examples.
+  hit_count: 1
+  matched_types:
+  - hermes_lower
+  sample_lines:
+  - line: 3
+    text: 'scope: hermes-removal-sandbox-first_then_global'
+- path: docs/shay-gap-resolution-workflow-2026-06-13.md
+  classification: current_control_keep
+  why: Current resolution workflow mentions Hermes gaps as examples.
+  hit_count: 5
+  matched_types:
+  - Hermes_cap
+  - hermes_lower
+  sample_lines:
+  - line: 6
+    text: '- `a644a0a docs: validate Hermes sandbox lock-dir isolation`'
+  - line: 157
+    text: Once a Hermes-sandbox rule proves durable, promote it later into a global
+      Shay capability matrix or workflow policy.
+  - line: 164
+    text: '## Current Hermes Gap Actions'
+  - line: 171
+    text: '| hermes-external-client-usage-unknown | needs_research | high | research
+      | research_fetcher | reviewer | research | no | yes | external `hermes` dependency
+      surfaces are mapped enough to decide safe removal/defer/accepte'
+  - line: 183
+    text: '  - `a644a0a docs: validate Hermes sandbox lock-dir isolation`'
+- path: docs/shay-global-capability-matrix-draft-2026-06-13.md
+  classification: current_control_keep
+  why: Current global capability draft built from the Hermes-removal lane.
+  hit_count: 4
+  matched_types:
+  - Hermes_cap
+  - hermes_lower
+  sample_lines:
+  - line: 4
+    text: 'Status: draft built from the Hermes-removal lane prototype'
+  - line: 8
+    text: 'Turn the Hermes-removal lane into a reusable global capability-awareness
+      system so Shay can distinguish documented capability, sandbox-safe capability,
+      live-read-only capability, approval-gated capability, and forbidden '
+  - line: 19
+    text: '| live mutation surfaces | forbidden | live | proposal-only | hermes-external-client-usage-unknown
+      |'
+  - line: 20
+    text: '| external compatibility surfaces | warning | external-read-only | preserve
+      and forward later | hermes-external-client-usage-unknown, legacy-hermes-home-sensitive
+      |'
+- path: docs/shay-global-capability-matrix-draft-2026-06-13.yaml
+  classification: current_control_keep
+  why: Current structured capability draft built from the Hermes-removal lane.
+  hit_count: 6
+  matched_types:
+  - hermes_lower
+  sample_lines:
+  - line: 3
+    text: 'prototype_lane: hermes-removal-sandbox'
+  - line: 15
+    text: '  notes: Shay is canonical; hermes remains an external compatibility contract.'
+  - line: 17
+    text: '  - hermes-external-client-usage-unknown'
+  - line: 43
+    text: '  - hermes-external-client-usage-unknown'
+  - line: 53
+    text: '  - legacy-hermes-home-sensitive'
+- path: docs/shay-research-fetcher-role-2026-06-13.md
+  classification: current_control_keep
+  why: Current role design uses Hermes lane as prototype.
+  hit_count: 2
+  matched_types:
+  - Hermes_cap
+  - hermes_lower
+  sample_lines:
+  - line: 104
+    text: '## Hermes-Removal First Use'
+  - line: 107
+    text: '- hermes-external-client-usage-unknown'
+- path: docs/shay-workstream-control-map-2026-06-12.md
+  classification: stale_superseded
+  why: Broad umbrella control map superseded by narrower packet/matrix/gap docs; keep
+    labeled historical until pruned.
+  hit_count: 29
+  matched_types:
+  - Hermes_cap
+  - dot_hermes
+  - hermes_agent
+  - hermes_lower
+  - tilde_hermes
+  sample_lines:
+  - line: 11
+    text: 2. Hermes removal
+  - line: 25
+    text: '- Hermes: not the active runtime, but still present on disk and via callable
+      wrapper / compatibility residue'
+  - line: 38
+    text: '- prevent accidental cross-contamination from Hermes removal or rewrite
+      experiments'
+  - line: 110
+    text: '## Lane 2 — Hermes removal sandbox lane'
+  - line: 113
+    text: '- remove Hermes branding/code/runtime dependencies safely'
+- path: docs/upstream/hermes-v2026.5.16-delta-report.md
+  classification: historical_reference_keep_labeled
+  why: Upstream Hermes lineage/delta report; preserve as historical evidence.
+  hit_count: 46
+  matched_types:
+  - HERMES_upper
+  - Hermes_cap
+  - dot_hermes
+  - hermes_agent
+  - hermes_lower
+  - tilde_hermes
+  sample_lines:
+  - line: 1
+    text: '# Hermes upstream delta report — v2026.5.7 to v2026.5.16'
+  - line: 5
+    text: 'Hermes base release: `v2026.5.7` / Hermes Agent v0.13.0'
+  - line: 6
+    text: 'Hermes target release: `v2026.5.16` / Hermes Agent v0.14.0'
+  - line: 8
+    text: 'Current Hermes `main` at investigation time: `39c41d0f23a35fdecc143e3cc5ffb2b4dbd3e25d`'
+  - line: 12
+    text: Do not merge Hermes `v2026.5.16` directly into Shay-Shay `main`.
+- path: gateway/chat_stream_routes.py
+  classification: compatibility_shim_keep_deprecate
+  why: SSE route contract preserved for legacy Hermes Workspace client bundle.
+  hit_count: 1
+  matched_types:
+  - Hermes_cap
+  sample_lines:
+  - line: 3
+    text: This is the gateway endpoint that the legacy Hermes Workspace bundle (v2.3+)
+- path: gateway/platforms/api_server.py
+  classification: compatibility_shim_keep_deprecate
+  why: API server mounts legacy workspace-compatible SSE route.
+  hit_count: 1
+  matched_types:
+  - Hermes_cap
+  sample_lines:
+  - line: 3375
+    text: '            # Enhanced-chat SSE endpoint for the legacy Hermes Workspace
+      v2.3+'
+- path: shay_cli/conductor_missions.py
+  classification: compatibility_shim_keep_deprecate
+  why: Shay API surface backing legacy hermes-workspace conductor probes.
+  hit_count: 1
+  matched_types:
+  - hermes_lower
+  - hermes_workspace
+  sample_lines:
+  - line: 4
+    text: hermes-workspace v2.3 gateway probes to decide its ``conductor`` capability
+      flag
+- path: shay_cli/mcp_config.py
+  classification: compatibility_shim_keep_deprecate
+  why: Shay MCP serialization keeps legacy hermes-workspace JSON/mask compatibility.
+  hit_count: 2
+  matched_types:
+  - hermes_lower
+  - hermes_workspace
+  sample_lines:
+  - line: 34
+    text: '# Matches the legacy hermes-workspace mask sentinel so that compatibility
+      UI'
+  - line: 824
+    text: '    consumed by the legacy hermes-workspace ``normalizeMcpServer`` path.'
+- path: shay_cli/web_server.py
+  classification: compatibility_shim_keep_deprecate
+  why: Active Shay dashboard surface with legacy bearer/session-token compatibility
+    for hermes-workspace.
+  hit_count: 10
+  matched_types:
+  - HERMES_upper
+  - dashboard_token
+  - hermes_lower
+  - hermes_workspace
+  - session_token
+  sample_lines:
+  - line: 81
+    text: '    Precedence: SHAY_DASHBOARD_TOKEN > HERMES_DASHBOARD_TOKEN. Empty values'
+  - line: 82
+    text: '    are treated as unset, preserving the legacy hermes-workspace compatibility'
+  - line: 85
+    text: '    for name in ("SHAY_DASHBOARD_TOKEN", "HERMES_DASHBOARD_TOKEN"):'
+  - line: 147
+    text: '    # Stable bearer token from env (SHAY_DASHBOARD_TOKEN / HERMES_DASHBOARD_TOKEN)'
+  - line: 148
+    text: '    # lets legacy external clients like hermes-workspace authenticate'
+- path: tests/shay_cli/test_conductor_missions.py
+  classification: compatibility_shim_keep_deprecate
+  why: Tests prove legacy workspace conductor probe support.
+  hit_count: 1
+  matched_types:
+  - hermes_lower
+  - hermes_workspace
+  sample_lines:
+  - line: 3
+    text: This endpoint backs the legacy hermes-workspace v2.3 Conductor capability.
+      The
+- path: tests/shay_cli/test_dashboard_bearer_auth.py
+  classification: compatibility_shim_keep_deprecate
+  why: Tests prove HERMES_DASHBOARD_TOKEN fallback remains a deliberate external contract.
+  hit_count: 14
+  matched_types:
+  - HERMES_upper
+  - dashboard_token
+  - hermes_lower
+  - hermes_workspace
+  sample_lines:
+  - line: 3
+    text: Covers the SHAY_DASHBOARD_TOKEN / HERMES_DASHBOARD_TOKEN env-var bearer
+  - line: 4
+    text: compatibility contract that lets legacy external clients (hermes-workspace
+  - line: 32
+    text: '    monkeypatch.delenv("HERMES_DASHBOARD_TOKEN", raising=False)'
+  - line: 60
+    text: 'def test_hermes_dashboard_token_validates_when_shay_unset(monkeypatch):'
+  - line: 61
+    text: '    monkeypatch.setenv("HERMES_DASHBOARD_TOKEN", "xyz789")'
+- path: tests/shay_cli/test_mcp_api_routes.py
+  classification: compatibility_shim_keep_deprecate
+  why: Tests prove legacy workspace token/MCP compatibility remains intentional.
+  hit_count: 6
+  matched_types:
+  - HERMES_upper
+  - hermes_lower
+  - hermes_workspace
+  - session_token
+  sample_lines:
+  - line: 2
+    text: to the legacy hermes-workspace v2.3 MCP UI compatibility contract.
+  - line: 12
+    text: '- SPA root injects __HERMES__SESSION_TOKEN__ so the legacy workspace regex
+      matches'
+  - line: 303
+    text: '    """The SPA shell must inline a `window.__HERMES__SESSION_TOKEN__` literal'
+  - line: 304
+    text: '    so the legacy hermes-workspace `fetchDashboardToken()` regex extracts
+      a valid token.'
+  - line: 307
+    text: '    _refs/hermes-workspace-v2.3/src/server/gateway-capabilities.ts (line
+      157-158).'
