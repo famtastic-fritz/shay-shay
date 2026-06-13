@@ -91,9 +91,9 @@ Goal:
 Replace paperwork-only process intelligence with one real machine-written run pipeline.
 
 Current branch truth:
-- completed in branch-local form for run/tool/artifact/validation capture
-- validated by unit test
-- not yet pushed/merged
+- completed on this branch for run/tool/artifact/validation capture
+- covered by committed test files on this branch
+- pushed to the branch remote, but not merged to `main`
 - not yet exposed through a user-facing query surface
 - decision ledger remains Phase 2 work
 

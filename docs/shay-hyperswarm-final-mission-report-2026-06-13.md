@@ -16,7 +16,7 @@ Lineage:
 The mission did not restart.
 The mission did shift into a real HyperSwarm.
 The swarm produced a serious docs/control packet with evidence-backed lane outputs.
-It also now has a branch-local Phase 1 process-intelligence runtime that writes machine-generated run/tool/artifact/validation records.
+It also now has a Phase 1 process-intelligence runtime on this branch that writes machine-generated run/tool/artifact/validation records.
 It still does not have a fully merged, live-proven process-intelligence system.
 
 Correct top-line truth:
@@ -61,6 +61,9 @@ Produced:
 - `docs/shay-awareness-lane-packet-2026-06-13.md`
 - `docs/shay-adoption-backlog-2026-06-13.md`
 - `docs/shay-gap-lifecycle-status-2026-06-13.md`
+
+Post-commit verification note:
+- these awareness artifacts are referenced here, but they are not currently present on this branch and should not be treated as landed truth until restored or downgraded
 
 Useful truth produced:
 - HyperSwarm is canonical
