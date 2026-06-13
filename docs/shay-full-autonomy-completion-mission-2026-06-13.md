@@ -447,11 +447,20 @@ Be brutal:
 - full implementation
 - next move
 
+## Mission Amendments
+
+Execution-control refinements added during the live run are kept in:
+- `docs/shay-full-autonomy-completion-mission-amendment-2026-06-13.md`
+
+Use this file as the base mission authority.
+Use the amendment file for HyperSwarm lane control and tracker-governance refinements added after the initial mission packet was committed.
+
 ## Completion Criteria
 
 Done only when:
 
 - this mission packet exists
+- the master open-items and completion tracker exists
 - schedule audit exists
 - command surface map exists
 - process intelligence architecture exists

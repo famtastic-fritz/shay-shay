@@ -1,0 +1,435 @@
+plan_id: plan-full-autonomy-completion-2026-06-13
+job_id: job-captain-tracker-2026-06-13-01
+run_id: run-2026-06-13-full-autonomy-mission-01
+event_id: event-captain-tracker-write-2026-06-13-01
+branch: docs/hermes-removal-control-pr-20260613
+worktree: /Users/famtasticfritz/famtastic/shay-shay-main-sync-20260613
+tracker_version: 2026-06-13
+truth_rule: If a lane snapshot conflicts with this tracker, this tracker wins.
+state_counts:
+  designed: 8
+  sandbox_proven: 2
+  pr_ready: 10
+  pr_open: 1
+  merged_to_main: 0
+  live_wired: 0
+  validated_live: 0
+  blocked: 2
+  deferred: 3
+items:
+  - id: MSI-001
+    surface: mission amendment to HyperSwarm model
+    current_state: pr_ready
+    done_definition: Mission authority updated to require captain plus lanes plus merge model without restart.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers:
+      - uncommitted working tree
+    evidence:
+      - docs/shay-full-autonomy-completion-mission-2026-06-13.md
+    live_now: false
+    next_action: commit with tracker pack
+  - id: MSI-002
+    surface: Hermes lane packet
+    current_state: pr_ready
+    done_definition: Hermes status classified with designed versus live separation and proof pointers.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers: []
+    evidence:
+      - docs/shay-hermes-lane-packet-2026-06-13.md
+    live_now: false
+    next_action: merge into final packet
+  - id: MSI-003
+    surface: Hermes wrapper forwarding and compatibility
+    current_state: designed
+    done_definition: Explicit approved forwarder plan plus validated non-breaking cutover test.
+    who_calls_complete: Fritz
+    human_signoff_required: true
+    blockers:
+      - approval-gated
+      - no live wrapper edits allowed in this mission
+    evidence:
+      - docs/hermes-live-wrapper-forwarder-validation-packet-2026-06-13.md
+      - docs/hermes-external-compatibility-plan-2026-06-13.md
+    live_now: false
+    next_action: separate approval packet
+  - id: MSI-004
+    surface: Hermes relabeling reconstruction
+    current_state: deferred
+    done_definition: Fresh-branch reconstruction lands clean and passes validation.
+    who_calls_complete: Fritz
+    human_signoff_required: true
+    blockers:
+      - old sandbox not cleanly transplantable
+    evidence:
+      - docs/hermes-removal-pr-readiness-check-2026-06-13.md
+      - docs/hermes-removal-clean-pr-transplant-manifest-2026-06-13.md
+    live_now: false
+    next_action: rebuild later on fresh branch
+  - id: MSI-005
+    surface: dirty live checkout cleanup
+    current_state: deferred
+    done_definition: Live checkout classified, preserved, then cleaned only with explicit approval path.
+    who_calls_complete: Fritz
+    human_signoff_required: true
+    blockers:
+      - live tree intentionally untouched
+      - ahead behind drift
+    evidence:
+      - docs/shay-hermes-lane-packet-2026-06-13.md
+    live_now: true
+    next_action: separate cleanup lane
+  - id: MSI-006
+    surface: paused rewrite sandbox status
+    current_state: sandbox_proven
+    done_definition: Sandbox existence, branch, and parked-clean state proven.
+    who_calls_complete: captain
+    human_signoff_required: false
+    blockers: []
+    evidence:
+      - docs/shay-hermes-lane-packet-2026-06-13.md
+    live_now: false
+    next_action: keep parked
+  - id: MSI-007
+    surface: model-switch local stack parked status
+    current_state: deferred
+    done_definition: Runtime proof collected, then commit hygiene path defined.
+    who_calls_complete: Fritz
+    human_signoff_required: true
+    blockers:
+      - live fix intentionally uncommitted pending proof
+    evidence:
+      - docs/shay-hermes-lane-packet-2026-06-13.md
+      - docs/live-model-switchboard-stabilization-2026-06-12.md
+    live_now: false
+    next_action: runtime-proof lane later
+  - id: MSI-008
+    surface: awareness completion assessment
+    current_state: pr_ready
+    done_definition: Honest capability-readiness assessment exists and points to gaps without overclaiming.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers:
+      - lane snapshot went stale after later lanes landed
+    evidence:
+      - docs/shay-awareness-completion-assessment-2026-06-13.md
+    live_now: false
+    next_action: reconcile stale claims in final canon
+  - id: MSI-009
+    surface: adoption backlog
+    current_state: designed
+    done_definition: Structured backlog exists with owner reason and priority model.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers:
+      - not connected to recurring review loop
+    evidence:
+      - docs/shay-adoption-backlog-2026-06-13.md
+    live_now: false
+    next_action: bind to future review cycle
+  - id: MSI-010
+    surface: gap lifecycle status
+    current_state: designed
+    done_definition: Gap classes and lifecycle states documented.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers:
+      - not machine-written
+    evidence:
+      - docs/shay-gap-lifecycle-status-2026-06-13.md
+    live_now: false
+    next_action: connect to tracker and ledger
+  - id: MSI-011
+    surface: process intelligence architecture
+    current_state: pr_ready
+    done_definition: Architecture doc exists with ledger split lineage and redaction posture.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers:
+      - design only
+    evidence:
+      - docs/shay-process-intelligence-architecture-2026-06-13.md
+    live_now: false
+    next_action: build minimal ledger implementation
+  - id: MSI-012
+    surface: run ledger schema
+    current_state: pr_ready
+    done_definition: YAML schema exists and parses.
+    who_calls_complete: captain
+    human_signoff_required: false
+    blockers:
+      - not implemented in runtime
+    evidence:
+      - docs/shay-run-ledger-schema-2026-06-13.yaml
+    live_now: false
+    next_action: implement writer
+  - id: MSI-013
+    surface: decision ledger schema
+    current_state: pr_ready
+    done_definition: YAML schema exists and parses.
+    who_calls_complete: captain
+    human_signoff_required: false
+    blockers:
+      - not implemented in runtime
+    evidence:
+      - docs/shay-decision-ledger-schema-2026-06-13.yaml
+    live_now: false
+    next_action: implement writer
+  - id: MSI-014
+    surface: tool-agent ledger schema
+    current_state: pr_ready
+    done_definition: YAML schema exists and parses.
+    who_calls_complete: captain
+    human_signoff_required: false
+    blockers:
+      - not implemented in runtime
+    evidence:
+      - docs/shay-tool-agent-ledger-schema-2026-06-13.yaml
+    live_now: false
+    next_action: implement writer
+  - id: MSI-015
+    surface: artifact ledger schema
+    current_state: pr_ready
+    done_definition: YAML schema exists and parses.
+    who_calls_complete: captain
+    human_signoff_required: false
+    blockers:
+      - not implemented in runtime
+    evidence:
+      - docs/shay-artifact-ledger-schema-2026-06-13.yaml
+    live_now: false
+    next_action: implement writer
+  - id: MSI-016
+    surface: telemetry redaction policy
+    current_state: designed
+    done_definition: Redaction-first policy exists and names abstract secret-risk handling.
+    who_calls_complete: Fritz
+    human_signoff_required: true
+    blockers:
+      - not enforced in code path yet
+    evidence:
+      - docs/shay-telemetry-redaction-policy-2026-06-13.md
+    live_now: false
+    next_action: implement pre-persistence filter tests
+  - id: MSI-017
+    surface: after-action review policy
+    current_state: designed
+    done_definition: AAR policy exists with review expectations.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers:
+      - not embedded in recurring workflow
+    evidence:
+      - docs/shay-after-action-review-policy-2026-06-13.md
+    live_now: false
+    next_action: attach to post-run path
+  - id: MSI-018
+    surface: process query examples
+    current_state: designed
+    done_definition: Query set exists and is useful as acceptance target.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers:
+      - no live query engine
+    evidence:
+      - docs/shay-process-query-examples-2026-06-13.md
+    live_now: false
+    next_action: use as implementation acceptance suite
+  - id: MSI-019
+    surface: process learning loop
+    current_state: designed
+    done_definition: Learning-loop doc exists with recommendation path.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers:
+      - not wired
+    evidence:
+      - docs/shay-process-learning-loop-2026-06-13.md
+    live_now: false
+    next_action: implement after ledger basics
+  - id: MSI-020
+    surface: process intelligence pilot run
+    current_state: sandbox_proven
+    done_definition: Synthetic example run proves desired record shape.
+    who_calls_complete: captain
+    human_signoff_required: false
+    blockers:
+      - illustrative only
+    evidence:
+      - docs/shay-process-intelligence-pilot-run-2026-06-13.md
+    live_now: false
+    next_action: do real machine-written pilot
+  - id: MSI-021
+    surface: current intelligence schedule audit
+    current_state: pr_ready
+    done_definition: Live machine schedule surfaces audited read-only with evidence.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers: []
+    evidence:
+      - docs/shay-current-intelligence-schedule-audit-2026-06-13.md
+    live_now: true
+    next_action: use as watcher baseline
+  - id: MSI-022
+    surface: watcher design
+    current_state: pr_ready
+    done_definition: Read-only watcher design exists with no-mutation boundary.
+    who_calls_complete: Fritz
+    human_signoff_required: true
+    blockers:
+      - under-scoped relative to full watcher list
+    evidence:
+      - docs/shay-process-intelligence-watcher-design-2026-06-13.md
+    live_now: false
+    next_action: expand against reviewer gaps
+  - id: MSI-023
+    surface: pattern scanner autonomy policy
+    current_state: designed
+    done_definition: Policy exists defining safety and autonomy boundary.
+    who_calls_complete: Fritz
+    human_signoff_required: true
+    blockers:
+      - policy only
+    evidence:
+      - docs/shay-pattern-scanner-autonomy-policy-2026-06-13.md
+    live_now: false
+    next_action: pair with design and later implementation
+  - id: MSI-024
+    surface: pattern scanner design
+    current_state: pr_ready
+    done_definition: Design doc exists with inputs outputs severity confidence and enablement gates.
+    who_calls_complete: Fritz
+    human_signoff_required: true
+    blockers:
+      - implementation missing
+    evidence:
+      - docs/shay-pattern-scanner-design-2026-06-13.md
+    live_now: false
+    next_action: build minimal scanner after ledgers
+  - id: MSI-025
+    surface: command surface map markdown
+    current_state: pr_ready
+    done_definition: Required commands mapped with verified documented and unknown labels.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers:
+      - no single consolidated health command
+    evidence:
+      - docs/shay-command-surface-map-2026-06-13.md
+    live_now: false
+    next_action: use as operator map
+  - id: MSI-026
+    surface: command surface map yaml
+    current_state: pr_ready
+    done_definition: YAML map exists and parses.
+    who_calls_complete: captain
+    human_signoff_required: false
+    blockers: []
+    evidence:
+      - docs/shay-command-surface-map-2026-06-13.yaml
+    live_now: false
+    next_action: keep as structured truth
+  - id: MSI-027
+    surface: MCP health proof
+    current_state: blocked
+    done_definition: Per-server MCP health is proven without overclaiming whole-surface readiness.
+    who_calls_complete: captain
+    human_signoff_required: false
+    blockers:
+      - one passing server is not whole-surface readiness
+    evidence:
+      - docs/shay-command-surface-map-2026-06-13.md
+    live_now: partial
+    next_action: keep per-server proof only
+  - id: MSI-028
+    surface: scheduler and daily-brief risk classification
+    current_state: pr_ready
+    done_definition: Current unhealthy noisy daily-brief surface documented with evidence and no mutation.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers:
+      - no dedupe or cooldown system
+    evidence:
+      - docs/shay-current-intelligence-schedule-audit-2026-06-13.md
+    live_now: true
+    next_action: do not expand dailybrief path
+  - id: MSI-029
+    surface: prune recommendations
+    current_state: pr_ready
+    done_definition: Merge archive quarantine supersede recommendations exist without deletion.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers:
+      - branch still at sprawl risk
+    evidence:
+      - docs/shay-prune-recommendations-2026-06-13.md
+    live_now: false
+    next_action: apply in next cleanup pass
+  - id: MSI-030
+    surface: process intelligence brutal QA
+    current_state: pr_ready
+    done_definition: Reviewer downgrades claims and scores HyperSwarm honestly.
+    who_calls_complete: Fritz
+    human_signoff_required: false
+    blockers: []
+    evidence:
+      - docs/shay-process-intelligence-brutal-qa-report-2026-06-13.md
+    live_now: false
+    next_action: use as final check gate
+  - id: MSI-031
+    surface: real ledger pipeline
+    current_state: blocked
+    done_definition: Machine-written run decision tool and artifact records emitted during real Shay runs.
+    who_calls_complete: Fritz
+    human_signoff_required: true
+    blockers:
+      - not implemented
+      - design only
+    evidence:
+      - docs/shay-process-intelligence-brutal-qa-report-2026-06-13.md
+      - docs/shay-run-ledger-schema-2026-06-13.yaml
+      - docs/shay-decision-ledger-schema-2026-06-13.yaml
+      - docs/shay-tool-agent-ledger-schema-2026-06-13.yaml
+      - docs/shay-artifact-ledger-schema-2026-06-13.yaml
+    live_now: false
+    next_action: build minimum viable implementation next
+  - id: MSI-032
+    surface: durable process-question answering
+    current_state: blocked
+    done_definition: Shay can answer Fritz process questions from live ledgers and query surfaces rather than ad hoc docs.
+    who_calls_complete: Fritz
+    human_signoff_required: true
+    blockers:
+      - no live ledger pipeline
+      - no durable query surface
+      - no implemented scanner
+    evidence:
+      - docs/shay-process-intelligence-brutal-qa-report-2026-06-13.md
+    live_now: false
+    next_action: build MVI first
+  - id: MSI-033
+    surface: PR number 3 docs control packet
+    current_state: pr_open
+    done_definition: Existing PR contains the honest docs/control tranche and stays scoped away from live mutations.
+    who_calls_complete: Fritz
+    human_signoff_required: true
+    blockers:
+      - verify branch content before merge
+    evidence:
+      - docs/hermes-removal-pr-readiness-check-2026-06-13.md
+      - docs/hermes-removal-clean-pr-transplant-manifest-2026-06-13.md
+    live_now: false
+    next_action: update PR content intentionally not by drift
+open_gaps:
+  - No machine-written live ledger pipeline exists.
+  - Tracker and several lane artifacts are still uncommitted.
+  - Awareness snapshot is stale in places after later lanes landed.
+  - Watcher design does not yet cover the full watcher set requested by reviewer.
+  - Daily-brief path is noisy and should not be reused as a watcher delivery channel.
+  - Pattern scanner is designed but not implemented.
+  - No durable query surface exists to answer process questions from live run data.
+captain_verdict:
+  docs_control_state: pr_ready
+  live_capability_state: blocked
+  summary: The mission successfully shifted into HyperSwarm without restart and produced a usable control packet, but not a live process-intelligence system.

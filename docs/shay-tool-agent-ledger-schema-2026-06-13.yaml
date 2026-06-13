@@ -1,0 +1,182 @@
+schema_version: 1
+ledger_name: shay_tool_agent_ledger
+ledger_purpose: Track tool use, worker roles, execution steps, and bounded runtime telemetry for HyperSwarm mission work.
+status: draft
+lineage_defaults:
+  plan_id: plan-full-autonomy-completion-2026-06-13
+  run_id: run-2026-06-13-full-autonomy-mission-01
+required_fields:
+  - activity_id
+  - plan_id
+  - job_id
+  - task_id
+  - run_id
+  - event_id
+  - lane_id
+  - actor_type
+  - actor_id
+  - tool_name
+  - action_summary
+  - status
+  - started_at
+  - touched_resources
+  - redactions
+field_definitions:
+  activity_id:
+    type: string
+  plan_id:
+    type: string
+  job_id:
+    type: string
+  task_id:
+    type: string
+  run_id:
+    type: string
+  event_id:
+    type: string
+  lane_id:
+    type: string
+  worker_id:
+    type: [string, 'null']
+  actor_type:
+    type: string
+    enum: [agent, subagent, human, automation]
+  actor_id:
+    type: string
+  role:
+    type: string
+  capability_tag:
+    type: [string, 'null']
+  tool_name:
+    type: string
+  tool_class:
+    type: string
+    enum: [read, write, search, terminal, validation, memory, planning]
+  action_summary:
+    type: string
+  command_summary:
+    type: [string, 'null']
+  status:
+    type: string
+    enum: [started, completed, partial, failed, blocked, skipped]
+  started_at:
+    type: string
+    format: date-time
+  ended_at:
+    type: [string, 'null']
+    format: date-time
+  duration_ms:
+    type: [integer, 'null']
+    minimum: 0
+  touched_resources:
+    type: array
+    items:
+      type: string
+  files_read:
+    type: array
+    items:
+      type: string
+  files_written:
+    type: array
+    items:
+      type: string
+  output_summary:
+    type: [string, 'null']
+  error_summary:
+    type: [string, 'null']
+  safety_flags:
+    type: array
+    items:
+      type: string
+  validation_refs:
+    type: array
+    items:
+      type: string
+  redactions:
+    type: array
+    items:
+      type: string
+validation_rules:
+  - error_summary is required when status is failed
+  - command_summary must be redacted if arguments contain sensitive data
+  - touched_resources should identify files, paths, repos, or processes at a summary level
+  - files_written must remain empty for read-only tool activity
+redaction_policy:
+  default_mode: redact-first
+  command_capture_rule: Store only command summaries unless a command is already safe and non-sensitive.
+example_records:
+  - activity_id: activity-tool-read-authority-2026-06-13-01
+    plan_id: plan-full-autonomy-completion-2026-06-13
+    job_id: job-process-intelligence-architecture-2026-06-13-01
+    task_id: task-process-intelligence-doc-pack-2026-06-13-01
+    run_id: run-2026-06-13-full-autonomy-mission-01
+    event_id: evt-run-2026-06-13-full-autonomy-mission-01-001
+    lane_id: process-intelligence
+    worker_id: process-intelligence-lane-worker
+    actor_type: subagent
+    actor_id: shay-shay-cli-subagent
+    role: process intelligence lane worker
+    capability_tag: process-intelligence
+    tool_name: read_file
+    tool_class: read
+    action_summary: Read mission authority file to extract required artifacts, autonomy rules, and metadata requirements.
+    command_summary: null
+    status: completed
+    started_at: '2026-06-13T11:50:00Z'
+    ended_at: '2026-06-13T11:50:08Z'
+    duration_ms: 8000
+    touched_resources:
+      - docs/shay-full-autonomy-completion-mission-2026-06-13.md
+    files_read:
+      - docs/shay-full-autonomy-completion-mission-2026-06-13.md
+    files_written: []
+    output_summary: Mission authority confirmed exact required process-intelligence artifacts and redaction-first mandate.
+    error_summary: null
+    safety_flags: []
+    validation_refs:
+      - validation-authority-file-review-2026-06-13-01
+    redactions:
+      - None required; content captured as summary only.
+  - activity_id: activity-tool-write-ledger-pack-2026-06-13-01
+    plan_id: plan-full-autonomy-completion-2026-06-13
+    job_id: job-process-intelligence-architecture-2026-06-13-01
+    task_id: task-process-intelligence-doc-pack-2026-06-13-01
+    run_id: run-2026-06-13-full-autonomy-mission-01
+    event_id: evt-run-2026-06-13-full-autonomy-mission-01-006
+    lane_id: process-intelligence
+    worker_id: process-intelligence-lane-worker
+    actor_type: subagent
+    actor_id: shay-shay-cli-subagent
+    role: process intelligence lane worker
+    capability_tag: documentation-control
+    tool_name: write_file
+    tool_class: write
+    action_summary: Wrote architecture, schema, policy, pilot, learning-loop, query, and lane packet documentation files.
+    command_summary: null
+    status: completed
+    started_at: '2026-06-13T12:00:00Z'
+    ended_at: '2026-06-13T12:28:00Z'
+    duration_ms: 1680000
+    touched_resources:
+      - docs/
+    files_read: []
+    files_written:
+      - docs/shay-process-intelligence-architecture-2026-06-13.md
+      - docs/shay-run-ledger-schema-2026-06-13.yaml
+      - docs/shay-decision-ledger-schema-2026-06-13.yaml
+      - docs/shay-tool-agent-ledger-schema-2026-06-13.yaml
+      - docs/shay-artifact-ledger-schema-2026-06-13.yaml
+      - docs/shay-process-query-examples-2026-06-13.md
+      - docs/shay-after-action-review-policy-2026-06-13.md
+      - docs/shay-telemetry-redaction-policy-2026-06-13.md
+      - docs/shay-process-intelligence-pilot-run-2026-06-13.md
+      - docs/shay-process-learning-loop-2026-06-13.md
+      - docs/shay-process-intelligence-lane-packet-2026-06-13.md
+    output_summary: Required documentation pack created with mission lineage defaults and redaction-first controls.
+    error_summary: null
+    safety_flags:
+      - branch-local-docs-only
+    validation_refs:
+      - validation-changed-file-inventory-2026-06-13-01
+    redactions:
+      - Secret-risk finding kept abstract in written outputs.

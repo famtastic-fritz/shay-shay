@@ -1,0 +1,295 @@
+schema_version: 1
+ledger_name: shay_run_ledger
+ledger_purpose: Durable run-level process intelligence for HyperSwarm mission execution.
+status: draft
+lineage_defaults:
+  plan_id: plan-full-autonomy-completion-2026-06-13
+  run_id: run-2026-06-13-full-autonomy-mission-01
+id_conventions:
+  job_id_pattern: job-<lane>-<yyyy-mm-dd>-<nn>
+  task_id_pattern: task-<deliverable>-<yyyy-mm-dd>-<nn>
+  run_id_pattern: run-<yyyy-mm-dd>-<mission>-<nn>
+  event_id_pattern: evt-<run_id>-<nnn>
+required_fields:
+  - plan_id
+  - job_id
+  - task_id
+  - run_id
+  - event_id
+  - status
+  - started_at
+  - instruction_summary
+  - instruction_hash
+  - mission_authority_path
+  - autonomy_zone
+  - allowed_actions
+  - forbidden_actions
+  - tools_used
+  - files_inspected
+  - files_changed
+  - outcome
+  - next_actions
+  - redactions
+field_definitions:
+  plan_id:
+    type: string
+    description: Stable mission or plan lineage root.
+  job_id:
+    type: string
+    description: Lane-level objective identifier.
+  task_id:
+    type: string
+    description: Bounded task identifier inside the job.
+  run_id:
+    type: string
+    description: One execution attempt for the task.
+  event_id:
+    type: string
+    description: Anchor event for the run record, usually run-start or run-close.
+  parent_job_id:
+    type: [string, 'null']
+    description: Upstream job lineage when this is a sub-lane.
+  parent_task_id:
+    type: [string, 'null']
+  parent_run_id:
+    type: [string, 'null']
+  lane_id:
+    type: string
+    description: Named workstream or lane.
+  swarm_id:
+    type: [string, 'null']
+    description: Optional swarm grouping identifier.
+  worker_id:
+    type: [string, 'null']
+    description: Specific worker/subagent identity.
+  status:
+    type: string
+    enum: [planned, running, completed, partial, blocked, failed, aborted]
+  started_at:
+    type: string
+    format: date-time
+  ended_at:
+    type: [string, 'null']
+    format: date-time
+  duration_seconds:
+    type: [integer, 'null']
+    minimum: 0
+  mission_authority_path:
+    type: string
+  instruction_summary:
+    type: string
+  instruction_hash:
+    type: string
+    description: Hash of normalized instruction packet, not raw transcript.
+  autonomy_zone:
+    type: string
+    enum: [green, yellow, red, mixed]
+  allowed_actions:
+    type: array
+    items:
+      type: string
+  forbidden_actions:
+    type: array
+    items:
+      type: string
+  assumptions:
+    type: array
+    items:
+      type: string
+  tools_used:
+    type: array
+    items:
+      type: string
+  commands_run:
+    type: array
+    items:
+      type: string
+    description: Redacted command summaries; do not store secrets.
+  files_inspected:
+    type: array
+    items:
+      type: string
+  files_changed:
+    type: array
+    items:
+      type: string
+  artifacts_created:
+    type: array
+    items:
+      type: string
+  decisions_made:
+    type: array
+    items:
+      type: string
+  validations_run:
+    type: array
+    items:
+      type: string
+  blockers:
+    type: array
+    items:
+      type: string
+  gaps_opened:
+    type: array
+    items:
+      type: string
+  gaps_closed:
+    type: array
+    items:
+      type: string
+  safety_events:
+    type: array
+    items:
+      type: object
+      required: [event_id, severity, summary, disposition]
+      properties:
+        event_id:
+          type: string
+        severity:
+          type: string
+          enum: [info, low, medium, high, critical]
+        summary:
+          type: string
+        disposition:
+          type: string
+          enum: [observed, mitigated, escalated, stopped]
+  rework_loops:
+    type: integer
+    minimum: 0
+  model_provider_context:
+    type: object
+    properties:
+      provider:
+        type: [string, 'null']
+      model:
+        type: [string, 'null']
+      cost_tier:
+        type: [string, 'null']
+  outcome:
+    type: string
+    enum: [success, success_with_followups, partial, blocked, failed, aborted]
+  next_actions:
+    type: array
+    items:
+      type: string
+  lessons_learned:
+    type: array
+    items:
+      type: string
+  redactions:
+    type: array
+    items:
+      type: string
+  notes:
+    type: [string, 'null']
+validation_rules:
+  - ended_at is required when status is completed, partial, blocked, failed, or aborted
+  - duration_seconds should be present when ended_at is present
+  - files_changed must be empty when outcome is blocked and no mutation occurred
+  - safety_events must not contain raw secret values
+  - redactions must explain any omitted evidence
+redaction_policy:
+  default_mode: redact-first
+  forbidden_payloads:
+    - raw secrets
+    - api keys
+    - tokens
+    - passwords
+    - cookies
+    - full private transcripts
+    - full environment dumps
+  allowed_substitutes:
+    - path only
+    - hash only
+    - abstract summary
+    - protected pointer
+example_record:
+  plan_id: plan-full-autonomy-completion-2026-06-13
+  job_id: job-process-intelligence-architecture-2026-06-13-01
+  task_id: task-process-intelligence-doc-pack-2026-06-13-01
+  run_id: run-2026-06-13-full-autonomy-mission-01
+  event_id: evt-run-2026-06-13-full-autonomy-mission-01-001
+  parent_job_id: job-full-autonomy-docs-control-2026-06-13-01
+  parent_task_id: task-hyperswarm-mission-doc-pack-2026-06-13-01
+  parent_run_id: null
+  lane_id: process-intelligence
+  swarm_id: hyperswarm-mission-2026-06-13
+  worker_id: process-intelligence-lane-worker
+  status: completed
+  started_at: '2026-06-13T11:49:00Z'
+  ended_at: '2026-06-13T12:30:00Z'
+  duration_seconds: 2460
+  mission_authority_path: docs/shay-full-autonomy-completion-mission-2026-06-13.md
+  instruction_summary: Create process intelligence architecture, ledgers, policies, pilot run, learning loop, and query examples for the HyperSwarm mission.
+  instruction_hash: sha256:<redacted-normalized-packet-hash>
+  autonomy_zone: green
+  allowed_actions:
+    - read-only inspection
+    - docs/control artifacts
+    - branch-local documentation edits
+  forbidden_actions:
+    - live deletion
+    - live wrapper edits
+    - live service restart
+    - secrets/private data access
+  assumptions:
+    - Existing branch-local docs work is allowed under mission authority.
+    - No live automation is enabled by this lane.
+  tools_used:
+    - terminal
+    - read_file
+    - search_files
+    - write_file
+  commands_run:
+    - git branch/status inspection
+    - repository doc inventory search
+  files_inspected:
+    - docs/shay-full-autonomy-completion-mission-2026-06-13.md
+    - docs/shay-workstream-control-map-2026-06-12.md
+  files_changed:
+    - docs/shay-process-intelligence-architecture-2026-06-13.md
+    - docs/shay-run-ledger-schema-2026-06-13.yaml
+    - docs/shay-decision-ledger-schema-2026-06-13.yaml
+    - docs/shay-tool-agent-ledger-schema-2026-06-13.yaml
+    - docs/shay-artifact-ledger-schema-2026-06-13.yaml
+    - docs/shay-process-query-examples-2026-06-13.md
+    - docs/shay-after-action-review-policy-2026-06-13.md
+    - docs/shay-telemetry-redaction-policy-2026-06-13.md
+    - docs/shay-process-intelligence-pilot-run-2026-06-13.md
+    - docs/shay-process-learning-loop-2026-06-13.md
+    - docs/shay-process-intelligence-lane-packet-2026-06-13.md
+  artifacts_created:
+    - artifact-process-intelligence-architecture-2026-06-13-01
+    - artifact-process-ledger-pack-2026-06-13-01
+  decisions_made:
+    - decision-redaction-first-ledger-architecture-2026-06-13-01
+    - decision-four-ledger-separation-2026-06-13-01
+  validations_run:
+    - branch verification
+    - authority file review
+    - changed-file inventory review
+  blockers: []
+  gaps_opened:
+    - gap-secret-exposure-risk-filter-hardening-2026-06-13-01
+  gaps_closed: []
+  safety_events:
+    - event_id: evt-run-2026-06-13-full-autonomy-mission-01-004
+      severity: medium
+      summary: Audit identified abstract secret-exposure risk in a workflow surface; values were not captured.
+      disposition: mitigated
+  rework_loops: 0
+  model_provider_context:
+    provider: null
+    model: null
+    cost_tier: null
+  outcome: success_with_followups
+  next_actions:
+    - Validate schemas against future implementation format.
+    - Route secret-filter hardening through the approval policy if automation scope expands.
+  lessons_learned:
+    - Explainability requires decision and artifact ledgers, not just run summaries.
+    - Redaction rules must be embedded in every ledger schema, not left to operators.
+  redactions:
+    - instruction_hash stores hash only, not full transcript
+    - audit risk described abstractly with no secret values
+  notes: Branch-local docs/control design only.

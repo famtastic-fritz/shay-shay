@@ -1,0 +1,248 @@
+date: '2026-06-13'
+mission_file: 'docs/shay-full-autonomy-completion-mission-2026-06-13.md'
+artifact: 'docs/shay-command-surface-map-2026-06-13.md'
+worktree: '/Users/famtasticfritz/famtastic/shay-shay-main-sync-20260613'
+branch: 'docs/hermes-removal-control-pr-20260613'
+summary:
+  overall_status: partial_complete
+  major_findings:
+    - 'required top-level command groups are present and verified for doctor, status, sessions, mcp, gateway, model, skills, memory, and config'
+    - 'the literal mission phrase skills view maps to the actual current command shay skills inspect'
+    - '/model exists in the slash-command registry and is session-scoped; shay model is a separate TTY-based setup flow'
+    - 'session full-text search exists in storage and web API layers, but no dedicated non-interactive shay sessions search command was found'
+    - 'memory search is better exposed through MCP servers/tools than through the shay memory CLI group'
+    - 'health/diagnostics are split across doctor, status, config check, gateway status, and mcp test rather than a single unified health command'
+provenance:
+  verified_runtime:
+    interpreter: '/Users/famtasticfritz/famtastic/shay-shay/.venv/bin/python'
+    module_entry: 'shay_cli.main'
+    commands:
+      - 'shay_cli.main --help'
+      - 'shay_cli.main doctor --help'
+      - 'shay_cli.main doctor'
+      - 'shay_cli.main status --help'
+      - 'shay_cli.main status'
+      - 'shay_cli.main sessions --help'
+      - 'shay_cli.main sessions list --help'
+      - 'shay_cli.main sessions browse --help'
+      - 'shay_cli.main sessions stats'
+      - 'shay_cli.main sessions list --limit 5'
+      - 'shay_cli.main mcp --help'
+      - 'shay_cli.main mcp list'
+      - 'shay_cli.main mcp test basic-memory'
+      - 'shay_cli.main gateway --help'
+      - 'shay_cli.main gateway status --help'
+      - 'shay_cli.main gateway status'
+      - 'shay_cli.main model --help'
+      - 'shay_cli.main skills --help'
+      - 'shay_cli.main skills list --help'
+      - 'shay_cli.main skills list --source all'
+      - 'shay_cli.main skills inspect --help'
+      - 'shay_cli.main memory --help'
+      - 'shay_cli.main memory status'
+      - 'shay_cli.main config --help'
+      - 'shay_cli.main config check --help'
+      - 'shay_cli.main config check'
+  code_sources:
+    - path: 'shay_cli/main.py'
+      evidence:
+        - 'gateway parser and subcommands'
+        - 'mcp parser and subcommands'
+        - 'sessions parser and subcommands'
+        - 'config parser and subcommands'
+        - 'skills parser and subcommands'
+        - 'model parser wiring'
+    - path: 'shay_cli/commands.py'
+      evidence:
+        - 'slash command registry entry for model'
+        - 'slash command registry entry for sessions'
+        - 'slash command registry entry for skills'
+    - path: 'shay_state.py'
+      evidence:
+        - 'SQLite session store uses FTS5 full-text search'
+    - path: 'shay_cli/web_server.py'
+      evidence:
+        - '/api/sessions/search endpoint backed by SessionDB.search_messages'
+surfaces:
+  doctor:
+    status: verified
+    commands:
+      - 'shay doctor'
+      - 'shay doctor --fix'
+    purpose: 'setup, provider, dependency, tool, and runtime diagnostics'
+    observed_behavior:
+      - 'validates python and virtualenv'
+      - 'validates package presence'
+      - 'checks config files and config version'
+      - 'checks auth providers'
+      - 'checks directory structure and state.db'
+      - 'runs parallel api connectivity checks'
+      - 'reports tool availability including session_search'
+      - 'reports skills hub and memory provider state'
+    notes:
+      - '--fix exists but was not executed because it can mutate install/config state'
+  status:
+    status: verified
+    commands:
+      - 'shay status'
+      - 'shay status --all'
+      - 'shay status --deep'
+    purpose: 'fast system and provider summary'
+    observed_behavior:
+      - 'reports project path, python, model, provider'
+      - 'reports masked key/auth presence'
+      - 'reports messaging platform state'
+      - 'reports gateway service, scheduled jobs, and sessions'
+  sessions:
+    status: verified
+    commands:
+      - 'shay sessions list'
+      - 'shay sessions export'
+      - 'shay sessions delete'
+      - 'shay sessions prune'
+      - 'shay sessions stats'
+      - 'shay sessions rename'
+      - 'shay sessions browse'
+    observed_behavior:
+      - 'stats returned total sessions, total messages, and database size'
+      - 'list returned recent sessions with titles/previews/ids'
+      - 'browse help explicitly promises interactive browse, search, and resume'
+    search_surface:
+      cli_interactive: documented_and_help_verified
+      cli_noninteractive: not_found
+      backend_fts: verified_in_code
+      web_api_search: verified_in_code
+  mcp:
+    status: verified
+    commands:
+      - 'shay mcp serve'
+      - 'shay mcp add'
+      - 'shay mcp remove'
+      - 'shay mcp list'
+      - 'shay mcp test'
+      - 'shay mcp configure'
+      - 'shay mcp login'
+    health_surface:
+      inventory: 'shay mcp list'
+      connectivity: 'shay mcp test <name>'
+    observed_behavior:
+      - 'list showed obsidian, basic-memory, and vault-search servers enabled'
+      - 'test basic-memory connected successfully and discovered 23 tools'
+  gateway:
+    status: verified
+    commands:
+      - 'shay gateway run'
+      - 'shay gateway start'
+      - 'shay gateway stop'
+      - 'shay gateway restart'
+      - 'shay gateway status'
+      - 'shay gateway install'
+      - 'shay gateway uninstall'
+      - 'shay gateway list'
+      - 'shay gateway setup'
+      - 'shay gateway migrate-legacy'
+    health_surface:
+      primary: 'shay gateway status'
+      secondary: 'shay gateway list'
+    observed_behavior:
+      - 'status reported running launchd service'
+      - 'status warned service definition is stale relative to current install'
+    notes:
+      - 'lifecycle commands were not executed because they would mutate live service state'
+  model:
+    top_level_cli:
+      status: verified
+      command: 'shay model'
+      mode: interactive_tty_required
+      purpose: 'provider/model setup and selection flow'
+    slash_model:
+      status: documented
+      command: '/model'
+      alias: '/provider'
+      purpose: 'in-session model switching'
+      source: 'shay_cli/commands.py'
+    distinction:
+      - 'top-level model command is setup/config oriented'
+      - 'slash /model is session runtime oriented'
+  skills:
+    status: partial_verified
+    commands:
+      - 'shay skills list'
+      - 'shay skills inspect'
+      - 'shay skills search'
+      - 'shay skills browse'
+      - 'shay skills install'
+      - 'shay skills check'
+      - 'shay skills update'
+      - 'shay skills audit'
+      - 'shay skills uninstall'
+      - 'shay skills reset'
+      - 'shay skills publish'
+      - 'shay skills snapshot'
+      - 'shay skills tap'
+      - 'shay skills config'
+    verified_behavior:
+      - 'skills list works and reports source/trust/status columns'
+      - 'skills inspect exists as the view-equivalent surface'
+    terminology_gap:
+      requested_term: 'skills view'
+      actual_command: 'shay skills inspect'
+  memory:
+    status: partial_verified
+    commands:
+      - 'shay memory setup'
+      - 'shay memory status'
+      - 'shay memory off'
+      - 'shay memory reset'
+    verified_behavior:
+      - 'memory status reports provider/plugin state only'
+    search_surface:
+      top_level_cli_search: not_found
+      mcp_tool_search: verified_via_basic_memory_server
+  config:
+    status: verified
+    commands:
+      - 'shay config show'
+      - 'shay config edit'
+      - 'shay config set'
+      - 'shay config path'
+      - 'shay config env-path'
+      - 'shay config check'
+      - 'shay config migrate'
+    health_surface:
+      primary: 'shay config check'
+    observed_behavior:
+      - 'config check reports config version and required/optional env inventory'
+health_commands:
+  provider_runtime:
+    - 'shay doctor'
+    - 'shay status'
+    - 'shay config check'
+  mcp:
+    - 'shay mcp list'
+    - 'shay mcp test <name>'
+  gateway:
+    - 'shay gateway status'
+    - 'shay gateway list'
+  sessions:
+    - 'shay sessions stats'
+    - 'shay sessions list'
+  memory_provider:
+    - 'shay memory status'
+gaps:
+  - id: 'skills-view-name-mismatch'
+    status: open
+    finding: 'literal skills view command not present; current surface is skills inspect'
+  - id: 'session-search-cli-gap'
+    status: open
+    finding: 'no dedicated non-interactive shay sessions search command found despite FTS-backed search capability in backend/web layers'
+  - id: 'memory-search-cli-gap'
+    status: open
+    finding: 'no shay memory search top-level command found; memory search is MCP/tool oriented'
+  - id: 'split-health-surface'
+    status: open
+    finding: 'no single unified health command; diagnostics are distributed across multiple command groups'
+safety_notes:
+  - 'did not execute commands that would start/stop/restart/install/uninstall live services'
+  - 'did not execute commands that would mutate config, memory, or mcp tool-selection state'
+  - 'avoided quoting raw secret values; only redacted/masked status was observed'

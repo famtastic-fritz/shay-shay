@@ -1,0 +1,194 @@
+schema_version: 1
+ledger_name: shay_decision_ledger
+ledger_purpose: Record decisions, approvals, assumptions, reversals, and escalations for HyperSwarm mission work.
+status: draft
+lineage_defaults:
+  plan_id: plan-full-autonomy-completion-2026-06-13
+  run_id: run-2026-06-13-full-autonomy-mission-01
+required_fields:
+  - decision_id
+  - plan_id
+  - job_id
+  - task_id
+  - run_id
+  - event_id
+  - decision_type
+  - summary
+  - status
+  - rationale
+  - evidence_refs
+  - autonomy_zone
+  - approval_state
+  - recorded_at
+  - redactions
+field_definitions:
+  decision_id:
+    type: string
+  plan_id:
+    type: string
+  job_id:
+    type: string
+  task_id:
+    type: string
+  run_id:
+    type: string
+  event_id:
+    type: string
+  parent_decision_id:
+    type: [string, 'null']
+  lane_id:
+    type: string
+  decision_type:
+    type: string
+    enum: [architecture, policy, approval, assumption, escalation, risk, validation, reversal]
+  summary:
+    type: string
+  status:
+    type: string
+    enum: [proposed, accepted, rejected, deferred, superseded, reversed]
+  rationale:
+    type: string
+  alternatives_considered:
+    type: array
+    items:
+      type: string
+  evidence_refs:
+    type: array
+    items:
+      type: string
+  artifact_refs:
+    type: array
+    items:
+      type: string
+  gap_refs:
+    type: array
+    items:
+      type: string
+  autonomy_zone:
+    type: string
+    enum: [green, yellow, red, mixed]
+  allowed_actions_context:
+    type: array
+    items:
+      type: string
+  forbidden_actions_context:
+    type: array
+    items:
+      type: string
+  approval_state:
+    type: string
+    enum: [not_required, pending, approved, denied]
+  approver:
+    type: [string, 'null']
+  impact_level:
+    type: string
+    enum: [low, medium, high, critical]
+  reversibility:
+    type: string
+    enum: [easy, moderate, hard, irreversible]
+  followup_actions:
+    type: array
+    items:
+      type: string
+  recorded_at:
+    type: string
+    format: date-time
+  changed_at:
+    type: [string, 'null']
+    format: date-time
+  redactions:
+    type: array
+    items:
+      type: string
+  notes:
+    type: [string, 'null']
+validation_rules:
+  - approval_state must be not_required for green-zone documentation decisions unless scope expands
+  - approver is required when approval_state is approved or denied
+  - status superseded or reversed should include parent_decision_id or notes pointing to successor decision
+  - rationale must not include raw secrets or full private transcript content
+redaction_policy:
+  default_mode: redact-first
+  sensitive_material_handling:
+    - store decision rationale as summary, not raw copied transcript
+    - reference secret-exposure findings abstractly only
+example_records:
+  - decision_id: decision-redaction-first-ledger-architecture-2026-06-13-01
+    plan_id: plan-full-autonomy-completion-2026-06-13
+    job_id: job-process-intelligence-architecture-2026-06-13-01
+    task_id: task-process-intelligence-doc-pack-2026-06-13-01
+    run_id: run-2026-06-13-full-autonomy-mission-01
+    event_id: evt-run-2026-06-13-full-autonomy-mission-01-002
+    parent_decision_id: null
+    lane_id: process-intelligence
+    decision_type: architecture
+    summary: Use four separate ledgers instead of one monolithic run log.
+    status: accepted
+    rationale: Separate ledgers improve explainability, query quality, and retention control while keeping lineage consistent.
+    alternatives_considered:
+      - Single run log with nested sections
+      - Decision notes embedded only in markdown reports
+    evidence_refs:
+      - docs/shay-full-autonomy-completion-mission-2026-06-13.md#process-intelligence-requirement
+      - docs/shay-process-intelligence-architecture-2026-06-13.md
+    artifact_refs:
+      - artifact-process-intelligence-architecture-2026-06-13-01
+      - artifact-process-ledger-pack-2026-06-13-01
+    gap_refs: []
+    autonomy_zone: green
+    allowed_actions_context:
+      - docs/control artifacts
+    forbidden_actions_context:
+      - live service restart
+      - secrets/private data access
+    approval_state: not_required
+    approver: null
+    impact_level: medium
+    reversibility: easy
+    followup_actions:
+      - Validate each schema against implementation needs before enabling automation.
+    recorded_at: '2026-06-13T12:02:00Z'
+    changed_at: null
+    redactions:
+      - Evidence references use paths and summaries only.
+    notes: Design decision for branch-local documentation lane.
+  - decision_id: decision-secret-risk-abstract-only-2026-06-13-01
+    plan_id: plan-full-autonomy-completion-2026-06-13
+    job_id: job-process-intelligence-architecture-2026-06-13-01
+    task_id: task-process-intelligence-doc-pack-2026-06-13-01
+    run_id: run-2026-06-13-full-autonomy-mission-01
+    event_id: evt-run-2026-06-13-full-autonomy-mission-01-005
+    parent_decision_id: null
+    lane_id: process-intelligence
+    decision_type: risk
+    summary: Preserve audit-discovered secret-exposure risk only as an abstract safety finding.
+    status: accepted
+    rationale: The mission requires documenting the risk without retaining secret values or recreating exposure in telemetry.
+    alternatives_considered:
+      - Store a full example payload
+      - Omit the risk entirely
+    evidence_refs:
+      - docs/shay-telemetry-redaction-policy-2026-06-13.md
+      - docs/shay-process-intelligence-pilot-run-2026-06-13.md
+    artifact_refs:
+      - artifact-redaction-policy-2026-06-13-01
+    gap_refs:
+      - gap-secret-exposure-risk-filter-hardening-2026-06-13-01
+    autonomy_zone: green
+    allowed_actions_context:
+      - gap classification
+      - docs/control artifacts
+    forbidden_actions_context:
+      - secrets/private data access
+    approval_state: not_required
+    approver: null
+    impact_level: high
+    reversibility: easy
+    followup_actions:
+      - Tighten filter specifications before watcher automation is enabled.
+      - Route any live telemetry capture changes through approval review.
+    recorded_at: '2026-06-13T12:18:00Z'
+    changed_at: null
+    redactions:
+      - Risk description is abstract; no values retained.
+    notes: Captures the mission-specified audit discovery safely.
