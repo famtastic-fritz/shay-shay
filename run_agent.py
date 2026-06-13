@@ -134,6 +134,7 @@ from tools.terminal_tool import (
 )
 from tools.tool_result_storage import maybe_persist_tool_result, enforce_turn_budget
 from tools.interrupt import set_interrupt as _set_interrupt
+from process_intelligence import ProcessIntelligenceRecorder
 from tools.browser_tool import cleanup_browser
 
 
@@ -1192,6 +1193,9 @@ class AIAgent:
         self.skip_context_files = skip_context_files
         self.load_soul_identity = load_soul_identity
         self.pass_session_id = pass_session_id
+        self._process_recorder = ProcessIntelligenceRecorder.default(
+            enabled=(os.getenv("SHAY_DISABLE_PROCESS_INTELLIGENCE", "0") != "1")
+        )
         self._credential_pool = credential_pool
         self.log_prefix_chars = log_prefix_chars
         self.log_prefix = f"{log_prefix} " if log_prefix else ""
@@ -4408,6 +4412,17 @@ class AIAgent:
         self._session_messages = messages
         self._save_session_log(messages)
         self._flush_messages_to_session_db(messages, conversation_history)
+        try:
+            _tool_count = sum(
+                1 for msg in messages
+                if isinstance(msg, dict) and msg.get("role") == "tool"
+            )
+            self._process_recorder.persist_snapshot(
+                message_count=len(messages),
+                tool_call_count=_tool_count,
+            )
+        except Exception:
+            logger.debug("process recorder snapshot failed", exc_info=True)
 
     def _drop_trailing_empty_response_scaffolding(self, messages: List[Dict]) -> None:
         """Remove private empty-response retry/failure scaffolding from transcript tails.
@@ -10901,6 +10916,18 @@ class AIAgent:
                     _append_subdir_hint_to_multimodal(function_result, subdir_hints)
                 else:
                     function_result += subdir_hints
+            try:
+                self._process_recorder.record_tool_outcome(
+                    tool_name=name,
+                    args=args,
+                    result=function_result,
+                    tool_call_id=tc.id,
+                    duration_ms=int(tool_duration * 1000),
+                    ended_at=time.time(),
+                    blocked=blocked,
+                )
+            except Exception:
+                logger.debug("process recorder tool capture failed", exc_info=True)
 
             # Unwrap _multimodal dicts to an OpenAI-style content list so any
             # vision-capable provider receives [{type:text},{type:image_url}]
@@ -11314,6 +11341,18 @@ class AIAgent:
                     _append_subdir_hint_to_multimodal(function_result, subdir_hints)
                 else:
                     function_result += subdir_hints
+            try:
+                self._process_recorder.record_tool_outcome(
+                    tool_name=function_name,
+                    args=function_args,
+                    result=function_result,
+                    tool_call_id=tool_call.id,
+                    duration_ms=int(tool_duration * 1000),
+                    ended_at=time.time(),
+                    blocked=_execution_blocked,
+                )
+            except Exception:
+                logger.debug("process recorder tool capture failed", exc_info=True)
 
             # Unwrap _multimodal dicts to an OpenAI-style content list
             # (see parallel path for rationale). String results pass through.
@@ -11730,6 +11769,22 @@ class AIAgent:
             self.session_id or "none", self.model, self.provider or "unknown",
             self.platform or "unknown", len(conversation_history or []),
             _msg_preview,
+        )
+        self._process_recorder.start_run(
+            session_id=self.session_id,
+            parent_session_id=self.parent_session_id,
+            task_id=effective_task_id,
+            platform=self.platform,
+            user_id=self._user_id,
+            chat_id=self._chat_id,
+            thread_id=self._thread_id,
+            model=self.model,
+            provider=self.provider,
+            base_url=self.base_url,
+            user_message=user_message,
+            history_count=len(conversation_history or []),
+            message_count=len(conversation_history or []),
+            max_iterations=self.max_iterations,
         )
 
         # Initialize conversation (copy to avoid mutating the caller's list)
@@ -15375,6 +15430,14 @@ class AIAgent:
         }
         if self._tool_guardrail_halt_decision is not None:
             result["guardrail"] = self._tool_guardrail_halt_decision.to_metadata()
+        try:
+            self._process_recorder.finish_run(
+                result=result,
+                message_count=len(messages),
+                tool_call_count=_turn_tool_count,
+            )
+        except Exception:
+            logger.debug("process recorder finish failed", exc_info=True)
         # If a /steer landed after the final assistant turn (no more tool
         # batches to drain into), hand it back to the caller so it can be
         # delivered as the next user turn instead of being silently lost.
