@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Machine-written process-intelligence storage and runtime recorder.
 
-Phase 1 goal: durable, queryable run/tool/artifact/validation records generated
-from live agent execution. This is intentionally lean: record real behavior now,
-expand decision/attention/autonomy layers later.
+Phase 2 goal: durable, queryable run/decision/tool/artifact/tracker records
+generated from live agent execution, with explicit evidence-bound state changes.
 """
 
 from __future__ import annotations
@@ -129,6 +128,43 @@ CREATE TABLE IF NOT EXISTS validation_ledger (
     FOREIGN KEY (tool_activity_id) REFERENCES tool_agent_ledger(activity_id)
 );
 
+CREATE TABLE IF NOT EXISTS decision_ledger (
+    decision_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    session_id TEXT,
+    task_id TEXT,
+    lane_id TEXT,
+    decision_type TEXT,
+    summary TEXT,
+    status TEXT,
+    rationale TEXT,
+    evidence_refs TEXT,
+    artifact_refs TEXT,
+    blocker_item_id TEXT,
+    autonomy_zone TEXT,
+    approval_state TEXT,
+    impact_level TEXT,
+    reversibility TEXT,
+    recorded_at REAL NOT NULL,
+    metadata TEXT,
+    FOREIGN KEY (run_id) REFERENCES run_ledger(run_id)
+);
+
+CREATE TABLE IF NOT EXISTS tracker_transition_ledger (
+    transition_id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL,
+    run_id TEXT,
+    decision_id TEXT,
+    from_state TEXT,
+    to_state TEXT,
+    summary TEXT,
+    evidence_refs TEXT,
+    recorded_at REAL NOT NULL,
+    metadata TEXT,
+    FOREIGN KEY (run_id) REFERENCES run_ledger(run_id),
+    FOREIGN KEY (decision_id) REFERENCES decision_ledger(decision_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_run_ledger_started ON run_ledger(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_run_ledger_session ON run_ledger(session_id);
 CREATE INDEX IF NOT EXISTS idx_run_ledger_task ON run_ledger(task_id);
@@ -137,6 +173,10 @@ CREATE INDEX IF NOT EXISTS idx_tool_agent_tool ON tool_agent_ledger(tool_name, s
 CREATE INDEX IF NOT EXISTS idx_artifact_run ON artifact_ledger(run_id, recorded_at);
 CREATE INDEX IF NOT EXISTS idx_artifact_path ON artifact_ledger(path);
 CREATE INDEX IF NOT EXISTS idx_validation_run ON validation_ledger(run_id, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_decision_run ON decision_ledger(run_id, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_decision_blocker ON decision_ledger(blocker_item_id, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_tracker_item ON tracker_transition_ledger(item_id, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_tracker_run ON tracker_transition_ledger(run_id, recorded_at);
 """
 
 
@@ -505,6 +545,66 @@ class ProcessIntelligenceDB:
             return payload["validation_id"]
         return self._execute_write(_write)
 
+    def record_decision(self, payload: Dict[str, Any]) -> str:
+        def _write(conn: sqlite3.Connection) -> str:
+            conn.execute(
+                """
+                INSERT INTO decision_ledger (
+                    decision_id, run_id, session_id, task_id, lane_id, decision_type,
+                    summary, status, rationale, evidence_refs, artifact_refs,
+                    blocker_item_id, autonomy_zone, approval_state, impact_level,
+                    reversibility, recorded_at, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["decision_id"],
+                    payload["run_id"],
+                    payload.get("session_id"),
+                    payload.get("task_id"),
+                    payload.get("lane_id"),
+                    payload.get("decision_type"),
+                    payload.get("summary"),
+                    payload.get("status"),
+                    payload.get("rationale"),
+                    _json_dumps(payload.get("evidence_refs") or []),
+                    _json_dumps(payload.get("artifact_refs") or []),
+                    payload.get("blocker_item_id"),
+                    payload.get("autonomy_zone"),
+                    payload.get("approval_state"),
+                    payload.get("impact_level"),
+                    payload.get("reversibility"),
+                    payload.get("recorded_at"),
+                    _json_dumps(payload.get("metadata") or {}),
+                ),
+            )
+            return payload["decision_id"]
+        return self._execute_write(_write)
+
+    def record_tracker_transition(self, payload: Dict[str, Any]) -> str:
+        def _write(conn: sqlite3.Connection) -> str:
+            conn.execute(
+                """
+                INSERT INTO tracker_transition_ledger (
+                    transition_id, item_id, run_id, decision_id, from_state, to_state,
+                    summary, evidence_refs, recorded_at, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["transition_id"],
+                    payload["item_id"],
+                    payload.get("run_id"),
+                    payload.get("decision_id"),
+                    payload.get("from_state"),
+                    payload.get("to_state"),
+                    payload.get("summary"),
+                    _json_dumps(payload.get("evidence_refs") or []),
+                    payload.get("recorded_at"),
+                    _json_dumps(payload.get("metadata") or {}),
+                ),
+            )
+            return payload["transition_id"]
+        return self._execute_write(_write)
+
     def list_runs(self, *, limit: int = 20, status: Optional[str] = None) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM run_ledger"
         params: List[Any] = []
@@ -533,8 +633,41 @@ class ProcessIntelligenceDB:
             (run_id,),
         ).fetchall():
             timeline.append(dict(row))
+        for row in self._conn.execute(
+            "SELECT decision_id as id, recorded_at as ts, summary as label, status, 'decision' as kind FROM decision_ledger WHERE run_id = ?",
+            (run_id,),
+        ).fetchall():
+            timeline.append(dict(row))
         timeline.sort(key=lambda item: item.get("ts") or 0)
         return timeline
+
+    def get_run_artifacts(self, run_id: str) -> List[Dict[str, Any]]:
+        rows = self._conn.execute(
+            "SELECT * FROM artifact_ledger WHERE run_id = ? ORDER BY recorded_at ASC, path ASC",
+            (run_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_run_decisions(self, run_id: str) -> List[Dict[str, Any]]:
+        rows = self._conn.execute(
+            "SELECT * FROM decision_ledger WHERE run_id = ? ORDER BY recorded_at ASC, decision_id ASC",
+            (run_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_item_blockers(self, item_id: str) -> List[Dict[str, Any]]:
+        rows = self._conn.execute(
+            "SELECT * FROM decision_ledger WHERE blocker_item_id = ? ORDER BY recorded_at DESC",
+            (item_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_tracker_transitions(self, item_id: str) -> List[Dict[str, Any]]:
+        rows = self._conn.execute(
+            "SELECT * FROM tracker_transition_ledger WHERE item_id = ? ORDER BY recorded_at ASC",
+            (item_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 class ProcessIntelligenceRecorder:
@@ -694,6 +827,50 @@ class ProcessIntelligenceRecorder:
                 }
             )
 
+    def record_decision(
+        self,
+        *,
+        decision_type: str,
+        summary: str,
+        rationale: str,
+        evidence_refs: Optional[Sequence[str]] = None,
+        artifact_refs: Optional[Sequence[str]] = None,
+        blocker_item_id: Optional[str] = None,
+        status: str = "accepted",
+        lane_id: Optional[str] = None,
+        autonomy_zone: str = "green",
+        approval_state: str = "not_required",
+        impact_level: str = "medium",
+        reversibility: str = "easy",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        if not self.enabled or not self._current:
+            return None
+        decision_id = uuid.uuid4().hex
+        self._db.record_decision(
+            {
+                "decision_id": decision_id,
+                "run_id": self._current["run_id"],
+                "session_id": self._current.get("session_id"),
+                "task_id": self._current.get("task_id"),
+                "lane_id": lane_id,
+                "decision_type": decision_type,
+                "summary": _clip(summary, 500),
+                "status": status,
+                "rationale": _clip(rationale, 700),
+                "evidence_refs": list(evidence_refs or []),
+                "artifact_refs": list(artifact_refs or []),
+                "blocker_item_id": blocker_item_id,
+                "autonomy_zone": autonomy_zone,
+                "approval_state": approval_state,
+                "impact_level": impact_level,
+                "reversibility": reversibility,
+                "recorded_at": time.time(),
+                "metadata": metadata or {},
+            }
+        )
+        return decision_id
+
     def finish_run(self, *, result: Dict[str, Any], message_count: int, tool_call_count: int) -> None:
         if not self.enabled or not self._current:
             return
@@ -701,6 +878,35 @@ class ProcessIntelligenceRecorder:
         completed = bool(result.get("completed"))
         outcome = "interrupted" if interrupted else ("completed" if completed else "partial")
         status = "finished"
+        guardrail = result.get("guardrail") if isinstance(result.get("guardrail"), dict) else None
+        if guardrail:
+            self.record_decision(
+                decision_type="risk",
+                summary=f"Tool guardrail halted repeated calls to {guardrail.get('tool_name') or 'unknown tool'}",
+                rationale=guardrail.get("message") or guardrail.get("code") or "tool-call guardrail stop",
+                evidence_refs=[],
+                status="accepted",
+                lane_id="tool-guardrails",
+                autonomy_zone="yellow",
+                approval_state="not_required",
+                impact_level="medium",
+                reversibility="easy",
+                metadata={"guardrail": guardrail},
+            )
+        elif interrupted:
+            self.record_decision(
+                decision_type="escalation",
+                summary="Run ended early due to interrupt",
+                rationale=result.get("turn_exit_reason") or "user interrupt",
+                evidence_refs=[],
+                status="accepted",
+                lane_id="runtime",
+                autonomy_zone="yellow",
+                approval_state="not_required",
+                impact_level="low",
+                reversibility="easy",
+                metadata={"interrupted": True},
+            )
         self._db.upsert_run(
             {
                 "run_id": self._current["run_id"],
@@ -724,6 +930,7 @@ class ProcessIntelligenceRecorder:
                     "base_url": result.get("base_url"),
                     "response_previewed": result.get("response_previewed"),
                     "partial": result.get("partial"),
+                    "guardrail": guardrail,
                 },
             }
         )

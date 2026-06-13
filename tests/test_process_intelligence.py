@@ -2,6 +2,7 @@ import sqlite3
 import unittest
 
 from process_intelligence import ProcessIntelligenceDB, ProcessIntelligenceRecorder
+from process_tracker import ProcessTracker, TrackerTransitionError
 
 
 class ProcessIntelligenceRecorderTest(unittest.TestCase):
@@ -39,12 +40,37 @@ class ProcessIntelligenceRecorderTest(unittest.TestCase):
                     tool_call_id="tool-1",
                     duration_ms=120,
                 )
+                decision_id = recorder.record_decision(
+                    decision_type="architecture",
+                    summary="Treat the terminal run as proof for tracker promotion",
+                    rationale="pytest passed and report file was written",
+                    evidence_refs=["/tmp/demo/report.txt"],
+                    artifact_refs=["/tmp/demo/report.txt"],
+                    blocker_item_id="MSI-031",
+                    lane_id="process-intelligence",
+                )
                 recorder.record_tool_outcome(
                     tool_name="write_file",
                     args={"path": "/tmp/out.txt", "content": "api_key=shhh"},
                     result="Wrote /tmp/out.txt",
                     tool_call_id="tool-2",
                     duration_ms=20,
+                )
+                tracker_path = Path(tmpdir) / "tracker.yaml"
+                tracker_path.write_text(
+                    "items:\n"
+                    "  - id: MSI-031\n"
+                    "    current_state: pr_ready\n",
+                    encoding="utf-8",
+                )
+                tracker = ProcessTracker(tracker_path, db=db)
+                tracker.transition_item(
+                    "MSI-031",
+                    "live_wired",
+                    summary="Promotion backed by test evidence",
+                    evidence_refs=["/tmp/demo/report.txt"],
+                    run_id=run_id,
+                    decision_id=decision_id,
                 )
                 recorder.persist_snapshot(message_count=4, tool_call_count=2)
                 recorder.finish_run(
@@ -93,16 +119,54 @@ class ProcessIntelligenceRecorderTest(unittest.TestCase):
                 self.assertEqual(len(validation_rows), 1)
                 self.assertEqual(validation_rows[0]["validator"], "terminal")
 
+                decision_rows = conn.execute(
+                    "SELECT * FROM decision_ledger WHERE run_id = ? ORDER BY recorded_at ASC", (run_id,)
+                ).fetchall()
+                self.assertEqual(len(decision_rows), 1)
+                self.assertEqual(decision_rows[0]["blocker_item_id"], "MSI-031")
+
+                tracker_rows = conn.execute(
+                    "SELECT * FROM tracker_transition_ledger WHERE item_id = ?", ("MSI-031",)
+                ).fetchall()
+                self.assertEqual(len(tracker_rows), 1)
+                self.assertEqual(tracker_rows[0]["to_state"], "live_wired")
+
                 timeline = db.get_run_timeline(run_id)
                 self.assertTrue(any(item["kind"] == "tool" for item in timeline))
                 self.assertTrue(any(item["kind"] == "artifact" for item in timeline))
                 self.assertTrue(any(item["kind"] == "validation" for item in timeline))
+                self.assertTrue(any(item["kind"] == "decision" for item in timeline))
+                self.assertEqual(db.get_run_decisions(run_id)[0]["decision_id"], decision_id)
+                self.assertEqual(db.get_item_blockers("MSI-031")[0]["decision_id"], decision_id)
+                self.assertEqual(db.get_tracker_transitions("MSI-031")[0]["decision_id"], decision_id)
 
                 runs = db.list_runs(limit=5)
                 self.assertTrue(runs)
                 self.assertEqual(runs[0]["run_id"], run_id)
 
                 db.close()
+
+    def test_tracker_rejects_live_promotion_without_evidence(self):
+        with self.subTest("tracker"):
+            import tempfile
+            from pathlib import Path
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tracker_path = Path(tmpdir) / "tracker.yaml"
+                tracker_path.write_text(
+                    "items:\n"
+                    "  - id: MSI-031\n"
+                    "    current_state: pr_ready\n",
+                    encoding="utf-8",
+                )
+                tracker = ProcessTracker(tracker_path)
+                with self.assertRaises(TrackerTransitionError):
+                    tracker.transition_item(
+                        "MSI-031",
+                        "live_wired",
+                        summary="No proof attached",
+                        evidence_refs=[],
+                    )
 
 
 if __name__ == "__main__":
