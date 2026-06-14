@@ -3,6 +3,7 @@
 Date: 2026-06-13
 Lane: Hermes-removal sandbox
 Scope: read-only Git ancestry and transplant-readiness inspection only
+Historical naming note: HyperSwarm is the canonical name. Any `HyperWAM` below is quoted historical wording only.
 
 ## Question
 

@@ -1,0 +1,31 @@
+schema_name: shay-adoption-backlog
+version: '2026-06-13'
+fields:
+- name: candidate_id
+  type: string
+- name: title
+  type: string
+- name: source_gap_ids
+  type: list
+- name: class
+  type: string
+- name: status
+  type: string
+- name: expected_value
+  type: string
+- name: cost_class
+  type: string
+- name: risk_class
+  type: string
+- name: approval_needed
+  type: boolean
+- name: next_proof_step
+  type: string
+- name: owner_role
+  type: string
+- name: checker_role
+  type: string
+- name: related_docs
+  type: list
+- name: related_commits
+  type: list

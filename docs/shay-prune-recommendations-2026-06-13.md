@@ -147,28 +147,15 @@ Condition:
 
 ## Quarantine candidates
 
-1. Phantom/deferred doc references
-Examples repeatedly referenced by Hermes docs but not present in this clean worktree:
-- `docs/shay-global-capability-matrix-draft-2026-06-13.md`
-- `docs/shay-global-capability-matrix-draft-2026-06-13.yaml`
-- `docs/shay-adoption-backlog-2026-06-13.md`
-- `docs/shay-adoption-backlog-policy-2026-06-13.md`
-- `docs/shay-adoption-backlog-schema-2026-06-13.yaml`
-- `docs/shay-add-audit-prune-rule-2026-06-13.md`
-- `docs/shay-skills-gap-log-2026-06-13.md`
-- `docs/shay-skills-readiness-matrix-2026-06-13.yaml`
-- `docs/shay-worker-role-matrix-2026-06-13.md`
-- `docs/shay-gap-log-schema-2026-06-13.yaml`
-- `docs/shay-gap-resolution-workflow-2026-06-13.md`
-- `docs/shay-gap-lifecycle-policy-2026-06-13.md`
-- `docs/shay-research-fetcher-role-2026-06-13.md`
-- `docs/shay-capability-research-cron-design-2026-06-13.md`
+1. Historical phantom/deferred doc references
+This section records the first clean-worktree audit state before later Title 6 completion landed. Several items from that original list have since been restored or added on this branch, including the broader awareness cluster and the Hermes lane packet.
+Still treat the remaining truly deferred or secondary surfaces below as quarantine candidates unless they are explicitly promoted later:
 - `docs/hermes-removal-next-lockdir-validation-plan-2026-06-13.md`
-- `docs/hyperwam-effectiveness-assessment-2026-06-13.md`
+- `docs/hyperwam-effectiveness-assessment-2026-06-13.md` (historical filename typo; HyperSwarm is the canonical name)
 Action: quarantine references, not files
 Why:
-- the references are real but the files are absent here
-- PR-facing docs must not imply those artifacts are already in this branch unless they actually land
+- some entries in this cluster were real historical references before later restoration landed
+- PR-facing docs must separate present-on-branch truth from deferred or secondary surfaces
 
 2. Any future process-intelligence pilot-run doc that copies schema definitions inline
 Action: quarantine from canon
@@ -222,7 +209,7 @@ Reason:
 - multiple Hermes docs currently summarize the same readiness state
 
 2. Phantom reference risk
-- absent broader awareness docs are named repeatedly in current docs
+- deferred or secondary surfaces can still be named repeatedly in current docs if labels slip
 
 3. Canon-vs-evidence drift risk
 - without labels, reports and policies can be mistaken as equal truth sources
@@ -234,7 +221,7 @@ Reason:
 
 1. Preserve all current evidence docs.
 2. Add explicit labels later: canonical, evidence, draft, historical, superseded, quarantine.
-3. Treat absent referenced docs as deferred/quarantined until present in this branch.
+3. Treat deferred or secondary referenced docs as quarantined until they are explicitly promoted into this branch's canon.
 4. Promote one current-state tracker over multiple overlapping summary docs.
 5. Keep YAML schemas as the machine-readable source whenever they exist.
 

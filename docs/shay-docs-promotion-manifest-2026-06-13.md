@@ -1,7 +1,7 @@
 # Shay docs promotion manifest — 2026-06-13
 
-Status: captain promotion manifest
-Purpose: classify the current local docs packet into promote-now, defer-later, and scratch/duplicate so the first merge into `main` stays clean.
+Status: captain promotion manifest, later reviewed by Fritz
+Purpose: classify the current local docs packet into promote-now, active-completion-scope, and scratch/duplicate so the first merge into `main` stays clean while preserving the now-approved completion surface.
 
 ## Promote now
 
@@ -28,19 +28,26 @@ These belong in the first honest docs/control merge because they improve truth w
 - `docs/shay-process-intelligence-brutal-qa-report-2026-06-13.md`
 - `docs/shay-prune-recommendations-2026-06-13.md`
 
-## Defer later
+## Active completion scope
 
-These are useful, but they should not bulk up the first clean truth merge.
+These were originally marked defer-later, but Fritz has now reviewed the plans. Treat them as approved completion work, not waiting-for-review material.
 
 - `docs/shay-adoption-backlog-2026-06-13.md`
 - `docs/shay-awareness-completion-assessment-2026-06-13.md`
 - `docs/shay-gap-lifecycle-status-2026-06-13.md`
-- `docs/shay-hermes-lane-packet-2026-06-13.md`
 - `docs/shay-pattern-scanner-autonomy-policy-2026-06-13.md`
+- `docs/shay-runtime-truth-audit-2026-06-13.md`
+- `docs/shay-truth-surface-rubric-2026-06-13.md`
 - `docs/shay-post-merge-follow-on-plan-2026-06-13.md`
 - `docs/shay-process-intelligence-watcher-design-2026-06-13.md`
 - `docs/shay-process-learning-loop-2026-06-13.md`
 - `docs/shay-process-query-examples-2026-06-13.md`
+
+Restored deferred stash residue:
+- `docs/shay-hermes-lane-packet-2026-06-13.md`
+  - restored from the stash-backed original in `stash@{0}^3`
+  - not previously committed to `main`
+  - keep references pointed here as branch-local evidence; do not treat it as live-runtime proof
 
 ## Scratch / duplicate / lane residue
 

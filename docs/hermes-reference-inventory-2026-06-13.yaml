@@ -1,5 +1,6 @@
 generated_at: '2026-06-13'
 lane: hermes-removal-sandbox
+historical_naming_note: HyperSwarm is canonical; any HyperWAM/hyperwam strings below are historical filename residue or quoted source text only.
 summary:
   generated_at: '2026-06-13'
   files_with_hits: 37
@@ -368,7 +369,7 @@ inventory:
     text: '- `docs/hermes-external-compatibility-plan-2026-06-13.md`'
 - path: docs/hyperwam-effectiveness-assessment-2026-06-13.md
   classification: stale_superseded
-  why: One-off assessment; keep or merge lessons into canonical orchestration docs.
+  why: One-off assessment under a historical filename typo (`hyperwam`); keep or merge lessons into canonical HyperSwarm orchestration docs.
   hit_count: 7
   matched_types:
   - Hermes_cap

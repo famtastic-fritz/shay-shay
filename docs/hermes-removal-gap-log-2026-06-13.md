@@ -417,7 +417,7 @@ Purpose: durable gap inventory for capability blockers, unknowns, validation pre
 - expected_capability: delegation should stay within declared lane and capability boundaries
 - actual_result: delegation is useful, but can overclaim or drift without tight packets
 - evidence:
-  - `skills/orchestration/hyperwam/SKILL.md`
+  - `skills/orchestration/hyperwam/SKILL.md` (historical alias path; HyperSwarm is the canonical name)
   - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`
 - status: recorded
 - severity: medium

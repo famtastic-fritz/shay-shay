@@ -1,8 +1,13 @@
 # Hermes Awareness Docs Consolidation Plan
 
 Date: 2026-06-13
-Status: prune/consolidation proposal only
+Status: originally prune/consolidation proposal, later reviewed by Fritz for active completion scope
 Scope: Hermes-removal sandbox docs created during the 2026-06-13 mission waves
+
+Review override:
+- The old "defer to later awareness PR" labels below are historical classification only.
+- Fritz has reviewed the plans.
+- Treat the Shay awareness cluster as active completion scope from here forward.
 
 ## Canonical vs Temporary vs Draft
 
@@ -31,7 +36,7 @@ Temporary control material:
 - `docs/hermes-removal-next-lockdir-validation-plan-2026-06-13.md`
 - `docs/hyperwam-effectiveness-assessment-2026-06-13.md` (historical typo in filename; HyperSwarm is the canonical name)
 
-Draft global awareness material:
+Draft-origin global awareness material now in active completion scope:
 - `docs/shay-global-capability-matrix-draft-2026-06-13.md`
 - `docs/shay-global-capability-matrix-draft-2026-06-13.yaml`
 - `docs/shay-adoption-backlog-2026-06-13.md`
@@ -105,14 +110,14 @@ Temporary control material:
 These are useful because they explain how the sandbox was safely run.
 They are not the cleanest first PR story.
 
-## Which Docs Are Draft Global Awareness Material
+## Which Docs Are Draft-Origin Global Awareness Material
 
-Draft-only for now:
+Originally draft-only, now approved for completion work:
 - all `docs/shay-*2026-06-13*` awareness/control docs except where individual Hermes docs cite them as references
 
-## Which Docs Should Become Global Shay Docs Later
+## Which Docs Should Become Global Shay Docs In This Completion Run
 
-Good later candidates:
+Good completion candidates:
 - `shay-global-capability-matrix-draft-2026-06-13.*`
 - `shay-add-audit-prune-rule-2026-06-13.md`
 - `shay-adoption-backlog*`

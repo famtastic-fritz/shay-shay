@@ -6,6 +6,8 @@ Purpose: classify every current sandbox-repo Hermes reference so current Shay id
 
 Latest evidence anchor: `a644a0a docs: validate Hermes sandbox lock-dir isolation` closes the lock-dir override question only; it does not prove broad runtime independence.
 
+Historical naming note: HyperSwarm is the canonical name. Any `HyperWAM` or `hyperwam` strings below are historical filename residue or quoted source text only.
+
 ## Summary
 - Files with Hermes-family hits in the sandbox repo: 37
 - Unclassified files after this pass: 0
@@ -46,7 +48,7 @@ Latest evidence anchor: `a644a0a docs: validate Hermes sandbox lock-dir isolatio
 ## Stale / Superseded Candidates
 - `docs/shay-workstream-control-map-2026-06-12.md` — Broad umbrella control map superseded by narrower packet/matrix/gap docs; keep labeled historical until pruned.
 - `docs/hermes-removal-next-lockdir-validation-plan-2026-06-13.md` — Plan doc superseded by a644a0a lock-dir validation result.
-- `docs/hyperwam-effectiveness-assessment-2026-06-13.md` — One-off assessment; keep or merge lessons into canonical orchestration docs.
+- `docs/hyperwam-effectiveness-assessment-2026-06-13.md` — One-off assessment under a historical filename typo (`hyperwam`); keep or merge lessons into canonical HyperSwarm orchestration docs.
 
 ## Inventory Table
 | path | classification | why |
@@ -67,7 +69,7 @@ Latest evidence anchor: `a644a0a docs: validate Hermes sandbox lock-dir isolatio
 | `docs/hermes-removal-next-lockdir-validation-plan-2026-06-13.md` | `stale_superseded` | Plan doc superseded by a644a0a lock-dir validation result. |
 | `docs/hermes-removal-preflight-checklist-2026-06-13.md` | `current_control_keep` | Current preflight gate that must keep explicit Hermes protected-surface references. |
 | `docs/hermes-removal-promotion-plan-2026-06-13.md` | `current_control_keep` | Current promotion-plan packet for the Hermes-removal lane. |
-| `docs/hyperwam-effectiveness-assessment-2026-06-13.md` | `stale_superseded` | One-off assessment; keep or merge lessons into canonical orchestration docs. |
+| `docs/hyperwam-effectiveness-assessment-2026-06-13.md` | `stale_superseded` | One-off assessment under a historical filename typo (`hyperwam`); keep or merge lessons into canonical HyperSwarm orchestration docs. |
 | `docs/plans/2026-05-19-media-studio-solutions-backlog.md` | `historical_reference_keep_labeled` | Unrelated plan residue mentioning Hermes historically. |
 | `docs/shay-add-audit-prune-rule-2026-06-13.md` | `current_control_keep` | Current additive-control rule referencing Hermes-removal examples. |
 | `docs/shay-adoption-backlog-2026-06-13.md` | `current_control_keep` | Current adoption backlog seeded from Hermes-removal gaps. |

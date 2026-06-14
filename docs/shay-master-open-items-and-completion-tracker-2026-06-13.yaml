@@ -6,15 +6,18 @@ branch: docs/hermes-removal-control-pr-20260613
 worktree: /Users/famtasticfritz/famtastic/shay-shay-main-sync-20260613
 tracker_version: 2026-06-13
 truth_rule: If a lane snapshot conflicts with this tracker, this tracker wins.
+historical_corrections:
+  - docs/shay-hermes-lane-packet-2026-06-13.md existed as deferred stash residue and was restored from the stash-backed original in stash@{0}^3.
+  - The restored lane packet was not previously committed to main and should be treated as branch-local evidence, not live-runtime proof.
 state_counts:
   designed: 8
   sandbox_proven: 2
-  pr_ready: 10
+  pr_ready: 16
   pr_open: 1
   merged_to_main: 0
   live_wired: 0
   validated_live: 0
-  blocked: 2
+  blocked: 3
   deferred: 3
 items:
   - id: MSI-001
@@ -39,7 +42,7 @@ items:
     evidence:
       - docs/shay-hermes-lane-packet-2026-06-13.md
     live_now: false
-    next_action: merge into final packet
+    next_action: keep as branch-local evidence and patch dependent docs to point here
   - id: MSI-003
     surface: Hermes wrapper forwarding and compatibility
     current_state: designed

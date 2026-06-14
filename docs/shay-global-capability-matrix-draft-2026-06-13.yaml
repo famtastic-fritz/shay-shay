@@ -1,0 +1,82 @@
+generated_at: '2026-06-13'
+status: draft
+prototype_lane: hermes-removal-sandbox
+surfaces:
+- surface: runtime_surfaces
+  status: warning
+  notes: Sandbox runtime is still coupled to shared live .venv for execution-grade
+    checks.
+  gaps:
+  - sandbox-no-local-venv
+  - sandbox-home-not-yet-startup-validated
+  - sandbox-tests-share-live-venv
+- surface: tools_commands
+  status: warning
+  notes: Shay is canonical, but the live `hermes` wrapper still points at the legacy Hermes binary and `shay-desktop` still depends on `hermes desktop`.
+  gaps:
+  - hermes-external-client-usage-unknown
+  - hermes-wrapper-direct-legacy-target
+  - shay-desktop-hermes-entrypoint-dependency
+- surface: git_github_operations
+  status: warning
+  notes: Sandbox commits allowed when explicitly in scope; pushes remain forbidden; current Hermes-removal evidence branch is not PR-clean against current `origin/main`.
+  gaps:
+  - pr-branch-not-based-on-origin-main
+- surface: python_test_environment
+  status: warning
+  notes: Host path truth and local venv independence remain incomplete.
+  gaps:
+  - sandbox-no-local-venv
+  - path-missing-python-pytest-pip
+  - sandbox-tests-share-live-venv
+- surface: skills
+  status: warning
+  notes: Skill discovery is available; host readiness requires separate proof.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+- surface: mcps
+  status: warning
+  notes: Listing/config visibility exists; sandbox-independent runtime remains unproven.
+  gaps:
+  - mcp-sandbox-independence-unproven
+- surface: connectors
+  status: warning
+  notes: External wrappers and dashboards preserve compatibility surfaces; wrapper target strategy and desktop entrypoint dependency are still unresolved.
+  gaps:
+  - hermes-external-client-usage-unknown
+  - hermes-wrapper-direct-legacy-target
+  - shay-desktop-hermes-entrypoint-dependency
+- surface: model_provider_status
+  status: warning
+  notes: Only passive health classification is trusted by default.
+  gaps:
+  - provider-health-partial-only
+- surface: memory_stores
+  status: warning
+  notes: Live/private stores are protected and off-limits in this lane.
+  gaps:
+  - legacy-hermes-home-sensitive
+- surface: safety_gates
+  status: healthy
+  notes: Live mutation, secrets, runtime startup, rewrite sandbox, and push boundaries
+    were enforced.
+  gaps: []
+- surface: worker_roles
+  status: healthy
+  notes: HyperSwarm role discipline used explicitly; older notes may still say HyperWAM as a historical typo.
+  gaps:
+  - delegation-must-be-read-only-scoped
+- surface: approval_gated_actions
+  status: healthy
+  notes: Live cutover actions remained proposal-only.
+  gaps:
+  - sandbox-no-local-venv
+  - hermes-external-client-usage-unknown
+- surface: forbidden_actions
+  status: healthy
+  notes: Live service edits/restarts/deletions were not performed.
+  gaps: []
+- surface: fallbacks
+  status: healthy
+  notes: Fallbacks were logged instead of guessed.
+  gaps: []

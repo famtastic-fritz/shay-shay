@@ -59,7 +59,7 @@ Exclude for now:
 - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`
 - `docs/hermes-removal-preflight-checklist-2026-06-13.md`
 - `docs/hermes-removal-next-lockdir-validation-plan-2026-06-13.md`
-- `docs/hyperwam-effectiveness-assessment-2026-06-13.md`
+- `docs/hyperwam-effectiveness-assessment-2026-06-13.md` (historical filename typo; HyperSwarm is the canonical name)
 
 Why these are excluded:
 - they are valuable but broader than the first Hermes docs/control PR
@@ -87,7 +87,7 @@ Why these are excluded:
 - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`
 - `docs/hermes-removal-preflight-checklist-2026-06-13.md`
 - `docs/hermes-removal-next-lockdir-validation-plan-2026-06-13.md`
-- `docs/hyperwam-effectiveness-assessment-2026-06-13.md`
+- `docs/hyperwam-effectiveness-assessment-2026-06-13.md` (historical filename typo; HyperSwarm is the canonical name)
 
 ## Code Changes To Defer
 

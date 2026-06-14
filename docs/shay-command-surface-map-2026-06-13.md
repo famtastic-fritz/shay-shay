@@ -243,7 +243,8 @@ Verified commands:
 - `shay skills inspect <identifier>`
 
 Observed behavior in this lane:
-- `skills list --source all` enumerated installed skills and sources, ending with `3 hub-installed, 71 builtin, 100 local — 174 enabled, 0 disabled`
+- `skills list --source all` enumerated installed skills and sources during the earlier pass, ending with `3 hub-installed, 71 builtin, 100 local — 174 enabled, 0 disabled`
+- follow-on runtime-truth audit later observed `shay skills list` ending with `3 hub-installed, 71 builtin, 102 local — 176 enabled, 0 disabled`, proving this surface changes over time and should be timestamped
 - `skills inspect --help` exists and is the preview/view-like path
 
 Finding:

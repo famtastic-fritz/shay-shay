@@ -1,0 +1,1987 @@
+generated_at: '2026-06-13'
+skill_count: 88
+skills:
+- path: skills/apple/apple-notes/SKILL.md
+  skill: apple-notes
+  status: warning
+  purpose: 'Manage Apple Notes via memo CLI: create, search, edit.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/apple/apple-reminders/SKILL.md
+  skill: apple-reminders
+  status: warning
+  purpose: 'Apple Reminders via remindctl: add, list, complete.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/apple/findmy/SKILL.md
+  skill: findmy
+  status: warning
+  purpose: Track Apple devices/AirTags via FindMy.app on macOS.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/apple/imessage/SKILL.md
+  skill: imessage
+  status: warning
+  purpose: Send and receive iMessages/SMS via the imsg CLI on macOS.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/apple/macos-computer-use/SKILL.md
+  skill: macos-computer-use
+  status: warning
+  purpose: '|'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/autonomous-ai-agents/claude-code/SKILL.md
+  skill: claude-code
+  status: unknown
+  purpose: Delegate coding to Claude Code CLI (features, PRs).
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Require lane/tool preflight before claiming host readiness.
+- path: skills/autonomous-ai-agents/codex/SKILL.md
+  skill: codex
+  status: unknown
+  purpose: Delegate coding to OpenAI Codex CLI (features, PRs).
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Require lane/tool preflight before claiming host readiness.
+- path: skills/autonomous-ai-agents/opencode/SKILL.md
+  skill: opencode
+  status: unknown
+  purpose: Delegate coding to OpenCode CLI (features, PR review).
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Require lane/tool preflight before claiming host readiness.
+- path: skills/autonomous-ai-agents/shay-shay/SKILL.md
+  skill: shay-shay
+  status: warning
+  purpose: Configure, extend, or contribute to Shay-Shay.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: true
+  touches_live_state: maybe
+  approval_needed: often
+  safe_lanes:
+  - sandbox
+  - docs-only
+  blocked_lanes:
+  - live-main-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Use for Shay configuration/contribution only after explicit lane
+    and approval checks.
+- path: skills/creative/architecture-diagram/SKILL.md
+  skill: architecture-diagram
+  status: candidate
+  purpose: Dark-themed SVG architecture/cloud/infra diagrams as HTML.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/ascii-art/SKILL.md
+  skill: ascii-art
+  status: candidate
+  purpose: 'ASCII art: pyfiglet, cowsay, boxes, image-to-ascii.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/ascii-video/SKILL.md
+  skill: ascii-video
+  status: candidate
+  purpose: 'ASCII video: convert video/audio to colored ASCII MP4/GIF.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/baoyu-comic/SKILL.md
+  skill: baoyu-comic
+  status: candidate
+  purpose: 'Knowledge comics (知识漫画): educational, biography, tutorial.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/baoyu-infographic/SKILL.md
+  skill: baoyu-infographic
+  status: candidate
+  purpose: 'Infographics: 21 layouts x 21 styles (信息图, 可视化).'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/claude-design/SKILL.md
+  skill: claude-design
+  status: candidate
+  purpose: Design one-off HTML artifacts (landing, deck, prototype).
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/comfyui/SKILL.md
+  skill: comfyui
+  status: blocked
+  purpose: Generate images, video, and audio with ComfyUI — install, launch, manage
+    nodes/models, run workflows with parameter injection. Uses the official comfy-cli
+    for lifecycle and direct REST/WebSocket API for execution.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - sandbox-execution-without-dependency-proof
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Treat as blocked until host/runtime dependencies are proven in the
+    target lane.
+- path: skills/creative/creative-ideation/SKILL.md
+  skill: creative-ideation
+  status: candidate
+  purpose: Generate project ideas via creative constraints.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/design-md/SKILL.md
+  skill: design-md
+  status: candidate
+  purpose: Author/validate/export Google's DESIGN.md token spec files.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/excalidraw/SKILL.md
+  skill: excalidraw
+  status: candidate
+  purpose: Hand-drawn Excalidraw JSON diagrams (arch, flow, seq).
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/humanizer/SKILL.md
+  skill: humanizer
+  status: candidate
+  purpose: 'Humanize text: strip AI-isms and add real voice.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/manim-video/SKILL.md
+  skill: manim-video
+  status: candidate
+  purpose: 'Manim CE animations: 3Blue1Brown math/algo videos.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/p5js/SKILL.md
+  skill: p5js
+  status: candidate
+  purpose: 'p5.js sketches: gen art, shaders, interactive, 3D.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/pixel-art/SKILL.md
+  skill: pixel-art
+  status: candidate
+  purpose: Pixel art w/ era palettes (NES, Game Boy, PICO-8).
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/popular-web-designs/SKILL.md
+  skill: popular-web-designs
+  status: candidate
+  purpose: 54 real design systems (Stripe, Linear, Vercel) as HTML/CSS.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/pretext/SKILL.md
+  skill: pretext
+  status: candidate
+  purpose: Use when building creative browser demos with @chenglou/pretext — DOM-free
+    text layout for ASCII art, typographic flow around obstacles, text-as-geometry
+    games, kinetic typography, and text-powered generative art. Produces single-file
+    HTML demos by default.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/sketch/SKILL.md
+  skill: sketch
+  status: candidate
+  purpose: 'Throwaway HTML mockups: 2-3 design variants to compare.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/songwriting-and-ai-music/SKILL.md
+  skill: songwriting-and-ai-music
+  status: candidate
+  purpose: Songwriting craft and Suno AI music prompts.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/creative/touchdesigner-mcp/SKILL.md
+  skill: touchdesigner-mcp
+  status: blocked
+  purpose: Control a running TouchDesigner instance via twozero MCP — create operators,
+    set parameters, wire connections, execute Python, build real-time visuals. 36
+    native tools.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - sandbox-execution-without-dependency-proof
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Treat as blocked until host/runtime dependencies are proven in the
+    target lane.
+- path: skills/data-science/jupyter-live-kernel/SKILL.md
+  skill: jupyter-live-kernel
+  status: blocked
+  purpose: Iterative Python via live Jupyter kernel (hamelnb).
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - sandbox-execution-without-dependency-proof
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Treat as blocked until host/runtime dependencies are proven in the
+    target lane.
+- path: skills/devops/kanban-orchestrator/SKILL.md
+  skill: kanban-orchestrator
+  status: warning
+  purpose: Decomposition playbook + anti-temptation rules for an orchestrator profile
+    routing work through Kanban. The
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/devops/kanban-worker/SKILL.md
+  skill: kanban-worker
+  status: warning
+  purpose: Pitfalls, examples, and edge cases for Shay-Shay Kanban workers. The lifecycle
+    itself is auto-injected into every worker's system prompt as KANBAN_GUIDANCE (from
+    agent/prompt_builder.py); this skill is what you load when you want deeper detail
+    on specific scenarios.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/devops/webhook-subscriptions/SKILL.md
+  skill: webhook-subscriptions
+  status: warning
+  purpose: 'Webhook subscriptions: event-driven agent runs.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/dogfood/SKILL.md
+  skill: dogfood
+  status: unknown
+  purpose: 'Exploratory QA of web apps: find bugs, evidence, reports.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Require lane/tool preflight before claiming host readiness.
+- path: skills/email/himalaya/SKILL.md
+  skill: himalaya
+  status: warning
+  purpose: 'Himalaya CLI: IMAP/SMTP email from terminal.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/gaming/minecraft-modpack-server/SKILL.md
+  skill: minecraft-modpack-server
+  status: blocked
+  purpose: Host modded Minecraft servers (CurseForge, Modrinth).
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - sandbox-execution-without-dependency-proof
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Treat as blocked until host/runtime dependencies are proven in the
+    target lane.
+- path: skills/gaming/pokemon-player/SKILL.md
+  skill: pokemon-player
+  status: candidate
+  purpose: Play Pokemon via headless emulator + RAM reads.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/github/codebase-inspection/SKILL.md
+  skill: codebase-inspection
+  status: warning
+  purpose: 'Inspect codebases w/ pygount: LOC, languages, ratios.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/github/github-auth/SKILL.md
+  skill: github-auth
+  status: warning
+  purpose: 'GitHub auth setup: HTTPS tokens, SSH keys, gh CLI login.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/github/github-code-review/SKILL.md
+  skill: github-code-review
+  status: warning
+  purpose: 'Review PRs: diffs, inline comments via gh or REST.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/github/github-issues/SKILL.md
+  skill: github-issues
+  status: warning
+  purpose: Create, triage, label, assign GitHub issues via gh or REST.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/github/github-pr-workflow/SKILL.md
+  skill: github-pr-workflow
+  status: warning
+  purpose: 'GitHub PR lifecycle: branch, commit, open, CI, merge.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/github/github-repo-management/SKILL.md
+  skill: github-repo-management
+  status: warning
+  purpose: Clone/create/fork repos; manage remotes, releases.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/mcp/native-mcp/SKILL.md
+  skill: native-mcp
+  status: unknown
+  purpose: 'MCP client: connect servers, register tools (stdio/HTTP).'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Require lane/tool preflight before claiming host readiness.
+- path: skills/media/gif-search/SKILL.md
+  skill: gif-search
+  status: warning
+  purpose: Search/download GIFs from Tenor via curl + jq.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/media/heartmula/SKILL.md
+  skill: heartmula
+  status: warning
+  purpose: 'HeartMuLa: Suno-like song generation from lyrics + tags.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/media/songsee/SKILL.md
+  skill: songsee
+  status: warning
+  purpose: Audio spectrograms/features (mel, chroma, MFCC) via CLI.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/media/spotify/SKILL.md
+  skill: spotify
+  status: warning
+  purpose: 'Spotify: play, search, queue, manage playlists and devices.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/media/youtube-content/SKILL.md
+  skill: youtube-content
+  status: warning
+  purpose: YouTube transcripts to summaries, threads, blogs.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/mlops/evaluation/lm-evaluation-harness/SKILL.md
+  skill: lm-evaluation-harness
+  status: candidate
+  purpose: 'lm-eval-harness: benchmark LLMs (MMLU, GSM8K, etc.).'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/mlops/evaluation/weights-and-biases/SKILL.md
+  skill: weights-and-biases
+  status: candidate
+  purpose: 'W&B: log ML experiments, sweeps, model registry, dashboards.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/mlops/huggingface-hub/SKILL.md
+  skill: huggingface-hub
+  status: candidate
+  purpose: 'HuggingFace hf CLI: search/download/upload models, datasets.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/mlops/inference/llama-cpp/SKILL.md
+  skill: llama-cpp
+  status: blocked
+  purpose: llama.cpp local GGUF inference + HF Hub model discovery.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - sandbox-execution-without-dependency-proof
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Treat as blocked until host/runtime dependencies are proven in the
+    target lane.
+- path: skills/mlops/inference/obliteratus/SKILL.md
+  skill: obliteratus
+  status: blocked
+  purpose: 'OBLITERATUS: abliterate LLM refusals (diff-in-means).'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - sandbox-execution-without-dependency-proof
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Treat as blocked until host/runtime dependencies are proven in the
+    target lane.
+- path: skills/mlops/inference/vllm/SKILL.md
+  skill: vllm
+  status: blocked
+  purpose: 'vLLM: high-throughput LLM serving, OpenAI API, quantization.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - sandbox-execution-without-dependency-proof
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Treat as blocked until host/runtime dependencies are proven in the
+    target lane.
+- path: skills/mlops/models/audiocraft/SKILL.md
+  skill: audiocraft
+  status: blocked
+  purpose: 'AudioCraft: MusicGen text-to-music, AudioGen text-to-sound.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - sandbox-execution-without-dependency-proof
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Treat as blocked until host/runtime dependencies are proven in the
+    target lane.
+- path: skills/mlops/models/segment-anything/SKILL.md
+  skill: segment-anything
+  status: blocked
+  purpose: 'SAM: zero-shot image segmentation via points, boxes, masks.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - sandbox-execution-without-dependency-proof
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Treat as blocked until host/runtime dependencies are proven in the
+    target lane.
+- path: skills/mlops/research/dspy/SKILL.md
+  skill: dspy
+  status: candidate
+  purpose: 'DSPy: declarative LM programs, auto-optimize prompts, RAG.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/note-taking/obsidian/SKILL.md
+  skill: obsidian
+  status: candidate
+  purpose: Read, search, create, and edit notes in the Obsidian vault.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/orchestration/hyperwam/SKILL.md
+  skill: hyperwam (historical alias for HyperSwarm)
+  status: ready
+  purpose: Historical alias skill path for the canonical HyperSwarm orchestration doctrine. Use when Fritz wants first-class hyperparallel orchestration with explicit
+    lanes, worker-role discipline, approval gates, gap logging, and schema-bound outputs
+    instead of vague swarm residue.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: false
+  touches_live_state: false
+  approval_needed: 'no'
+  safe_lanes:
+  - docs-only
+  - sandbox
+  - clean-evidence
+  - planning
+  blocked_lanes:
+  - live-mutation-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps: []
+  recommendation: Keep available as a compatibility alias, but present HyperSwarm as the canonical orchestration doctrine for bounded multi-lane work.
+- path: skills/productivity/airtable/SKILL.md
+  skill: airtable
+  status: warning
+  purpose: Airtable REST API via curl. Records CRUD, filters, upserts.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/productivity/google-workspace/SKILL.md
+  skill: google-workspace
+  status: warning
+  purpose: Gmail, Calendar, Drive, Docs, Sheets via gws CLI or Python.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/productivity/linear/SKILL.md
+  skill: linear
+  status: warning
+  purpose: 'Linear: manage issues, projects, teams via GraphQL + curl.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/productivity/maps/SKILL.md
+  skill: maps
+  status: warning
+  purpose: Geocode, POIs, routes, timezones via OpenStreetMap/OSRM.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/productivity/nano-pdf/SKILL.md
+  skill: nano-pdf
+  status: warning
+  purpose: Edit PDF text/typos/titles via nano-pdf CLI (NL prompts).
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/productivity/notion/SKILL.md
+  skill: notion
+  status: warning
+  purpose: 'Notion API via curl: pages, databases, blocks, search.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/productivity/ocr-and-documents/SKILL.md
+  skill: ocr-and-documents
+  status: warning
+  purpose: Extract text from PDFs/scans (pymupdf, marker-pdf).
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/productivity/powerpoint/SKILL.md
+  skill: powerpoint
+  status: warning
+  purpose: Create, read, edit .pptx decks, slides, notes, templates.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/productivity/teams-meeting-pipeline/SKILL.md
+  skill: teams-meeting-pipeline
+  status: warning
+  purpose: Operate the Teams meeting summary pipeline via Shay-Shay CLI — summarize
+    meetings, inspect pipeline status, replay jobs, manage Microsoft Graph subscriptions.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/red-teaming/godmode/SKILL.md
+  skill: godmode
+  status: quarantine
+  purpose: 'Jailbreak LLMs: Parseltongue, GODMODE, ULTRAPLINIAN.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: 'yes'
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - default-routing
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Do not route by default; requires explicit purpose and review.
+- path: skills/research/arxiv/SKILL.md
+  skill: arxiv
+  status: candidate
+  purpose: Search arXiv papers by keyword, author, category, or ID.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/research/blogwatcher/SKILL.md
+  skill: blogwatcher
+  status: candidate
+  purpose: Monitor blogs and RSS/Atom feeds via blogwatcher-cli tool.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/research/llm-wiki/SKILL.md
+  skill: llm-wiki
+  status: candidate
+  purpose: 'Karpathy''s LLM Wiki: build/query interlinked markdown KB.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/research/polymarket/SKILL.md
+  skill: polymarket
+  status: candidate
+  purpose: 'Query Polymarket: markets, prices, orderbooks, history.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/research/research-paper-writing/SKILL.md
+  skill: research-paper-writing
+  status: candidate
+  purpose: 'Write ML papers for NeurIPS/ICML/ICLR: design→submit.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/smart-home/openhue/SKILL.md
+  skill: openhue
+  status: warning
+  purpose: Control Philips Hue lights, scenes, rooms via OpenHue CLI.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/social-media/xurl/SKILL.md
+  skill: xurl
+  status: warning
+  purpose: 'X/Twitter via xurl CLI: post, search, DM, media, v2 API.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: maybe
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes:
+  - live-side-effects-without-approval
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Likely useful, but verify external accounts/apps/host tools before
+    use.
+- path: skills/software-development/debugging-shay-tui-commands/SKILL.md
+  skill: debugging-shay-tui-commands
+  status: candidate
+  purpose: 'Debug Shay-Shay TUI slash commands: Python, gateway, Ink UI.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/software-development/node-inspect-debugger/SKILL.md
+  skill: node-inspect-debugger
+  status: candidate
+  purpose: Debug Node.js via --inspect + Chrome DevTools Protocol CLI.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/software-development/plan/SKILL.md
+  skill: plan
+  status: candidate
+  purpose: 'Plan mode: write markdown plan to .shay/plans/, no exec.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/software-development/python-debugpy/SKILL.md
+  skill: python-debugpy
+  status: candidate
+  purpose: 'Debug Python: pdb REPL + debugpy remote (DAP).'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/software-development/requesting-code-review/SKILL.md
+  skill: requesting-code-review
+  status: candidate
+  purpose: 'Pre-commit review: security scan, quality gates, auto-fix.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/software-development/shay-shay-skill-authoring/SKILL.md
+  skill: shay-shay-skill-authoring
+  status: candidate
+  purpose: 'Author in-repo SKILL.md: frontmatter, validator, structure.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/software-development/spike/SKILL.md
+  skill: spike
+  status: candidate
+  purpose: Throwaway experiments to validate an idea before build.
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/software-development/subagent-driven-development/SKILL.md
+  skill: subagent-driven-development
+  status: candidate
+  purpose: Execute plans via delegate_task subagents (2-stage review).
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/software-development/systematic-debugging/SKILL.md
+  skill: systematic-debugging
+  status: candidate
+  purpose: '4-phase root cause debugging: understand bugs before fixing.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/software-development/test-driven-development/SKILL.md
+  skill: test-driven-development
+  status: candidate
+  purpose: 'TDD: enforce RED-GREEN-REFACTOR, tests before code.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/software-development/writing-plans/SKILL.md
+  skill: writing-plans
+  status: candidate
+  purpose: 'Write implementation plans: bite-sized tasks, paths, code.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: maybe
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Keep as candidate/conditional until the target runtime and tools
+    are proven.
+- path: skills/yuanbao/SKILL.md
+  skill: yuanbao
+  status: unknown
+  purpose: 'Yuanbao (元宝) groups: @mention users, query info/members.'
+  required_tools:
+  - file
+  - terminal
+  required_mcps: []
+  writes_files: unknown
+  touches_live_state: unknown
+  approval_needed: maybe
+  safe_lanes:
+  - docs-only
+  - planning
+  - read-only-preflight
+  blocked_lanes: []
+  fallback: Do prerequisite discovery and route to read-only inspection or docs-only
+    planning if readiness is unproven.
+  gaps:
+  - skill-presence-not-equal-host-readiness
+  recommendation: Require lane/tool preflight before claiming host readiness.

@@ -1,16 +1,21 @@
 # Shay capability-awareness lineage audit — 2026-06-13
 
-Status: captain audit
-Purpose: trace where the missing awareness docs most likely went, determine whether they were truly lost versus intentionally deferred/superseded, and answer whether Shay currently has real global capability awareness.
+Status: captain audit, later reviewed by Fritz for completion scope
+Purpose: trace where the missing awareness docs most likely went, determine whether they were truly lost versus originally deferred/superseded, and answer whether Shay currently has real global capability awareness.
 
 ## Executive verdict
 
 The missing awareness docs do not look like a simple random loss.
 They look like a combination of:
-1. intentionally deferred sandbox awareness artifacts,
+1. originally deferred sandbox awareness artifacts,
 2. renamed or broadened predecessor docs,
 3. later Life OS synthesis docs that absorbed the interview-driven architecture direction,
 4. tracker/final-report references that overstate what was actually copied into the main-sync branch.
+
+Important status correction after review:
+- Fritz has now reviewed these plans and revoked the old defer posture for completion planning.
+- Treat the awareness cluster as active completion scope, not as waiting-for-review material.
+- `docs/shay-hermes-lane-packet-2026-06-13.md` turned out to be deferred stash residue, not a permanently lost artifact; the stash-backed original has now been restored on this branch.
 
 Blunt answer:
 - Shay does NOT yet have a clean, machine-backed, canon-complete global capability-awareness system.
@@ -71,9 +76,9 @@ Main-sync branch contains later synthesis docs instead:
 Conclusion:
 The branch with the Life OS plan contains the later architecture/synthesis layer, while the sandbox lane contains the rawer capability-awareness prototypes.
 
-### 3. The repo itself says many awareness docs were intentionally deferred
+### 3. The repo history shows many awareness docs were originally deferred
 
-`docs/shay-docs-promotion-manifest-2026-06-13.md` says these were "Defer later":
+`docs/shay-docs-promotion-manifest-2026-06-13.md` now preserves the historical defer-later classification while recording the Hermes lane packet restoration:
 - `docs/shay-adoption-backlog-2026-06-13.md`
 - `docs/shay-awareness-completion-assessment-2026-06-13.md`
 - `docs/shay-gap-lifecycle-status-2026-06-13.md`
@@ -84,11 +89,12 @@ The branch with the Life OS plan contains the later architecture/synthesis layer
 - `docs/shay-process-query-examples-2026-06-13.md`
 
 It also classifies `docs/shay-awareness-lane-packet-2026-06-13.md` as scratch/duplicate/lane residue.
+For the Hermes lane packet specifically, the branch gap was deferred stash residue rather than true disappearance; the stash-backed original is now restored here, but it was not previously committed to main.
 
 Conclusion:
-At least part of what looks "missing" was intentionally excluded from the first clean promoted surface.
+At least part of what looks "missing" was originally excluded from the first clean promoted surface. That is historical classification, not the active completion stance anymore.
 
-### 4. The clean transplant manifest says the awareness pack should stay deferred to a later awareness PR
+### 4. The clean transplant manifest says the awareness pack was planned to stay deferred to a later awareness PR
 
 `docs/hermes-removal-clean-pr-transplant-manifest-2026-06-13.md` explicitly defers:
 - `docs/shay-global-capability-matrix-draft-2026-06-13.*`
@@ -103,12 +109,14 @@ At least part of what looks "missing" was intentionally excluded from the first 
 - `docs/shay-add-audit-prune-rule-2026-06-13.md`
 
 Conclusion:
-The sandbox awareness cluster was not supposed to be fully promoted in the first clean PR shape.
+The sandbox awareness cluster was not supposed to be fully promoted in the first clean PR shape. After Fritz's review, that old gating should be treated as superseded for completion work.
 
 ## Best-fit mapping: likely predecessors / substitutes for the "missing" docs
 
 ### `shay-awareness-completion-assessment-2026-06-13.md`
-No exact file found.
+At audit time, no exact file was found.
+Current working-tree follow-on now contains:
+- `docs/shay-awareness-completion-assessment-2026-06-13.md`
 Most likely conceptual predecessors/substitutes:
 - `docs/shay-global-capability-matrix-draft-2026-06-13.md`
 - `docs/shay-skills-gap-log-2026-06-13.md`
@@ -116,7 +124,7 @@ Most likely conceptual predecessors/substitutes:
 - `docs/hermes-removal-brutal-qa-report-2026-06-13.md`
 
 Interpretation:
-This looks more like an intended synthesis artifact than a currently surviving file. The real content seems distributed across the draft matrix, gap log, role matrix, and brutal QA review.
+At audit time this looked more like an intended synthesis artifact than a surviving file. The current working-tree follow-on reconstructs it from the draft matrix, gap log, role matrix, brutal QA, and Fritz source packet.
 
 ### `shay-adoption-backlog-2026-06-13.md`
 Exact file found in sandbox:
@@ -126,14 +134,16 @@ Interpretation:
 This one is real and recoverable. It was likely deferred intentionally, not lost conceptually.
 
 ### `shay-gap-lifecycle-status-2026-06-13.md`
-No exact file found.
+At audit time, no exact file was found.
+Current working-tree follow-on now contains:
+- `docs/shay-gap-lifecycle-status-2026-06-13.md`
 Closest surviving equivalents:
 - `docs/shay-gap-lifecycle-policy-2026-06-13.md`
 - `docs/shay-gap-resolution-workflow-2026-06-13.md`
 - `docs/hermes-removal-gap-log-2026-06-13.md`
 
 Interpretation:
-The named `status` doc may have been planned as a summary artifact, but the surviving reality is policy + workflow + actual gap log rather than a single status snapshot.
+At audit time the named `status` doc appeared to be planned rather than preserved. The current working-tree follow-on reconstructs it as the summary layer above policy + workflow + actual gap log.
 
 ### `shay-awareness-lane-packet-2026-06-13.md`
 No exact file found.
@@ -145,18 +155,24 @@ Interpretation:
 This looks like lane residue that may never have been preserved as a standalone file, even though later docs refer to it.
 
 ### `shay-process-query-examples-2026-06-13.md`
-No exact file found.
+At audit time, no exact file was found.
+Current working-tree follow-on now contains:
+- `docs/shay-process-query-examples-2026-06-13.md`
 Interpretation:
-This appears to be a referenced-but-missing artifact. The intent survives conceptually in the process-intelligence architecture and the tracker's query-answering expectations, but the named file itself is absent.
+At audit time this appeared to be a referenced-but-missing artifact. The current working-tree follow-on reconstructs it from the process-intelligence architecture and the tracker's query-answering expectations.
 
 ### `shay-process-intelligence-watcher-design-2026-06-13.md`
-No exact file found.
+At audit time, no exact file was found.
+Current working-tree follow-on now contains:
+- `docs/shay-process-intelligence-watcher-design-2026-06-13.md`
 Closest surviving substitute:
 - the watcher phase/spec sections inside `docs/shay-life-os-completion-implementation-plan-2026-06-13.md`
 - the scheduler audit in `docs/shay-current-intelligence-schedule-audit-2026-06-13.md`
 
 ### `shay-pattern-scanner-autonomy-policy-2026-06-13.md`
-No exact file found.
+At audit time, no exact file was found.
+Current working-tree follow-on now contains:
+- `docs/shay-pattern-scanner-autonomy-policy-2026-06-13.md`
 Closest surviving substitute:
 - `docs/shay-pattern-scanner-design-2026-06-13.md`
 
@@ -184,7 +200,7 @@ I have meaningful scaffolding and precursor artifacts for global capability awar
 ## Recommended next move
 
 1. Treat the sandbox awareness cluster as source material, not noise.
-2. Build one clean promoted awareness canon later from:
+2. Build one clean promoted awareness canon from:
    - global capability matrix
    - adoption backlog
    - gap lifecycle policy/workflow

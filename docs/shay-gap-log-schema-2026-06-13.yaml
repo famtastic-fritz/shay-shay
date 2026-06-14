@@ -1,0 +1,155 @@
+schema_name: shay-gap-log
+version: 2026-06-13
+scope: hermes-removal-sandbox-first_then_global
+status_vocabulary:
+  - observed
+  - recorded
+  - needs_research
+  - watching
+  - candidate_found
+  - needs_approval
+  - ready_for_sandbox
+  - ready_for_implementation
+  - validated
+  - closed
+  - partially_closed
+  - deferred
+  - rejected
+  - duplicate
+  - accepted_risk
+severity_vocabulary:
+  - low
+  - medium
+  - high
+  - critical
+risk_vocabulary:
+  - low
+  - medium
+  - high
+  - severe
+next_action_vocabulary:
+  - research
+  - watch
+  - approval
+  - sandbox_test
+  - implementation
+  - defer
+  - close
+  - reject
+  - duplicate
+  - accepted_risk
+  - none
+fields:
+  gap_id:
+    type: string
+    required: true
+    description: Stable canonical identifier.
+  short_name:
+    type: string
+    required: true
+    description: Human-readable short label.
+  lane:
+    type: string
+    required: true
+    description: Where the gap exists or was discovered.
+  discovered_by:
+    type: string
+    required: true
+    description: Role, tool, or process that surfaced the gap.
+  discovered_at:
+    type: string
+    required: true
+    description: ISO timestamp or explicit date/time label.
+  task_that_exposed_it:
+    type: string
+    required: true
+    description: Exact task, validation, or workflow that revealed the issue.
+  expected_capability:
+    type: string
+    required: true
+    description: What should have been possible.
+  actual_result:
+    type: string
+    required: true
+    description: What actually happened.
+  evidence:
+    type: list
+    required: true
+    description: File paths, command outputs, URLs, logs, hashes, commit IDs, or other proof surfaces.
+  status:
+    type: string
+    required: true
+    allowed_values_ref: status_vocabulary
+  severity:
+    type: string
+    required: true
+    allowed_values_ref: severity_vocabulary
+  risk:
+    type: string
+    required: true
+    allowed_values_ref: risk_vocabulary
+  blocked_action:
+    type: string
+    required: true
+    description: The action currently blocked or degraded by this gap.
+  safe_fallback:
+    type: string
+    required: true
+    description: Safest known fallback while the gap remains open.
+  approval_needed:
+    type: boolean
+    required: true
+  research_needed:
+    type: boolean
+    required: true
+  watch_cadence:
+    type: string
+    required: false
+    description: one-shot, daily, weekly, before related execution, etc.
+  approved_sources:
+    type: list
+    required: false
+    description: Source classes or exact sources approved for research or watch.
+  candidate_fix:
+    type: string
+    required: false
+    description: Proposed tool, workflow, validation path, or implementation path.
+  owner_role:
+    type: string
+    required: true
+    description: Role responsible for advancing the gap.
+  checker_role:
+    type: string
+    required: true
+    description: Role responsible for challenging or validating movement.
+  validation_test:
+    type: string
+    required: false
+    description: Exact safe validation to run when status reaches ready_for_sandbox or validated.
+  closure_criteria:
+    type: string
+    required: true
+    description: What must be true before the gap can be closed.
+  next_action:
+    type: string
+    required: true
+    allowed_values_ref: next_action_vocabulary
+  next_check_date:
+    type: string
+    required: false
+    description: Next scheduled review date or trigger phrase.
+  related_docs:
+    type: list
+    required: false
+    description: Control docs, plans, matrices, or notes directly tied to the gap.
+  related_commits:
+    type: list
+    required: false
+    description: Commit IDs that materially changed the gap state.
+notes:
+  observation_interpretation_rule: Observation and interpretation should be separable even if the storage format keeps them adjacent.
+  no_none_rule: next_action none is allowed only for false positive, duplicate, historical-only, accepted_risk, rejected, or already closed gaps.
+  closure_scope_rule: closure must state both what is proven and what is explicitly not claimed.
+  latest_lockdir_reference:
+    - a644a0a
+    - gateway-lock-dir-default-outside-shay-home is closed for override behavior only

@@ -47,6 +47,11 @@ Serial merge by captain:
 Produced:
 - `docs/shay-hermes-lane-packet-2026-06-13.md`
 
+Historical correction:
+- this file existed as deferred stash residue and has now been restored from the stash-backed original on this branch
+- it was not previously committed to main
+- downstream docs should point to the restored file as branch-local evidence, not treat it as absent or as live-runtime wiring proof
+
 Useful truth produced:
 - Hermes docs/control path is PR-ready
 - wrappers remain designed only
@@ -58,12 +63,19 @@ Useful truth produced:
 ### Awareness lane
 Produced:
 - `docs/shay-awareness-completion-assessment-2026-06-13.md`
-- `docs/shay-awareness-lane-packet-2026-06-13.md`
 - `docs/shay-adoption-backlog-2026-06-13.md`
 - `docs/shay-gap-lifecycle-status-2026-06-13.md`
+- restored precursor awareness-control surfaces now present in the working tree:
+  - `docs/shay-global-capability-matrix-draft-2026-06-13.md`
+  - `docs/shay-worker-role-matrix-2026-06-13.md`
+  - `docs/shay-skills-gap-log-2026-06-13.md`
+  - `docs/shay-gap-lifecycle-policy-2026-06-13.md`
+  - `docs/shay-gap-resolution-workflow-2026-06-13.md`
+  - `docs/shay-add-audit-prune-rule-2026-06-13.md`
 
 Post-commit verification note:
-- these awareness artifacts are referenced here, but they are not currently present on this branch and should not be treated as landed truth until restored or downgraded
+- these awareness artifacts are now present in the working tree, but most are not yet committed as settled branch canon
+- `docs/shay-awareness-lane-packet-2026-06-13.md` remains non-canonical residue, not a required restored artifact
 
 Useful truth produced:
 - HyperSwarm is canonical
@@ -103,7 +115,7 @@ Useful truth produced:
 - lessons sync is active and healthy
 - dailybrief is noisy/unhealthy and should not be expanded
 - all Shay-native cron jobs are currently disabled
-- no watcher control plane exists yet
+- watcher/scanner code may exist on branch, but no live watcher control plane is evidenced as scheduled/enabled here
 
 ### Command surface lane
 Produced:
@@ -113,7 +125,7 @@ Produced:
 
 Useful truth produced:
 - `shay doctor`, `shay status`, `shay sessions`, `shay mcp`, `shay gateway`, and `shay model` were actually inspected/exercised
-- `shay skills inspect` is the concrete surface, not a literal `skills view`
+- `shay skills list` is the concrete local skill-inventory surface; hub search/inspect is a different surface
 - command health is fragmented across multiple surfaces
 - session search exists, but CLI exposure is incomplete
 

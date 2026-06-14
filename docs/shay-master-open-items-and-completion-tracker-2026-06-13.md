@@ -64,15 +64,15 @@ Gatekeeper posture enforced by captain:
 | id | surface | current_state | done_definition | who_calls_complete | human_signoff | blockers | evidence | live_now | next_action |
 |---|---|---|---|---|---|---|---|---|---|
 | MSI-001 | Mission amendment to HyperSwarm model | pr_ready | Mission amendment exists as a separate control-plane addendum without rewriting original mission authority | Fritz | no | committed and pushed on branch; not yet merged to main | `docs/shay-full-autonomy-completion-mission-amendment-2026-06-13.md` | no | review with branch merge scope |
-| MSI-002 | Hermes lane packet | blocked | Hermes status classified with designed vs live separation and proof pointers | Fritz | no | referenced by tracker/report but the lane packet file is not present on this branch | `docs/shay-hermes-lane-packet-2026-06-13.md` | no | either restore the missing artifact or remove stale references |
+| MSI-002 | Hermes lane packet | pr_ready | Hermes status classified with designed vs live separation and proof pointers | Fritz | no | restored from deferred stash residue via the stash-backed original; not previously committed to main | `docs/shay-hermes-lane-packet-2026-06-13.md` | no | keep as branch-local evidence and patch dependent docs to point here |
 | MSI-003 | Hermes wrapper forwarding / compatibility | designed | Explicit approved forwarder plan plus validated non-breaking cutover test | Fritz | yes | approval-gated; no live wrapper edits allowed | `docs/hermes-live-wrapper-forwarder-validation-packet-2026-06-13.md`, `docs/hermes-external-compatibility-plan-2026-06-13.md` | no | separate approval packet |
 | MSI-004 | Hermes relabeling reconstruction | deferred | Fresh-branch reconstruction lands clean and passes validation | Fritz | yes | old sandbox not cleanly transplantable | `docs/hermes-removal-pr-readiness-check-2026-06-13.md`, `docs/hermes-removal-clean-pr-transplant-manifest-2026-06-13.md` | no | rebuild later on fresh branch |
 | MSI-005 | Dirty live checkout cleanup | deferred | Live checkout classified, preserved, then cleaned only with explicit approval path | Fritz | yes | live tree intentionally untouched; ahead/behind drift | `docs/shay-hermes-lane-packet-2026-06-13.md` | yes | separate cleanup lane |
 | MSI-006 | Paused rewrite sandbox status | sandbox_proven | Sandbox existence, branch, and parked-clean state proven | captain | no | none | `docs/shay-hermes-lane-packet-2026-06-13.md` | n/a | keep parked |
 | MSI-007 | Model-switch local stack parked status | deferred | Runtime proof collected, then commit hygiene path defined | Fritz | yes | live fix intentionally uncommitted pending proof | `docs/shay-hermes-lane-packet-2026-06-13.md`, `docs/live-model-switchboard-stabilization-2026-06-12.md` | partial | runtime-proof lane later |
-| MSI-008 | Awareness completion assessment | blocked | Honest capability-readiness assessment exists and points to gaps without overclaiming | Fritz | no | referenced by tracker/report but the assessment file is not present on this branch | `docs/shay-awareness-completion-assessment-2026-06-13.md` | no | either restore the missing artifact or downgrade awareness completion claims |
-| MSI-009 | Adoption backlog | blocked | Structured backlog exists with owner/reason/priority model | Fritz | no | referenced by tracker/report but the backlog file is not present on this branch | `docs/shay-adoption-backlog-2026-06-13.md` | no | restore artifact or remove the claim from canon |
-| MSI-010 | Gap lifecycle status | blocked | Gap classes and lifecycle states documented | Fritz | no | referenced by tracker/report but the status file is not present on this branch | `docs/shay-gap-lifecycle-status-2026-06-13.md` | no | restore artifact or remove the claim from canon |
+| MSI-008 | Awareness completion assessment | pr_ready | Honest capability-readiness assessment exists and points to gaps without overclaiming | Fritz | no | lane snapshot went stale after later lanes landed | `docs/shay-awareness-completion-assessment-2026-06-13.md` | no | reconcile stale claims in final canon |
+| MSI-009 | Adoption backlog | designed | Structured backlog exists with owner/reason/priority model | Fritz | no | not connected to recurring review loop | `docs/shay-adoption-backlog-2026-06-13.md` | no | bind to future review cycle |
+| MSI-010 | Gap lifecycle status | designed | Gap classes and lifecycle states documented | Fritz | no | not machine-written | `docs/shay-gap-lifecycle-status-2026-06-13.md` | no | connect to tracker and ledger |
 | MSI-011 | Process intelligence architecture | pr_ready | Architecture doc exists with ledger split, lineage, and redaction posture, and the first runtime slice now has a concrete implementation path | Fritz | no | architecture ahead of full feature coverage | `docs/shay-process-intelligence-architecture-2026-06-13.md`, `process_intelligence.py` | partial | bind docs to runtime truth |
 | MSI-012 | Run ledger schema | pr_ready | YAML schema exists and the runtime now writes real run records automatically | captain | no | pushed on branch; not yet merged to main or validated live | `docs/shay-run-ledger-schema-2026-06-13.yaml`, `process_intelligence.py` | partial | validate merge scope then prove on main/live path |
 | MSI-013 | Decision ledger schema | pr_ready | YAML schema exists and remains the next ledger family to implement | captain | no | no runtime writer yet | `docs/shay-decision-ledger-schema-2026-06-13.yaml` | no | implement Phase 2 decision writes |
@@ -99,13 +99,13 @@ Gatekeeper posture enforced by captain:
 
 ## Open gaps that matter most now
 
-1. Phase 1 runtime is committed and pushed on this branch, but it is not merged to `main`.
-2. Several artifacts still referenced as completed truth are missing from this branch: Hermes lane packet, awareness completion assessment, adoption backlog, and gap lifecycle status.
-3. Awareness/control claims are therefore not yet cleanly complete even though the branch has substantial implementation work landed.
-4. Watcher design exists but does not yet cover the full watcher set requested by mission/reviewer.
+1. Awareness restoration/reconstruction is now present in the working tree, including the Hermes lane packet restored from deferred stash residue.
+2. The restored Hermes lane packet was not previously committed to main; canon docs should treat it as branch-local evidence, not as live-runtime proof.
+3. Runtime truth is still fragmented across live-runtime CLI evidence, draft capability docs, and branch-local control artifacts.
+4. Watcher design now exists, but watcher activation/control-plane wiring does not.
 5. Daily-brief path is noisy and should not be reused as a watcher delivery channel.
-6. Pattern scanner runtime landed on branch, but it is not yet merged or validated live.
-7. No user-facing query surface exists yet to answer process questions from live run data.
+6. Real ledger pipeline and durable process-question answering remain blocked until runtime wiring exists.
+7. Pattern scanner and broader cross-run learning remain design-only until implementation lands.
 
 ## Add = Audit + Prune decisions
 
@@ -125,6 +125,58 @@ Merge later:
 Quarantine:
 - stale lane-time claims once this tracker exists
 - any future doc that calls design work live
+
+## Pickup instructions for next window
+
+Status correction after source-doc ingest:
+- Title 6 / `close-doc-gaps` is still open.
+- The source architecture packet was ingested and packetized.
+- The missing awareness/control artifacts were restored or reconstructed into the current working tree.
+- The remaining blocker is no longer artifact absence; it is runtime-truth fragmentation plus stale canon wording.
+
+Do not restart.
+Do not re-run the old board debate.
+Continue from the restored branch-local artifact cluster plus runtime-truth evidence.
+Treat this as a captain-led HyperSwarm continuation run.
+
+Immediate resume sequence:
+1. Re-anchor on this tracker, the lineage audit, and the runtime-truth audit:
+   - `docs/shay-master-open-items-and-completion-tracker-2026-06-13.md`
+   - `docs/shay-capability-awareness-lineage-audit-2026-06-13.md`
+   - `docs/shay-runtime-truth-audit-2026-06-13.md`
+2. Audit runtime truth-table, routing policy, provider/MCP/skill evidence, and branch-vs-runtime separation before claiming capability awareness is complete.
+3. Run adversarial review against the restored/reconstructed awareness cluster.
+4. Patch tracker/report/mission wording anywhere a previously missing artifact is still described as absent.
+5. Preserve HyperSwarm doctrine:
+   - bounded lanes
+   - dependency-first fanout
+   - captain tracker remains canonical
+   - no fake "single-agent swarm"
+
+Title 6 gaps still requiring closure:
+- canon wording discipline:
+  - keep `docs/shay-hermes-lane-packet-2026-06-13.md` referenced as restored stash-backed evidence, not as absent and not as live wiring proof
+  - any future cleanup that retires it must replace every reference in the same change
+- still-partial truth surfaces:
+  - global runtime truth-table beyond the draft matrix
+  - provider / MCP / skill evidence unified into one honest control surface
+  - runtime/branch separation rules reflected in canon docs
+- still-blocked runtime surfaces:
+  - real ledger pipeline
+  - durable process-question answering
+  - watcher/scanner activation
+
+HyperSwarm continuation target:
+- total swarm envelope: 300+ agents via waves
+- live parallel target: 50 concurrent child/process lanes where safe
+- captain rule: dependency-first fanout, not blind saturation
+- reviewer rule: adversarial review remains separate from producing lanes
+
+If the next session lands midstream, do this in order:
+1. trust direct file existence plus tracker over stale summaries
+2. verify runtime truth with read-only CLI surfaces
+3. downgrade any remaining overclaim before expanding architecture
+4. only then mark Title 6 closer to complete
 
 ## Captain verdict
 
