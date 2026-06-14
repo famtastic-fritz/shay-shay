@@ -1,0 +1,601 @@
+# Hermes Removal Gap Log
+
+Date: 2026-06-13
+Lane: Hermes-removal sandbox
+Purpose: durable gap inventory for capability blockers, unknowns, validation prerequisites, and cutover risks in the Hermes-removal + capability-awareness workstream.
+
+## Gap Record Rules
+
+- Observation stays separate from interpretation.
+- Every gap must carry exactly one next_action.
+- `next_action: none` is allowed only when the gap is closed, duplicate, historical-only, accepted_risk, or rejected.
+- Status vocabulary follows the Shay lifecycle docs.
+- Live cutover, deletion, restart, wrapper replacement, or secret-dependent validation remains outside this lane until Fritz approves it.
+
+## Gap Records
+
+### sandbox-no-local-venv
+- gap_id: sandbox-no-local-venv
+- short_name: Sandbox lacks local virtualenv
+- lane: sandbox
+- discovered_by: capability-control preflight
+- discovered_at: 2026-06-13
+- task_that_exposed_it: Hermes-removal sandbox execution preflight
+- expected_capability: Sandbox execution should be self-contained inside the sandbox worktree
+- actual_result: Approved checks had to use `/Users/famtasticfritz/famtastic/shay-shay/.venv/bin/python` from the live checkout
+- evidence:
+  - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`
+  - `docs/hermes-removal-capability-control-packet-2026-06-13.md`
+  - approved help/gateway validation notes captured in sandbox docs
+- status: needs_approval
+- severity: medium
+- risk: medium
+- blocked_action: self-contained sandbox execution and promotion-grade runtime claims
+- safe_fallback: read-only inspection first; if command proof is necessary, use the explicit shared interpreter path with sandbox `SHAY_HOME` and label it shared-runtime coupling
+- approval_needed: true
+- research_needed: false
+- watch_cadence: null
+- approved_sources:
+  - local sandbox docs
+  - local sandbox repo inspection
+- candidate_fix: create a sandbox-local `.venv` or explicitly accept shared-venv coupling as an interim risk
+- owner_role: gatekeeper
+- checker_role: reviewer
+- validation_test: create sandbox-local `.venv`, then rerun bounded import/help sanity inside sandbox-only pathing
+- closure_criteria: sandbox execution no longer depends on the live checkout `.venv`, or Fritz explicitly accepts the coupling as risk
+- next_action: ask Fritz
+- next_check_date: next Hermes-removal execution wave
+- related_docs:
+  - `docs/hermes-removal-capability-control-packet-2026-06-13.md`
+  - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`
+- related_commits: []
+- observation:
+  - The sandbox had no local `.venv` during this mission.
+- interpretation:
+  - Runtime truth claims remain coupled to a shared live interpreter until this is solved.
+
+### path-missing-python-pytest-pip
+- gap_id: path-missing-python-pytest-pip
+- short_name: Generic python/pytest/pip names absent on PATH
+- lane: host-sandbox-planning
+- discovered_by: capability-control inspection
+- discovered_at: 2026-06-13
+- task_that_exposed_it: host readiness check
+- expected_capability: generic `python`, `pytest`, and `pip` should be available if host readiness is assumed
+- actual_result: only `python3`, `pip3`, and `uv` were visible on PATH in the checked lane
+- evidence:
+  - capability-control inspection notes in sandbox docs
+- status: accepted_risk
+- severity: low
+- risk: low
+- blocked_action: naive host-command assumptions
+- safe_fallback: use exact interpreter names and explicit paths
+- approval_needed: false
+- research_needed: false
+- watch_cadence: before_related_execution
+- approved_sources:
+  - local host command truth
+- candidate_fix: none worth immediate work
+- owner_role: recorder/ledgerer
+- checker_role: checker
+- validation_test: confirm exact command path before any future execution packet
+- closure_criteria: exact-command fallback remains sufficient and no work requires generic PATH assumptions
+- next_action: close
+- next_check_date: before any future generic host-command claim
+- related_docs:
+  - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`
+- related_commits: []
+- observation:
+  - PATH exposed `python3`, `pip3`, and `uv`, not generic `python`, `pytest`, or `pip`.
+- interpretation:
+  - This is a bounded host-readiness caveat, not a mission blocker.
+
+### sandbox-home-not-yet-startup-validated
+- gap_id: sandbox-home-not-yet-startup-validated
+- short_name: Sandbox home startup isolation only partially proven
+- lane: sandbox-runtime
+- discovered_by: approved gateway validation and reviewer audit
+- discovered_at: 2026-06-13
+- task_that_exposed_it: bounded gateway startup validation
+- expected_capability: sandbox `SHAY_HOME` startup should be isolated and promotion-grade within declared proof scope
+- actual_result: one bounded startup showed sandbox-home writes and no inspected live-state mutation, but broader runtime/config/API-bind claims remain partial
+- evidence:
+  - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`
+  - `docs/hermes-removal-capability-control-packet-2026-06-13.md`
+  - reviewer findings from this mission
+- status: partially_closed
+- severity: medium
+- risk: medium
+- blocked_action: broad runtime-isolation claims and promotion-grade cutover confidence
+- safe_fallback: keep runtime claims narrow and approval-gate any additional sandbox startup validation
+- approval_needed: true
+- research_needed: false
+- watch_cadence: null
+- approved_sources:
+  - local sandbox docs
+  - local sandbox runtime evidence already captured
+- candidate_fix: run a narrowly-scoped additional sandbox validation only if a real decision depends on it
+- owner_role: runner
+- checker_role: checker
+- validation_test: bounded sandbox startup proof for whichever remaining runtime edge actually matters next
+- closure_criteria: remaining runtime edge is validated or explicitly accepted as out-of-scope for PR readiness
+- next_action: sandbox test
+- next_check_date: only when a promotion/cutover question depends on broader runtime proof
+- related_docs:
+  - `docs/hermes-removal-capability-control-packet-2026-06-13.md`
+  - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`
+- related_commits:
+  - `a8e5f7a`
+- observation:
+  - Sandbox-home writes were observed under declared `SHAY_HOME`.
+- interpretation:
+  - Isolation is partly proven, but not enough to overclaim full runtime independence.
+
+### gateway-lock-dir-default-outside-shay-home
+- gap_id: gateway-lock-dir-default-outside-shay-home
+- short_name: Token lock-dir override behavior
+- lane: sandbox-runtime
+- discovered_by: code inspection plus direct helper/unit probe
+- discovered_at: 2026-06-13
+- task_that_exposed_it: gateway lock-dir validation
+- expected_capability: sandbox token-scoped gateway locks should honor explicit sandbox lock-dir override
+- actual_result: direct helper/unit probe proved `SHAY_GATEWAY_LOCK_DIR` override is honored; no broader runtime claim is made
+- evidence:
+  - `a644a0a docs: validate Hermes sandbox lock-dir isolation`
+  - `docs/hermes-removal-capability-control-packet-2026-06-13.md`
+  - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`
+- status: closed
+- severity: medium
+- risk: low
+- blocked_action: none for the narrow override question
+- safe_fallback: keep explicit `SHAY_GATEWAY_LOCK_DIR` in sandbox packets
+- approval_needed: false
+- research_needed: false
+- watch_cadence: null
+- approved_sources:
+  - local code inspection
+  - direct probe evidence
+- candidate_fix: none
+- owner_role: recorder/ledgerer
+- checker_role: reviewer
+- validation_test: contradictory runtime evidence would reopen the gap
+- closure_criteria: `a644a0a` remains uncontested for the helper/unit-level override question
+- next_action: close
+- next_check_date: only if contradictory evidence appears
+- related_docs:
+  - `docs/shay-gap-lifecycle-policy-2026-06-13.md`
+  - `docs/shay-gap-resolution-workflow-2026-06-13.md`
+- related_commits:
+  - `a644a0a`
+- observation:
+  - The sandbox lock file was created under the explicit sandbox override path.
+- interpretation:
+  - The override question is done; runtime invocation proof remains a separate question.
+
+### hermes-external-client-usage-unknown
+- gap_id: hermes-external-client-usage-unknown
+- short_name: External Hermes consumer usage not fully mapped
+- lane: external-wrapper-runtime-surface
+- discovered_by: compatibility audit
+- discovered_at: 2026-06-13
+- task_that_exposed_it: Hermes wrapper/home cutover planning
+- expected_capability: Hermes external dependencies should be mapped before cutover/removal is proposed as safe
+- actual_result: the external usage map now proves concrete dependencies (`~/.local/bin/hermes`, `~/.local/bin/shay-desktop`, shell `HERMES_HOME`, `~/.shay/hermes-agent`, and `~/.hermes`), but the full caller set is still not exhaustively known
+- evidence:
+  - `docs/hermes-reference-inventory-2026-06-13.md`
+  - `docs/hermes-external-compatibility-plan-2026-06-13.md`
+  - `docs/hermes-external-usage-map-2026-06-13.md`
+  - `docs/hermes-external-usage-map-2026-06-13.yaml`
+- status: partially_closed
+- severity: high
+- risk: high
+- blocked_action: live cutover, wrapper removal, backing-tree deletion, legacy-home retirement
+- safe_fallback: preserve all external Hermes surfaces and propose forwarding instead of removal
+- approval_needed: false
+- research_needed: true
+- watch_cadence: weekly
+- approved_sources:
+  - passive wrapper/path inspection
+  - shell config inspection
+  - launch agent listing
+  - crontab listing
+  - historical non-private docs
+- candidate_fix: temporary `hermes -> shay` forwarder plus explicit dependency mapping
+- owner_role: research_fetcher
+- checker_role: reviewer
+- validation_test: evidence-backed map of external callers/readers sufficient to rank removal order
+- closure_criteria: external Hermes dependencies are mapped enough to choose forward/deprecate/remove-last behavior confidently
+- next_action: plan
+- next_check_date: next wrapper decision review
+- related_docs:
+  - `docs/hermes-external-compatibility-plan-2026-06-13.md`
+  - `docs/hermes-live-cutover-proposal-2026-06-13.md`
+  - `docs/hermes-external-usage-map-2026-06-13.md`
+- related_commits: []
+- observation:
+  - The live hermes shim and backing tree still exist, and the Shay desktop launcher still depends on them indirectly.
+- interpretation:
+  - Hermes cannot be removed live until the external contract map is stronger, but the vague unknown is now narrower and better evidenced.
+
+### provider-health-partial-only
+- gap_id: provider-health-partial-only
+- short_name: Provider health known only passively
+- lane: runtime-status-planning
+- discovered_by: capability audit
+- discovered_at: 2026-06-13
+- task_that_exposed_it: capability-awareness planning
+- expected_capability: provider/model readiness should be classified accurately without overclaiming execution readiness
+- actual_result: only passive evidence exists in this lane
+- evidence:
+  - current capability docs
+- status: watching
+- severity: medium
+- risk: medium
+- blocked_action: strong provider-execution claims in sandbox planning
+- safe_fallback: keep provider claims passive and conservative
+- approval_needed: false
+- research_needed: true
+- watch_cadence: daily_or_before_related_execution
+- approved_sources:
+  - passive status docs
+  - official provider docs/changelogs
+- candidate_fix: future read-only watcher cron
+- owner_role: watcher
+- checker_role: checker
+- validation_test: passive evidence review on cadence
+- closure_criteria: provider readiness is sufficient for the exact next provider-dependent decision or escalated properly
+- next_action: watch
+- next_check_date: before next provider-dependent execution decision
+- related_docs:
+  - `docs/shay-capability-research-cron-design-2026-06-13.md`
+- related_commits: []
+- observation:
+  - Provider visibility is partial only.
+- interpretation:
+  - This is a monitor-it gap, not a fix-it-now gap.
+
+### mcp-sandbox-independence-unproven
+- gap_id: mcp-sandbox-independence-unproven
+- short_name: MCP sandbox independence not proven
+- lane: mcp-runtime-planning
+- discovered_by: capability audit
+- discovered_at: 2026-06-13
+- task_that_exposed_it: capability-awareness planning
+- expected_capability: MCP runtime claims should distinguish config visibility from sandbox-independent execution proof
+- actual_result: listing/config visibility exists; sandbox-independent MCP runtime behavior is still unproven
+- evidence:
+  - current capability docs
+- status: needs_research
+- severity: medium
+- risk: medium
+- blocked_action: promotion-grade MCP readiness claims
+- safe_fallback: treat passive listing/config inspection as read-only truth only
+- approval_needed: false
+- research_needed: true
+- watch_cadence: one-shot
+- approved_sources:
+  - local config/docs
+  - official MCP docs
+- candidate_fix: define whether passive evidence is enough or whether a future bounded sandbox proof is actually needed
+- owner_role: research_fetcher
+- checker_role: checker
+- validation_test: source-backed decision packet on required proof level
+- closure_criteria: independence is classified honestly, either by sufficient passive evidence or by an approved future proof packet
+- next_action: research
+- next_check_date: next capability review
+- related_docs:
+  - `docs/shay-capability-research-cron-design-2026-06-13.md`
+- related_commits: []
+- observation:
+  - Visibility exists; independence does not.
+- interpretation:
+  - Skill/config presence is not runtime proof.
+
+### skill-presence-not-equal-host-readiness
+- gap_id: skill-presence-not-equal-host-readiness
+- short_name: Skill presence overclaims host readiness
+- lane: orchestration-control
+- discovered_by: capability audit
+- discovered_at: 2026-06-13
+- task_that_exposed_it: capability-awareness planning
+- expected_capability: skill presence should not be mistaken for executable host readiness
+- actual_result: skill catalogs exist without proving local binaries, MCPs, or safe side-effect boundaries
+- evidence:
+  - `docs/shay-skills-readiness-matrix-2026-06-13.yaml`
+  - `docs/shay-skills-gap-log-2026-06-13.md`
+- status: ready_for_implementation
+- severity: medium
+- risk: medium
+- blocked_action: trustworthy automatic skill routing
+- safe_fallback: verify tools/runtime/lane fit before claiming a skill is ready
+- approval_needed: false
+- research_needed: false
+- watch_cadence: null
+- approved_sources:
+  - local skills tree
+  - current capability docs
+- candidate_fix: maintain a skills readiness matrix and require host-readiness checks before skill-based claims
+- owner_role: promoter
+- checker_role: reviewer
+- validation_test: matrix + gap rules applied to skills and referenced in final reports
+- closure_criteria: skill readiness is tracked explicitly enough that a skill no longer overclaims host capability
+- next_action: fix now
+- next_check_date: this mission
+- related_docs:
+  - `docs/shay-skills-readiness-matrix-2026-06-13.yaml`
+  - `docs/shay-skills-gap-log-2026-06-13.md`
+- related_commits: []
+- observation:
+  - Skill discovery exists independently of host/runtime proof.
+- interpretation:
+  - This is a process/control implementation gap, not a research gap.
+
+### legacy-hermes-home-sensitive
+- gap_id: legacy-hermes-home-sensitive
+- short_name: Legacy Hermes home is sensitive and remove-last
+- lane: external-sensitive-read-only
+- discovered_by: capability matrix review
+- discovered_at: 2026-06-13
+- task_that_exposed_it: gap/matrix reconciliation
+- expected_capability: legacy Hermes home should be classified explicitly instead of implied
+- actual_result: `~/.hermes` is now explicitly classified as a high-risk legacy state surface with top-level config/session/skill/database artifacts still present, but deeper live-consumer certainty is still incomplete
+- evidence:
+  - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`
+  - `docs/hermes-external-usage-map-2026-06-13.md`
+- status: partially_closed
+- severity: medium
+- risk: high
+- blocked_action: confident deletion or direct migration claims about `~/.hermes`
+- safe_fallback: inspect only metadata/top-level truth; do not mutate
+- approval_needed: false
+- research_needed: true
+- watch_cadence: one-shot
+- approved_sources:
+  - path metadata
+  - top-level directory listing
+  - historical migration docs
+- candidate_fix: fold into external compatibility mapping and final cutover packet
+- owner_role: gap_logger
+- checker_role: checker
+- validation_test: explicit classification of `~/.hermes` consumer risk in cutover docs
+- closure_criteria: `~/.hermes` has an explicit consumer-risk classification and cutover order recommendation
+- next_action: plan
+- next_check_date: next cutover review
+- related_docs:
+  - `docs/hermes-external-compatibility-plan-2026-06-13.md`
+  - `docs/hermes-external-usage-map-2026-06-13.md`
+- related_commits: []
+- observation:
+  - `~/.hermes` remained present with live-looking state artifacts.
+- interpretation:
+  - The gap is no longer under-described, but it is still unsafe to overclaim that nothing depends on it.
+
+### sandbox-tests-share-live-venv
+- gap_id: sandbox-tests-share-live-venv
+- short_name: Sandbox tests still rely on shared live virtualenv fallback
+- lane: sandbox-or-shared-venv
+- discovered_by: capability matrix review plus reviewer audit
+- discovered_at: 2026-06-13
+- task_that_exposed_it: test-readiness evaluation
+- expected_capability: sandbox test execution should be attributable to sandbox-owned runtime dependencies
+- actual_result: scripts and checks still fall back to the live checkout interpreter/venv
+- evidence:
+  - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`
+  - reviewer findings in mission notes
+- status: recorded
+- severity: medium
+- risk: medium
+- blocked_action: self-contained test-readiness claims
+- safe_fallback: use targeted safe checks only and label shared-venv coupling when using it
+- approval_needed: true
+- research_needed: false
+- watch_cadence: null
+- approved_sources:
+  - local scripts/docs inspection
+- candidate_fix: sandbox-local `.venv`
+- owner_role: gatekeeper
+- checker_role: reviewer
+- validation_test: run targeted sanity/tests from sandbox-local `.venv` once approved
+- closure_criteria: test execution no longer depends on shared live-venv fallback
+- next_action: ask Fritz
+- next_check_date: next execution wave
+- related_docs:
+  - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`
+- related_commits: []
+- observation:
+  - Test-readiness still inherits the same coupling as execution-readiness.
+- interpretation:
+  - This is related to but distinct from the no-local-venv gap because it blocks test truth specifically.
+
+### delegation-must-be-read-only-scoped
+- gap_id: delegation-must-be-read-only-scoped
+- short_name: Delegation must stay lane-scoped and read-only unless explicitly opened
+- lane: session-orchestration
+- discovered_by: capability matrix review plus HyperSwarm use
+- discovered_at: 2026-06-13
+- task_that_exposed_it: HyperSwarm orchestration in this mission
+- expected_capability: delegation should stay within declared lane and capability boundaries
+- actual_result: delegation is useful, but can overclaim or drift without tight packets
+- evidence:
+  - `skills/orchestration/hyperwam/SKILL.md` (historical alias path; HyperSwarm is the canonical name)
+  - `docs/hermes-removal-capability-matrix-2026-06-13.yaml`
+- status: recorded
+- severity: medium
+- risk: medium
+- blocked_action: unconstrained worker expansion
+- safe_fallback: keep delegation read-only and tightly scoped with reviewer/gatekeeper checks
+- approval_needed: false
+- research_needed: false
+- watch_cadence: per_mission
+- approved_sources:
+  - HyperSwarm skill
+  - local mission ledger
+- candidate_fix: formal worker-role matrix plus mission ledger discipline
+- owner_role: watcher
+- checker_role: gatekeeper
+- validation_test: final mission artifacts show scoped delegation only
+- closure_criteria: delegation is documented, bounded, and reflected in final QA as controlled rather than residue-producing
+- next_action: fix now
+- next_check_date: this mission
+- related_docs:
+  - `docs/shay-worker-role-matrix-2026-06-13.md`
+  - `docs/hermes-removal-mission-ledger-2026-06-13.md`
+- related_commits: []
+- observation:
+  - Delegation helped, but only because packets were tightly bounded.
+- interpretation:
+  - The rule needs to be encoded, not assumed.
+
+### hermes-wrapper-direct-legacy-target
+- gap_id: hermes-wrapper-direct-legacy-target
+- short_name: Live hermes wrapper still targets legacy Hermes binary directly
+- lane: external-wrapper-runtime-surface
+- discovered_by: external usage mapping
+- discovered_at: 2026-06-13
+- task_that_exposed_it: read-only wrapper inspection
+- expected_capability: compatibility wrapper should support Shay transition without hard-coupling to a legacy backing tree
+- actual_result: `~/.local/bin/hermes` directly execs `/Users/famtasticfritz/.shay/hermes-agent/venv/bin/hermes`
+- evidence:
+  - `docs/hermes-external-usage-map-2026-06-13.md`
+  - `docs/hermes-wrapper-forwarding-plan-2026-06-13.md`
+- status: recorded
+- severity: high
+- risk: high
+- blocked_action: safe wrapper-forward cutover and confident retirement sequencing for `~/.shay/hermes-agent`
+- safe_fallback: preserve the wrapper unchanged until Fritz approves a narrow forwarding change
+- approval_needed: true
+- research_needed: false
+- watch_cadence: next wrapper decision
+- approved_sources:
+  - direct file inspection
+- candidate_fix: replace direct exec with `hermes -> shay` forwarding shim after approval
+- owner_role: planner
+- checker_role: reviewer
+- validation_test: approved live forwarder packet proves `hermes --help` and known subcommands still behave acceptably
+- closure_criteria: live wrapper no longer points directly at the legacy Hermes binary path
+- next_action: ask Fritz
+- next_check_date: next live-wrapper review
+- related_docs:
+  - `docs/hermes-external-usage-map-2026-06-13.md`
+  - `docs/hermes-wrapper-forwarding-plan-2026-06-13.md`
+- related_commits: []
+- observation:
+  - The current wrapper bypasses `shay` completely.
+- interpretation:
+  - Wrapper preservation alone is not enough; target strategy matters.
+
+### shay-desktop-hermes-entrypoint-dependency
+- gap_id: shay-desktop-hermes-entrypoint-dependency
+- short_name: Shay desktop launcher still depends on the Hermes command
+- lane: external-wrapper-runtime-surface
+- discovered_by: external usage mapping
+- discovered_at: 2026-06-13
+- task_that_exposed_it: command-wrapper inspection
+- expected_capability: Shay-named launchers should not silently depend on an undeclared Hermes CLI contract
+- actual_result: `~/.local/bin/shay-desktop` exports `HERMES_HOME=/Users/famtasticfritz/.shay` and then runs `exec hermes desktop "$@"`
+- evidence:
+  - `docs/hermes-external-usage-map-2026-06-13.md`
+- status: recorded
+- severity: medium
+- risk: medium
+- blocked_action: clean removal of the Hermes command name
+- safe_fallback: keep `hermes` available until wrapper policy is approved and desktop behavior is validated
+- approval_needed: true
+- research_needed: true
+- watch_cadence: next wrapper decision
+- approved_sources:
+  - direct file inspection
+- candidate_fix: either let `hermes` forward to `shay` safely or later retarget `shay-desktop` directly after validation
+- owner_role: planner
+- checker_role: reviewer
+- validation_test: approved live validation proves desktop launcher behavior under the chosen wrapper strategy
+- closure_criteria: desktop launcher no longer requires the Hermes command name or the dependency is explicitly accepted as long-term compatibility sugar
+- next_action: plan
+- next_check_date: next desktop/runtime compatibility review
+- related_docs:
+  - `docs/hermes-external-usage-map-2026-06-13.md`
+  - `docs/hermes-wrapper-forwarding-plan-2026-06-13.md`
+- related_commits: []
+- observation:
+  - The Shay desktop launcher is still anchored to `hermes desktop`.
+- interpretation:
+  - Hermes command compatibility remains externally load-bearing beyond pure habit.
+
+### pr-branch-not-based-on-origin-main
+- gap_id: pr-branch-not-based-on-origin-main
+- short_name: Hermes-removal sandbox branch is not cleanly based on current origin/main
+- lane: git-promotion
+- discovered_by: PR-readiness base check
+- discovered_at: 2026-06-13
+- task_that_exposed_it: read-only ancestry and patch-apply inspection
+- expected_capability: a PR-ready branch should descend cleanly from current `origin/main` or be reconstructable by narrow cherry-picks
+- actual_result: sandbox merge-base is `70db100`, `origin/main` is `20dd4b1`, the branch is 55 commits right-only and 2 commits behind, the latest mission code commit does not apply cleanly onto current main, and the first honest promotion shape is docs/control only
+- evidence:
+  - `docs/hermes-removal-pr-readiness-check-2026-06-13.md`
+- status: recorded
+- severity: high
+- risk: high
+- blocked_action: opening an honest narrow PR directly from the current sandbox branch
+- safe_fallback: keep sandbox as evidence lane only; later create a clean PR branch from current `origin/main`
+- approval_needed: true
+- research_needed: false
+- watch_cadence: next promotion decision
+- approved_sources:
+  - git ancestry inspection
+  - patch apply --check against clean main-sync lane
+- candidate_fix: create a later clean docs/control branch from `origin/main`, manually transplant the approved docs set, and defer code relabeling to a separate reconstruction PR
+- owner_role: gatekeeper
+- checker_role: reviewer
+- validation_test: clean branch contains only intended Hermes-removal scope and passes final targeted checks
+- closure_criteria: a clean PR branch exists or the promotion plan is explicitly deferred
+- next_action: ask Fritz
+- next_check_date: before any PR creation
+- related_docs:
+  - `docs/hermes-removal-pr-readiness-check-2026-06-13.md`
+  - `docs/hermes-removal-promotion-plan-2026-06-13.md`
+  - `docs/hermes-removal-clean-pr-transplant-manifest-2026-06-13.md`
+- related_commits: []
+- observation:
+  - The sandbox branch carries substantial unrelated local-only history.
+- interpretation:
+  - The work may still be promotable, but the branch itself is not the PR artifact.
+
+### code-relabeling-clean-transplant-unproven
+- gap_id: code-relabeling-clean-transplant-unproven
+- short_name: Hermes code relabeling is not yet proven cleanly transplantable onto current origin/main
+- lane: git-promotion
+- discovered_by: PR-readiness and prune/consolidation pass
+- discovered_at: 2026-06-13
+- task_that_exposed_it: first clean PR scope definition
+- expected_capability: code relabeling should either cherry-pick cleanly or be reconstructed safely on top of current `origin/main`
+- actual_result: the docs/control story is promotable first, but the prior code/test relabeling change set is explicitly deferred because clean transplant proof is missing
+- evidence:
+  - `docs/hermes-removal-pr-readiness-check-2026-06-13.md`
+  - `docs/hermes-removal-clean-pr-transplant-manifest-2026-06-13.md`
+- status: recorded
+- severity: medium
+- risk: medium_to_high
+- blocked_action: opening a follow-up code PR without separate reconstruction planning
+- safe_fallback: ship docs/control first and treat code relabeling as a later PR
+- approval_needed: true
+- research_needed: false
+- watch_cadence: next promotion wave
+- approved_sources:
+  - patch apply --check against clean main-sync lane
+  - docs-only PR scoping pass
+- candidate_fix: create a later reconstruction packet for the relabeling scope on top of current `origin/main`
+- owner_role: gatekeeper
+- checker_role: reviewer
+- validation_test: reconstructed relabeling diff is narrow, current, and passes targeted checks on a clean branch
+- closure_criteria: code relabeling is either cleanly reconstructed on current main or intentionally abandoned
+- next_action: defer
+- next_check_date: before any code PR branch creation
+- related_docs:
+  - `docs/hermes-removal-pr-readiness-check-2026-06-13.md`
+  - `docs/hermes-removal-clean-pr-transplant-manifest-2026-06-13.md`
+  - `docs/hermes-removal-promotion-plan-2026-06-13.md`
+- related_commits: []
+- observation:
+  - The first honest promotion shape is docs/control only.
+- interpretation:
+  - That means code relabeling needs its own later proof lane.
