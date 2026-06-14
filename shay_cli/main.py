@@ -9172,7 +9172,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "config", "cron", "curator", "dashboard", "debug", "doctor",
         "dump", "fallback", "gateway", "hooks", "import", "insights",
         "kanban", "login", "logout", "logs", "mcp", "memory", "model",
-        "pairing", "plugins", "profile", "sessions", "setup", "skills",
+        "pairing", "plugins", "process", "profile", "sessions", "setup", "skills",
         "slack", "status", "tools", "uninstall", "update", "version",
         "webhook", "whatsapp", "chat",
         # Help-ish invocations — plugin commands not being listed in
@@ -11217,6 +11217,17 @@ Examples:
             print(f"Error generating insights: {e}")
 
     insights_parser.set_defaults(func=cmd_insights)
+
+    # =========================================================================
+    # process command
+    # =========================================================================
+    process_parser = subparsers.add_parser(
+        "process",
+        help="Record and inspect process-intelligence run ledger entries",
+        description="Create, list, inspect, and summarize process-intelligence run records.",
+    )
+    from shay_cli.process import register_cli as _register_process_cli
+    _register_process_cli(process_parser)
 
     # =========================================================================
     # claw command (OpenClaw migration)
