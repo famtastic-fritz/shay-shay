@@ -5259,6 +5259,20 @@ def cmd_hooks(args):
     hooks_command(args)
 
 
+def cmd_capabilities(args):
+    """Capability truth layer commands."""
+    from shay_cli.capabilities_cmd import cmd_capabilities as capabilities_command
+
+    return capabilities_command(args)
+
+
+def cmd_intelligence(args):
+    """Intelligence layer commands."""
+    from shay_cli.intelligence_cmd import cmd_intelligence as intelligence_command
+
+    return intelligence_command(args)
+
+
 def cmd_doctor(args):
     """Check configuration and dependencies."""
     from shay_cli.doctor import run_doctor
@@ -9167,10 +9181,10 @@ def _build_provider_choices() -> list[str]:
 # to parse.
 _BUILTIN_SUBCOMMANDS = frozenset(
     {
-        "acp", "auth", "backup", "checkpoints", "claw", "completion",
+        "acp", "auth", "backup", "capabilities", "checkpoints", "claw", "completion",
         "computer-use",
         "config", "cron", "curator", "dashboard", "debug", "doctor",
-        "dump", "fallback", "gateway", "hooks", "import", "insights",
+        "dump", "fallback", "gateway", "hooks", "import", "insights", "intelligence",
         "kanban", "login", "logout", "logs", "mcp", "memory", "model",
         "pairing", "plugins", "process", "profile", "sessions", "setup", "skills",
         "slack", "status", "tools", "uninstall", "update", "version",
@@ -9366,6 +9380,112 @@ def main():
         help="Remove all fallback entries",
     )
     fallback_parser.set_defaults(func=cmd_fallback)
+
+    # =========================================================================
+    # capabilities command
+    # =========================================================================
+    capabilities_parser = subparsers.add_parser(
+        "capabilities",
+        help="Inspect capability truth, routing decisions, and safe runtime readiness",
+        description=(
+            "Read-only capability registry for Shay runtime truth. Supports registry "
+            "listing, detailed capability inspection, task-level decision routing, "
+            "and a passive doctor pass."
+        ),
+    )
+    capabilities_subparsers = capabilities_parser.add_subparsers(dest="capabilities_command")
+    capabilities_subparsers.add_parser(
+        "list",
+        aliases=["ls"],
+        help="List capability registry entries (default when no subcommand is given)",
+    )
+    capabilities_show = capabilities_subparsers.add_parser(
+        "show",
+        help="Show details for one capability registry entry",
+    )
+    capabilities_show.add_argument(
+        "capability_id",
+        help="Capability id (e.g. provider-routing, local-model-lane)",
+    )
+    capabilities_decide = capabilities_subparsers.add_parser(
+        "decide",
+        help="Route a task through the capability truth layer decision engine",
+    )
+    capabilities_decide.add_argument(
+        "task",
+        nargs="+",
+        help="Task description to route (quote it for best results)",
+    )
+    capabilities_subparsers.add_parser(
+        "doctor",
+        help="Run a read-only capability doctor pass",
+    )
+    capabilities_parser.set_defaults(func=cmd_capabilities)
+
+    # =========================================================================
+    # intelligence command
+    # =========================================================================
+    intelligence_parser = subparsers.add_parser(
+        "intelligence",
+        help="Inspect Shay Intelligence Layer records, routing, workers, briefs, and safe swarm readiness",
+        description="Record-level intelligence layer for capability matrix, agent roster, provenance, missions, workers, briefs, cadence, and safe HyperSwarm dry-run.",
+    )
+    intelligence_subparsers = intelligence_parser.add_subparsers(dest="intelligence_command")
+    intelligence_subparsers.add_parser("status", help="Show Intelligence Layer readiness")
+    intelligence_subparsers.add_parser("matrix", help="Show expanded capability matrix")
+    intelligence_subparsers.add_parser("agents", help="Show agent registry / worker roster")
+    intelligence_subparsers.add_parser("events", help="Show recent/backfilled episodic records")
+    intelligence_subparsers.add_parser("missions", help="Show FAMtastic mission graph")
+    intelligence_route = intelligence_subparsers.add_parser(
+        "route", help="Route a task through capability matrix + agent registry"
+    )
+    intelligence_route.add_argument("task", nargs="+", help="Task to route")
+    workers_parser = intelligence_subparsers.add_parser(
+        "workers", help="Show/manage worker queue and control records"
+    )
+    workers_subparsers = workers_parser.add_subparsers(dest="workers_command")
+    workers_subparsers.add_parser("queue", help="Show queued worker records")
+    workers_show = workers_subparsers.add_parser("show", help="Show one worker record")
+    workers_show.add_argument("worker_id", help="Worker id")
+    workers_subparsers.add_parser("review", help="Show worker review gates")
+    swarm_parser = intelligence_subparsers.add_parser(
+        "swarm", help="Show HyperSwarm safety state or run safe dry-run"
+    )
+    swarm_subparsers = swarm_parser.add_subparsers(dest="swarm_command")
+    swarm_subparsers.add_parser("status", help="Show HyperSwarm safety state")
+    swarm_subparsers.add_parser("readiness", help="Show safe swarm readiness checks")
+    swarm_subparsers.add_parser("dry-run", help="Run safe local HyperSwarm dry-run simulation")
+    intelligence_subparsers.add_parser("critical", help="Show critical item sentinel status")
+    intelligence_subparsers.add_parser("review-items", help="Run high/critical item review logic")
+    research_parser = intelligence_subparsers.add_parser(
+        "research", help="Classify research/prior-art/tool item"
+    )
+    research_parser.add_argument("thing", nargs="+", help="Research item to classify")
+    brief_parser = intelligence_subparsers.add_parser("brief", help="Render operating brief")
+    brief_subparsers = brief_parser.add_subparsers(dest="brief_command")
+    for brief_name in [
+        "morning",
+        "overnight",
+        "today",
+        "stale",
+        "gaps",
+        "workers",
+        "missions",
+        "research",
+        "critical",
+        "high-items",
+        "providers",
+        "compression",
+        "thoughts",
+        "rd",
+    ]:
+        brief_subparsers.add_parser(brief_name, help=f"Render {brief_name} brief")
+    cadence_parser = intelligence_subparsers.add_parser(
+        "cadence", help="Show Intelligence Layer cadence records"
+    )
+    cadence_subparsers = cadence_parser.add_subparsers(dest="cadence_command")
+    cadence_subparsers.add_parser("list", help="List cadence records")
+    intelligence_parser.set_defaults(func=cmd_intelligence)
 
     # =========================================================================
     # gateway command
