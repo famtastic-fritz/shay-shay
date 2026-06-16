@@ -547,12 +547,29 @@ class ContextCompressor(ContextEngine):
         return self._session_memo_root() / f"{stamp}_{digest}.md"
 
     @staticmethod
-    def _extract_latest_user_ask(messages: List[Dict[str, Any]]) -> str:
+    def _extract_active_task_from_compaction(text: str) -> str:
+        if not text or SUMMARY_PREFIX not in text:
+            return ""
+        match = re.search(
+            r"(?ms)^## Active Task\s*$\n(.+?)(?:^##\s|\n--- END OF CONTEXT SUMMARY|\Z)",
+            text,
+        )
+        return match.group(1).strip() if match else ""
+
+    @classmethod
+    def _extract_latest_user_ask(cls, messages: List[Dict[str, Any]]) -> str:
         for msg in reversed(messages):
-            if msg.get("role") == "user":
-                text = _content_text_for_contains(msg.get("content")).strip()
-                if text:
-                    return text
+            if msg.get("role") != "user":
+                continue
+            text = _content_text_for_contains(msg.get("content")).strip()
+            if not text:
+                continue
+            compacted_task = cls._extract_active_task_from_compaction(text)
+            if compacted_task:
+                return compacted_task
+            if SUMMARY_PREFIX in text:
+                continue
+            return text
         return ""
 
     @staticmethod
@@ -589,7 +606,9 @@ class ContextCompressor(ContextEngine):
         summary_body = ""
         idx, body = self._find_latest_context_summary(messages, 0, len(messages))
         if idx is not None and body.strip():
-            summary_body = body.strip()
+            candidate_summary = body.strip()
+            if re.search(r"(?m)^##\s", candidate_summary):
+                summary_body = candidate_summary
         tool_lines = self._recent_tool_activity(messages)
         if not any([active_task, assistant_state, summary_body, tool_lines]):
             return ""

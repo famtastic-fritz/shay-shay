@@ -1,6 +1,5 @@
 """Tests for agent/context_compressor.py — compression logic, thresholds, truncation fallback."""
 
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -121,7 +120,7 @@ class TestSessionMemoPersistence:
                     }
                 ],
             },
-            {"role": "tool", "tool_call_id": "call_1", "content": '{"output":"2 passed"}'},
+            {"role": "tool", "tool_call_id": "call_1", "content": '{"output":"2 passed","exit_code":0}'},
             {"role": "assistant", "content": SUMMARY_PREFIX + "\n## Active Task\nRepair memory loop"},
         ]
 
@@ -140,9 +139,82 @@ class TestSessionMemoPersistence:
         assert "sk-abcdefghijklmnopqrstuvwxyz123456" not in content
         assert "sk-abc" in content or "[REDACTED]" in content
 
+    def test_extracts_active_task_from_compaction_user_message(self, tmp_path):
+        vault = tmp_path / "Shay-Memory"
+        with patch("agent.context_compressor.get_model_context_length", return_value=100000):
+            compressor = ContextCompressor(model="test/model", quiet_mode=True)
+
+        compressor.on_session_start("sess-compact", platform="cli", project="famtasticfritz")
+        compacted_user = SUMMARY_PREFIX + "\n## Active Task\nResume memory integrity repair\n\n## Remaining Work\n- Verify promotion rules\n\n--- END OF CONTEXT SUMMARY — respond to the message below, not the summary above ---"
+        messages = [
+            {"role": "user", "content": compacted_user},
+            {"role": "assistant", "content": "Continuing from the preserved active task."},
+        ]
+
+        with patch.dict("os.environ", {"SHAY_MEMORY_VAULT": str(vault)}):
+            compressor.on_session_end("sess-compact", messages)
+
+        files = list((vault / "reflections" / "episodic" / "sessions").glob("*.md"))
+        assert len(files) == 1
+        content = files[0].read_text(encoding="utf-8")
+        assert "## Active Task\nResume memory integrity repair" in content
+        assert "Earlier turns were compacted" not in content
+
+    def test_skips_compaction_wrapper_without_active_task_and_keeps_real_user_ask(self, tmp_path):
+        vault = tmp_path / "Shay-Memory"
+        with patch("agent.context_compressor.get_model_context_length", return_value=100000):
+            compressor = ContextCompressor(model="test/model", quiet_mode=True)
+
+        compressor.on_session_start("sess-wrapper", platform="cli", project="famtasticfritz")
+        wrapper_only = SUMMARY_PREFIX + "\nNo active task section present."
+        messages = [
+            {"role": "user", "content": "Repair the reflection loop"},
+            {"role": "assistant", "content": "Working on it."},
+            {"role": "user", "content": wrapper_only},
+            {"role": "assistant", "content": "Still using the earlier real ask."},
+        ]
+
+        with patch.dict("os.environ", {"SHAY_MEMORY_VAULT": str(vault)}):
+            compressor.on_session_end("sess-wrapper", messages)
+
+        files = list((vault / "reflections" / "episodic" / "sessions").glob("*.md"))
+        assert len(files) == 1
+        content = files[0].read_text(encoding="utf-8")
+        assert "## Active Task\nRepair the reflection loop" in content
+        assert "No active task section present" not in content
+
+    def test_persists_tool_only_session_without_explicit_start(self, tmp_path):
+        vault = tmp_path / "Shay-Memory"
+        with patch("agent.context_compressor.get_model_context_length", return_value=100000):
+            compressor = ContextCompressor(model="test/model", quiet_mode=True)
+
+        messages = [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "function": {"name": "search_files", "arguments": '{"pattern":"memo","path":"."}'},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": '{"total_count":3,"matches":[]}'},
+            {"role": "assistant", "content": "Captured the file inventory."},
+        ]
+
+        with patch.dict("os.environ", {"SHAY_MEMORY_VAULT": str(vault)}):
+            compressor.on_session_end("sess-tool-only", messages)
+
+        files = list((vault / "reflections" / "episodic" / "sessions").glob("*.md"))
+        assert len(files) == 1
+        content = files[0].read_text(encoding="utf-8")
+        assert "## Final Assistant State\nCaptured the file inventory." in content
+        assert "[search_files] content search for 'memo' in . -> 3 matches" in content
+
 
 class TestGenerateSummaryNoneContent:
-    """Regression: content=None (from tool-call-only assistant messages) must not crash."""
+
 
     def test_none_content_does_not_crash(self):
         mock_response = MagicMock()

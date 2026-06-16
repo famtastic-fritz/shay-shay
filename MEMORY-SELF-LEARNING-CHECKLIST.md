@@ -20,8 +20,8 @@ Purpose: rebuild Shay's self-learning loop and memory reflection system into a r
 - [ ] 5. Diagnose and fix session-memo flood / timestamp integrity issues.
 - [ ] 6. Audit self-learning capture coverage: what should be learned, what is currently missed, what should never be promoted.
 - [ ] 7. Implement stronger promotion rules from raw/session -> episodic -> semantic -> reflective.
-- [ ] 8. Add adversarial review harness: break the pipeline on purpose and record failures.
-- [ ] 9. Harden weak points found in the adversarial pass.
+- [x] 8. Add adversarial review harness: break the pipeline on purpose and record failures.
+- [x] 9. Harden weak points found in the adversarial pass.
 - [ ] 10. Update docs, known gaps, and resumable state.
 
 ## Guardrails
@@ -32,6 +32,9 @@ Purpose: rebuild Shay's self-learning loop and memory reflection system into a r
 - If interrupted, the next session should be able to resume from this file alone.
 
 ## Execution Log
+- 2026-06-16: Runtime verification moved to a real repo-ready lane via `uv run --python 3.11`. `pytest` was missing from base deps, so verification now uses the `dev` extra explicitly. Current result: `uv run --python 3.11 --extra dev pytest tests/agent/test_context_compressor.py -q -n 0` => 80 passed.
+- 2026-06-16: Adversarial break-tests exposed two real memo-integrity bugs in `agent/context_compressor.py`: (1) compaction-wrapper regex falsely matched the boilerplate phrase "'## Active Task' section" instead of a real markdown heading; fixed by anchoring to `^## Active Task` on its own line. (2) Non-structured compaction residue was still being preserved as `## Compression Handoff Context`; fixed by only persisting handoff bodies that contain real markdown section headers.
+- 2026-06-16: Added adversarial regression coverage in `tests/agent/test_context_compressor.py` for compaction wrappers with and without a real active-task section, plus tool-only session-end persistence without an explicit `on_session_start` hook.
 - 2026-06-16: Added session lifecycle persistence in `agent/context_compressor.py` so session-end memos are written with `memo_schema: handoff-v2`, `source_class: runtime-session`, redaction enforced, and recent tool activity preserved. Added regression coverage in `tests/agent/test_context_compressor.py` for memo writing + secret redaction.
 - 2026-06-16: Hardened `obsidian/Shay-Memory/_system/reflect.py` in the main repo with source-class tagging and runtime health status output at `obsidian/Shay-Memory/_system/runtime/memory-reflect-status.json`. Dry-run reflection now reports real mode instead of always claiming extractive.
 - 2026-06-15: Created dedicated worktree and feature branch for self-learning + memory rebuild. Initial scope includes regeneration loop, source separation, memo integrity, health logging, self-learning capture coverage, and adversarial hardening.
