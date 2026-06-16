@@ -211,6 +211,19 @@ from shay_cli.env_loader import load_shay_dotenv
 
 load_shay_dotenv(project_env=PROJECT_ROOT / ".env")
 
+# Identity guard: verify load-bearing runtime files early, before the rest of
+# the CLI boot path fans out. This must happen after SHAY_HOME selection and
+# dotenv loading, but before deeper runtime imports that depend on identity.
+try:
+    from identity_guard import startup_identity_check
+
+    startup_identity_check(send_alert=True, auto_restore_missing=True)
+except Exception as _identity_guard_exc:
+    print(
+        f"[shay identity guard] startup check failed: {_identity_guard_exc}",
+        file=sys.stderr,
+    )
+
 # Bridge security.redact_secrets from config.yaml → SHAY_REDACT_SECRETS env
 # var BEFORE shay_logging imports agent.redact (which snapshots the flag at
 # module-import time). Without this, config.yaml's toggle is ignored because
@@ -5266,6 +5279,13 @@ def cmd_capabilities(args):
     return capabilities_command(args)
 
 
+def cmd_identity(args):
+    """Identity guard commands."""
+    from shay_cli.identity_cmd import cmd_identity as identity_command
+
+    return identity_command(args)
+
+
 def cmd_intelligence(args):
     """Intelligence layer commands."""
     from shay_cli.intelligence_cmd import cmd_intelligence as intelligence_command
@@ -9421,6 +9441,41 @@ def main():
         help="Run a read-only capability doctor pass",
     )
     capabilities_parser.set_defaults(func=cmd_capabilities)
+
+    # =========================================================================
+    # identity command
+    # =========================================================================
+    identity_parser = subparsers.add_parser(
+        "identity",
+        help="Inspect and manage Shay identity backups and recovery state",
+        description=(
+            "Identity guard controls for status, protected snapshots, emergency restores, "
+            "and backup lock state."
+        ),
+    )
+    identity_subparsers = identity_parser.add_subparsers(dest="identity_command")
+    identity_status = identity_subparsers.add_parser(
+        "status",
+        help="Show live identity guard status",
+    )
+    identity_status.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    identity_snapshot = identity_subparsers.add_parser(
+        "snapshot",
+        help="Create a fresh protected identity snapshot",
+    )
+    identity_snapshot.add_argument("--reason", help="Snapshot reason label")
+    identity_restore = identity_subparsers.add_parser(
+        "restore",
+        help="Restore one live identity file from the emergency backup",
+    )
+    identity_restore.add_argument(
+        "target",
+        choices=["SOUL.md", "PERSONA.md", "memories/USER.md"],
+        help="Identity file to restore",
+    )
+    identity_subparsers.add_parser("lock", help="Re-lock identity backup files")
+    identity_subparsers.add_parser("unlock", help="Temporarily unlock identity backup files")
+    identity_parser.set_defaults(func=cmd_identity)
 
     # =========================================================================
     # intelligence command

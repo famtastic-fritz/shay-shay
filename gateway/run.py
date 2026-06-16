@@ -43,6 +43,17 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional, Any, List, Union
 
+try:
+    from identity_guard import startup_identity_check
+
+    startup_identity_check(send_alert=True, auto_restore_missing=True)
+except Exception as _identity_guard_exc:
+    try:
+        sys.stderr.write(f"[shay identity guard] gateway startup check failed: {_identity_guard_exc}\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+
 # account_usage imports the OpenAI SDK chain (~230 ms). Only needed by
 # /usage; we still import it at module top in the gateway because test
 # patches (tests/gateway/test_usage_command.py) target
