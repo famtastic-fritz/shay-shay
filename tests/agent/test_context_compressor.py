@@ -95,6 +95,37 @@ class TestCompress:
 
 
 class TestSessionMemoPersistence:
+    def test_session_memo_filename_uses_utc_started_at(self, tmp_path):
+        vault = tmp_path / "Shay-Memory"
+        with patch("agent.context_compressor.get_model_context_length", return_value=100000):
+            compressor = ContextCompressor(model="test/model", quiet_mode=True)
+
+        compressor.on_session_start("sess-utc", platform="cli", project="famtasticfritz")
+        compressor._session_started_at = compressor._session_started_at.replace(
+            year=2026,
+            month=6,
+            day=16,
+            hour=18,
+            minute=21,
+            second=38,
+            microsecond=770630,
+        )
+
+        messages = [
+            {"role": "user", "content": "Verify memo timestamp integrity"},
+            {"role": "assistant", "content": "Checking UTC filename alignment."},
+        ]
+
+        with patch.dict("os.environ", {"SHAY_MEMORY_VAULT": str(vault)}):
+            compressor.on_session_end("sess-utc", messages)
+
+        files = list((vault / "reflections" / "episodic" / "sessions").glob("*.md"))
+        assert len(files) == 1
+        assert files[0].name.startswith("20260616_182138_")
+        content = files[0].read_text(encoding="utf-8")
+        assert "started_at: '2026-06-16T18:21:38.770630+00:00'" in content
+        assert "filename_timestamp_basis: utc" in content
+
     def test_writes_redacted_session_memo(self, tmp_path):
         vault = tmp_path / "Shay-Memory"
         with patch("agent.context_compressor.get_model_context_length", return_value=100000):

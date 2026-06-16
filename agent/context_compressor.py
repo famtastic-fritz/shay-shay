@@ -542,7 +542,7 @@ class ContextCompressor(ContextEngine):
 
     def _session_memo_path(self, session_id: str) -> Path:
         started = self._session_started_at or _dt.datetime.now(_dt.timezone.utc)
-        stamp = started.strftime("%Y%m%d_%H%M%S")
+        stamp = started.astimezone(_dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
         digest = hashlib.sha1((session_id or stamp).encode("utf-8", errors="ignore")).hexdigest()[:6]
         return self._session_memo_root() / f"{stamp}_{digest}.md"
 
@@ -631,6 +631,7 @@ class ContextCompressor(ContextEngine):
             "memory_layer: L1",
             f"started_at: '{started.isoformat()}'",
             f"ended_at: '{ended.isoformat()}'",
+            "filename_timestamp_basis: utc",
             f"platform: '{self._session_platform}'",
             f"project: {self._session_project or 'unknown'}",
             f"model: {self.model}",
