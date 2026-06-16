@@ -13,6 +13,17 @@ source .venv/bin/activate   # or: source venv/bin/activate
 `$HOME/.shay/shay-shay/venv` (for worktrees that share a venv with the
 main checkout).
 
+## Research Artifact Rule
+
+Meaningful research is not allowed to die as terminal output or chat residue.
+When a session performs meaningful research — especially GitHub/repo scans,
+model audits, capability comparisons, or vendor/market scans — it must leave a
+durable artifact with source trace, separated observation vs interpretation,
+and capability notes that future sessions can reuse.
+Use `docs/research-artifact-capture-protocol.md` and
+`scripts/research_capture.py` unless Fritz explicitly scopes the work as
+throwaway.
+
 ## Project Structure
 
 File counts shift constantly — don't treat the tree below as exhaustive.
