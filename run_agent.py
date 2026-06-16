@@ -148,6 +148,7 @@ from agent.prompt_builder import (
     SHAY_AGENT_HELP_GUIDANCE,
     KANBAN_GUIDANCE,
     build_nous_subscription_prompt,
+    load_persona_md,
 )
 from agent.model_metadata import (
     fetch_model_metadata,
@@ -5747,6 +5748,10 @@ class AIAgent:
         if not _soul_loaded:
             # Fallback to hardcoded identity
             stable_parts.append(DEFAULT_AGENT_IDENTITY)
+
+        _persona_content = load_persona_md()
+        if _persona_content:
+            stable_parts.append(_persona_content)
 
         # Pointer to the shay-shay skill + docs for user questions about Shay-Shay itself.
         stable_parts.append(SHAY_AGENT_HELP_GUIDANCE)

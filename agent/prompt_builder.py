@@ -1375,6 +1375,29 @@ def _truncate_content(content: str, filename: str, max_chars: int = CONTEXT_FILE
     return head + marker + tail
 
 
+def _load_shay_home_markdown(filename: str) -> Optional[str]:
+    """Load a markdown identity/context file from SHAY_HOME and return its content."""
+    try:
+        from shay_cli.config import ensure_shay_home
+        ensure_shay_home()
+    except Exception as e:
+        logger.debug("Could not ensure SHAY_HOME before loading %s: %s", filename, e)
+
+    file_path = get_shay_home() / filename
+    if not file_path.exists():
+        return None
+    try:
+        content = file_path.read_text(encoding="utf-8").strip()
+        if not content:
+            return None
+        content = _scan_context_content(content, filename)
+        content = _truncate_content(content, filename)
+        return content
+    except Exception as e:
+        logger.debug("Could not read %s from %s: %s", filename, file_path, e)
+        return None
+
+
 def load_soul_md() -> Optional[str]:
     """Load SOUL.md from SHAY_HOME and return its content, or None.
 
@@ -1382,25 +1405,16 @@ def load_soul_md() -> Optional[str]:
     returns content, ``build_context_files_prompt`` should be called with
     ``skip_soul=True`` so SOUL.md isn't injected twice.
     """
-    try:
-        from shay_cli.config import ensure_shay_home
-        ensure_shay_home()
-    except Exception as e:
-        logger.debug("Could not ensure SHAY_HOME before loading SOUL.md: %s", e)
+    return _load_shay_home_markdown("SOUL.md")
 
-    soul_path = get_shay_home() / "SOUL.md"
-    if not soul_path.exists():
-        return None
-    try:
-        content = soul_path.read_text(encoding="utf-8").strip()
-        if not content:
-            return None
-        content = _scan_context_content(content, "SOUL.md")
-        content = _truncate_content(content, "SOUL.md")
-        return content
-    except Exception as e:
-        logger.debug("Could not read SOUL.md from %s: %s", soul_path, e)
-        return None
+
+def load_persona_md() -> Optional[str]:
+    """Load PERSONA.md from SHAY_HOME and return its content, or None.
+
+    Used as a stable persona overlay immediately after SOUL.md in the system
+    prompt so the runtime persona file is actually active during sessions.
+    """
+    return _load_shay_home_markdown("PERSONA.md")
 
 
 def _load_shay_md(cwd_path: Path) -> str:
