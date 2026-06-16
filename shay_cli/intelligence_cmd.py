@@ -526,6 +526,47 @@ def build_gap_records() -> list[dict[str, Any]]:
     return records
 
 
+
+def _group_gaps_by_owner(gaps: list[Mapping[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for gap in gaps:
+        owner = str(gap.get('owner_agent') or 'unknown')
+        counts[owner] = counts.get(owner, 0) + 1
+    return counts
+
+
+def build_actionable_brief_payload(kind: str = 'morning') -> dict[str, Any]:
+    status = intelligence_status()
+    graph = build_mission_graph()
+    gaps = build_gap_records()
+    workers = list_workers(limit=5)
+    recent_events = list_events(limit=5)
+    research_items = [
+        classify_research(item)
+        for item in ('OpenJarvis', 'Odysseus', 'TurboVec', 'vLLM', 'agent swarms')
+    ]
+    owner_gap_counts = _group_gaps_by_owner(gaps)
+    recommendations = [
+        'Review any source-backed critical/high items if they appear.',
+        'Use safe dry-run evidence before approving any production worker swarm.',
+        'Keep context compression as a tracked gap until controlled capacity verification.',
+    ]
+    if status.get('verified_delivery_path') == 'cli_report':
+        recommendations.insert(0, 'CLI/report delivery is the trusted brief path right now; keep external push surfaces optional until explicitly wired.')
+    return {
+        'brief_type': BRIEF_COMMANDS.get(kind, kind),
+        'status': status,
+        'graph': graph,
+        'gaps': gaps,
+        'workers': workers,
+        'recent_events': recent_events,
+        'research_items': research_items,
+        'owner_gap_counts': owner_gap_counts,
+        'recommendations': recommendations,
+        'top_gaps': gaps[:6],
+    }
+
+
 def _owner_for_capability(capability_id: str) -> str:
     if capability_id in {
         "gmail-send",
@@ -1154,105 +1195,125 @@ def intelligence_status() -> dict[str, Any]:
     agents = get_agent_registry()
     graph = build_mission_graph()
     readiness = swarm_readiness()
+    gaps = build_gap_records()
     command_surface_count = 34
     blockers: list[str] = []
-    required_ids = {record["capability_id"] for record in matrix}
+    required_ids = {record['capability_id'] for record in matrix}
     if not required_ids:
-        blockers.append("capability matrix missing")
+        blockers.append('capability matrix missing')
     if len(agents) < 17:
-        blockers.append("agent registry incomplete")
-    if not graph["plans"]:
-        blockers.append("mission graph missing")
-    if not readiness["ready_for_safe_dry_run"]:
-        blockers.append("safe swarm dry-run not ready")
+        blockers.append('agent registry incomplete')
+    if not graph['plans']:
+        blockers.append('mission graph missing')
+    if not readiness['ready_for_safe_dry_run']:
+        blockers.append('safe swarm dry-run not ready')
+
+    delivery_router = capability_by_id().get('delivery-router', {})
+    today_hub = capability_by_id().get('today-hub', {})
+    verified_delivery_path = (
+        'cli_report'
+        if delivery_router.get('available_now') and today_hub.get('available_now')
+        else 'unknown'
+    )
+    action_loop_status = (
+        'working'
+        if graph['plans'] and BRIEF_TYPES and verified_delivery_path == 'cli_report'
+        else 'incomplete'
+    )
+    worker_control_status = 'working' if readiness['checks'].get('worker_control') else 'missing'
     return {
-        "status": "working" if not blockers else "not working",
-        "blockers": blockers,
-        "capability_count": len(matrix),
-        "agent_count": len(agents),
-        "mission_count": len(graph["missions"]),
-        "plan_count": len(graph["plans"]),
-        "brief_count": len(BRIEF_TYPES),
-        "cadence_count": len(get_cadence_records()),
-        "command_surface_count": command_surface_count,
-        "production_hyperswarm_gated": True,
-        "safe_hyperswarm_dry_run": "working",
-        "live_crons_enabled": False,
+        'status': 'working' if not blockers else 'not working',
+        'blockers': blockers,
+        'capability_count': len(matrix),
+        'agent_count': len(agents),
+        'mission_count': len(graph['missions']),
+        'plan_count': len(graph['plans']),
+        'brief_count': len(BRIEF_TYPES),
+        'cadence_count': len(get_cadence_records()),
+        'command_surface_count': command_surface_count,
+        'production_hyperswarm_gated': True,
+        'safe_hyperswarm_dry_run': 'working',
+        'live_crons_enabled': False,
+        'open_gap_count': len(gaps),
+        'verified_delivery_path': verified_delivery_path,
+        'action_loop_status': action_loop_status,
+        'worker_control_status': worker_control_status,
     }
 
 
 def render_brief(kind: str) -> str:
-    brief_type = BRIEF_COMMANDS.get(kind, kind)
-    status = intelligence_status()
-    graph = build_mission_graph()
-    gaps = build_gap_records()
-    workers = list_workers(limit=5)
-    recent_events = list_events(limit=5)
+    payload = build_actionable_brief_payload(kind)
+    brief_type = payload['brief_type']
+    status = payload['status']
+    graph = payload['graph']
+    gaps = payload['gaps']
+    workers = payload['workers']
+    recent_events = payload['recent_events']
+    research_items = payload['research_items']
     critical_reviews = [
-        review_item({"title": "disabled sample only", "source": "disabled-sample"})
-    ]
-    research_items = [
-        classify_research(item)
-        for item in ("OpenJarvis", "Odysseus", "TurboVec", "vLLM", "agent swarms")
+        review_item({'title': 'disabled sample only', 'source': 'disabled-sample'})
     ]
     lines = [
         f"{brief_type}",
-        "status: working",
-        "delivery: CLI/report only",
+        f"status: {status['status']}",
+        f"delivery: {status.get('verified_delivery_path', 'unknown')}",
         "forbidden actions: none performed",
         "",
     ]
-    if kind == "morning":
+    if kind == 'morning':
         lines.extend([
-            "What changed overnight:",
+            'What changed overnight:',
             *[f"- {event['summary']}" for event in recent_events[:3]],
-            "",
-            "Active plans:",
+            '',
+            'Active plans:',
             *[
-                f"- {plan['name']} [{plan['status']}] progress={plan['progress']}"
-                for plan in graph["plans"]
+                f"- {plan['name']} [{plan['status']}] progress={plan['progress']} done={str(plan['done']).lower()}"
+                for plan in graph['plans']
             ],
-            "",
-            "Blocked/stale items:",
-            "- Context Compression / Memory Continuity remains partial; runtime config unchanged.",
-            "- Gmail send and Calendar write remain blocked by policy.",
-            "",
-            "Critical/high items:",
-            "- No active source-backed critical items stored.",
-            "",
-            "Worker status:",
+            '',
+            'Blocked/stale items:',
+            '- Context Compression / Memory Continuity remains partial; runtime config unchanged.',
+            '- Gmail send and Calendar write remain blocked by policy.',
+            '',
+            'Critical/high items:',
+            '- No active source-backed critical items stored.',
+            '',
+            'Worker status:',
             *(
                 [
                     f"- {worker['worker_id']} [{worker['status']}] {worker['agent_id']}"
                     for worker in workers
                 ]
-                or ["- no live workers queued"]
+                or ['- no live workers queued']
             ),
-            "",
-            "Capability gaps:",
+            '',
+            'Capability gaps:',
             *[
-                f"- {gap['gap_id']} [{gap['severity']}] {gap['next_action']}"
-                for gap in gaps[:6]
+                f"- {gap['gap_id']} [{gap['severity']}] owner={gap['owner_agent']} -> {gap['next_action']}"
+                for gap in payload['top_gaps']
             ],
-            "",
-            "Provider/capacity status:",
-            "- Anthropic API-key route: avoid_by_policy.",
-            "- OpenRouter default route: avoid_by_policy.",
-            "- Production HyperSwarm: gated.",
-            "",
-            "Research-to-action items:",
+            '',
+            'Delivery / action loop:',
+            f"- verified delivery path: {status.get('verified_delivery_path', 'unknown')}",
+            f"- action loop: {status.get('action_loop_status', 'unknown')}",
+            f"- worker controls: {status.get('worker_control_status', 'unknown')}",
+            '',
+            'Provider/capacity status:',
+            '- Anthropic API-key route: avoid_by_policy.',
+            '- OpenRouter default route: avoid_by_policy.',
+            '- Production HyperSwarm: gated.',
+            '',
+            'Research-to-action items:',
             *[f"- {item['thing']}: {item['decision']}" for item in research_items],
-            "",
-            "FAMtastic Thoughts candidates:",
-            "- pipeline states available; no publish action performed.",
-            "",
-            "FAMtastic Data Center/R&D candidates:",
-            "- OpenJarvis, Odysseus, TurboVec, vLLM, and agent swarms are preserved as priority R&D/pattern records.",
-            "",
-            "Recommended top priorities for Fritz:",
-            "- Review any source-backed critical/high items if they appear.",
-            "- Use safe dry-run evidence before approving any production worker swarm.",
-            "- Keep context compression as a tracked gap until controlled capacity verification.",
+            '',
+            'FAMtastic Thoughts candidates:',
+            '- pipeline states available; no publish action performed.',
+            '',
+            'Gap ownership:',
+            *[f"- {owner}: {count} open gap(s)" for owner, count in sorted(payload['owner_gap_counts'].items())],
+            '',
+            'Recommended top priorities for Fritz:',
+            *[f"- {item}" for item in payload['recommendations']],
         ])
     elif kind in {"gaps", "capability-gaps-brief"}:
         lines.extend([
@@ -1374,6 +1435,10 @@ def format_status(status: Mapping[str, Any]) -> str:
         f"plans: {status['plan_count']}",
         f"briefs: {status['brief_count']}",
         f"cadence records: {status['cadence_count']}",
+        f"open gaps: {status.get('open_gap_count', 0)}",
+        f"verified delivery path: {status.get('verified_delivery_path', 'unknown')}",
+        f"action loop: {status.get('action_loop_status', 'unknown')}",
+        f"worker controls: {status.get('worker_control_status', 'unknown')}",
         f"production HyperSwarm gated: {str(status['production_hyperswarm_gated']).lower()}",
         f"safe HyperSwarm dry-run: {status['safe_hyperswarm_dry_run']}",
         f"live crons enabled: {str(status['live_crons_enabled']).lower()}",
@@ -1441,11 +1506,12 @@ def cmd_intelligence(args: Any) -> int:
         print(format_status(intelligence_status()))
         return 0
     if command == "matrix":
-        print(
-            _format_records(
-                "Capability Matrix", get_capability_matrix(), "capability_id"
-            )
-        )
+        rows = get_capability_matrix()
+        print(_format_records("Capability Matrix", rows, "capability_id"))
+        print("")
+        print("Open gaps by owner:")
+        for owner, count in sorted(_group_gaps_by_owner(build_gap_records()).items()):
+            print(f"- {owner}: {count}")
         return 0
     if command == "agents":
         print(

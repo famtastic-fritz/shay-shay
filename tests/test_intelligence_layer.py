@@ -432,3 +432,31 @@ def test_intelligence_cli_commands_format_without_crashing(tmp_path, monkeypatch
         )
         assert result.returncode == 0, (command, result.stderr, result.stdout)
         assert result.stdout.strip(), command
+
+
+
+def test_intelligence_status_reports_delivery_and_action_loop():
+    status = intelligence_status()
+    assert status["verified_delivery_path"] == "cli_report"
+    assert status["action_loop_status"] == "working"
+    assert status["worker_control_status"] == "working"
+    assert status["open_gap_count"] >= 1
+
+
+def test_morning_brief_includes_delivery_and_gap_ownership(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHAY_INTELLIGENCE_HOME", str(tmp_path))
+    output = render_brief("morning")
+    assert "Delivery / action loop:" in output
+    assert "verified delivery path: cli_report" in output
+    assert "Gap ownership:" in output
+
+
+def test_intelligence_matrix_command_includes_gap_owner_summary(capsys):
+    from types import SimpleNamespace
+    from shay_cli.intelligence_cmd import cmd_intelligence
+
+    rc = cmd_intelligence(SimpleNamespace(intelligence_command="matrix"))
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "Capability Matrix" in captured.out
+    assert "Open gaps by owner:" in captured.out

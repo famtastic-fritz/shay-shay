@@ -331,3 +331,47 @@ def test_decide_local_model_classification_prefers_partial_local_route():
 
     assert decision["provider_route"]["primary"].startswith("ollama-local:qwen3:14b")
     assert decision["provider_route"]["status"] == "partial"
+
+
+def test_decide_operating_brief_routes_through_delivery_and_briefs():
+    decision = build_decision("deliver morning brief via today hub report", registry=_sample_registry())
+    assert "operating-briefs" in decision["matched_capabilities"]
+    assert "delivery-router" in decision["matched_capabilities"]
+    assert decision["recommended_toolsets"] == ["file"]
+    assert decision["minimum_context_level"] == 2
+
+
+def test_cmd_capabilities_show_supports_compatibility_matrix_alias(monkeypatch, capsys):
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd.collect_capabilities", lambda: _sample_registry()
+    )
+
+    rc = cmd_capabilities(
+        SimpleNamespace(
+            capabilities_command="show",
+            capability_id="compatibility-matrix",
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "Compatibility Matrix" in captured.out
+    assert "context-compression-memory-continuity" in captured.out
+
+
+def test_cmd_capabilities_show_supports_intelligence_layer_alias(monkeypatch, capsys):
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd.collect_capabilities", lambda: _sample_registry()
+    )
+
+    rc = cmd_capabilities(
+        SimpleNamespace(
+            capabilities_command="show",
+            capability_id="intelligence-layer",
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "Shay Intelligence Layer" in captured.out
+    assert "verified delivery path" in captured.out

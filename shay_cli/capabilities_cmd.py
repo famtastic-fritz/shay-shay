@@ -74,6 +74,13 @@ HYPERSWARM_BLOCKERS = [
     "Production worker launch requires per-worker ledgers, redaction, review gates, output contracts, provider capacity policy, and stop/resume fields.",
     "Safe dry-run is allowed; uncontrolled real swarm launch is not allowed.",
 ]
+CAPABILITY_ALIASES = {
+    "compatibility-matrix": "compatibility-matrix",
+    "capability-matrix": "compatibility-matrix",
+    "matrix": "compatibility-matrix",
+    "intelligence-layer": "intelligence-layer",
+    "intelligence": "intelligence-layer",
+}
 
 
 @dataclass
@@ -822,6 +829,101 @@ def _current_primary_route(
     )
 
 
+
+def _normalized_capability_lookup(capability_id: str) -> str:
+    candidate = _provider_name(capability_id).replace('_', '-').strip()
+    return CAPABILITY_ALIASES.get(candidate, candidate)
+
+
+def _format_seed_matrix() -> str:
+    from shay_cli.intelligence_seed import get_capability_matrix
+
+    rows = get_capability_matrix()
+    lines = ["Compatibility Matrix", ""]
+    for row in rows:
+        lines.extend([
+            f"- {row['capability_id']} [{row['status']}]",
+            f"  name: {row['name']}",
+            f"  category: {row['category']}",
+            f"  use: {row['intended_use_case']}",
+            f"  next: {row['next_action']}",
+            f"  evidence: {row['evidence_source']}",
+        ])
+        if row.get('dependencies'):
+            lines.append("  dependencies: " + ", ".join(row['dependencies']))
+        if row.get('known_caveats'):
+            lines.append("  caveats: " + ", ".join(row['known_caveats']))
+        if row.get('policy_notes'):
+            lines.append("  policy: " + ", ".join(row['policy_notes']))
+
+    return "\n".join(lines).rstrip()
+
+
+def _format_intelligence_bundle() -> str:
+    from shay_cli.intelligence_cmd import intelligence_status, build_gap_records
+
+    status = intelligence_status()
+    gaps = build_gap_records()
+    lines = [
+        "Shay Intelligence Layer",
+        f"status: {status['status']}",
+        f"verified delivery path: {status.get('verified_delivery_path', 'unknown')}",
+        f"actionable loop: {status.get('action_loop_status', 'unknown')}",
+        f"open gaps: {status.get('open_gap_count', len(gaps))}",
+        f"briefs: {status['brief_count']}",
+        f"worker controls: {status.get('worker_control_status', 'unknown')}",
+        "",
+        "Top gaps:",
+    ]
+    lines.extend(
+        [f"- {gap['gap_id']} [{gap['severity']}] {gap['next_action']}" for gap in gaps[:8]]
+        or ["- none"]
+    )
+    return "\n".join(lines)
+
+
+def _apply_specialized_rule(
+    lowered: str,
+    *,
+    use,
+    warnings: list[str],
+    missing: list[str],
+) -> tuple[list[str], int, ProviderRoute | None] | None:
+    if any(token in lowered for token in ("morning brief", "operating brief", "today brief", "overnight brief")):
+        use("operating-briefs")
+        use("mission-graph")
+        use("intelligence-cadence")
+        use("delivery-router")
+        warnings.append("Delivery is verified through CLI/report output; external push surfaces remain optional and policy-gated.")
+        return (["file"], 2, None)
+    if any(token in lowered for token in ("critical item", "high item", "review items", "priority review")):
+        use("critical-item-sentinel")
+        use("high-item-review")
+        use("operating-briefs")
+        return (["file"], 2, None)
+    if any(token in lowered for token in ("deliver", "telegram", "today hub")) and any(token in lowered for token in ("brief", "update", "report", "summary")):
+        use("delivery-router")
+        use("today-hub")
+        use("operating-briefs")
+        warnings.append("Current verified delivery lane is CLI/report output; external delivery surfaces should be treated as optional follow-on integrations.")
+        return (["file"], 2, None)
+    if any(token in lowered for token in ("famtastic thoughts", "thought piece", "essay seed", "concept draft")):
+        use("famtastic-thoughts-pipeline")
+        use("research-to-action")
+        warnings.append("Thought-piece generation stays in draft/review mode; publish remains blocked.")
+        return (["file", "skills"], 2, None)
+    if any(token in lowered for token in ("architecture diagram", "visual architecture", "system diagram")):
+        use("text-to-visual-architecture")
+        use("design-vision-review")
+        return (["file", "skills"], 1, None)
+    if any(token in lowered for token in ("code-driven video", "video storyboard")):
+        use("code-driven-video-generator")
+        use("design-vision-review")
+        warnings.append("Creative output is generation-only here; public release still needs review.")
+        return (["file", "skills"], 1, None)
+    return None
+
+
 def build_decision(
     task: str, registry: Mapping[str, Mapping[str, Any]] | None = None
 ) -> dict[str, Any]:
@@ -840,7 +942,17 @@ def build_decision(
         if capability_id not in matched:
             matched.append(capability_id)
 
-    if "github" in lowered and "obsidian" in lowered:
+    specialized = _apply_specialized_rule(
+        lowered,
+        use=use,
+        warnings=warnings,
+        missing=missing,
+    )
+    if specialized is not None:
+        toolsets, minimum_context_level, specialized_route = specialized
+        if specialized_route is not None:
+            provider_route = specialized_route
+    elif "github" in lowered and "obsidian" in lowered:
         use("skill/plugin-inventory")
         use("mcp-substrate")
         use("memory/provenance-substrate")
@@ -1110,19 +1222,27 @@ def cmd_capabilities(args) -> int:
         return 0
 
     if action == "show":
-        capability_id = _text(getattr(args, "capability_id", ""))
+        requested_id = _text(getattr(args, "capability_id", ""))
+        capability_id = _normalized_capability_lookup(requested_id)
+        if capability_id == "compatibility-matrix":
+            print(_format_seed_matrix())
+            return 0
+        if capability_id == "intelligence-layer":
+            print(_format_intelligence_bundle())
+            return 0
         capability = registry.get(capability_id)
         if capability is None:
             print(
                 "Unknown capability '"
-                + capability_id
+                + requested_id
                 + "'. Available: "
                 + ", ".join([row["id"] for row in _ordered_capabilities(registry)])
+                + ", compatibility-matrix, intelligence-layer"
             )
             _log_capability_run(
                 action="show",
                 outcome="blocked",
-                instruction_summary=f"Failed capability lookup for {capability_id}.",
+                instruction_summary=f"Failed capability lookup for {requested_id}.",
                 registry=registry,
             )
             return 1
