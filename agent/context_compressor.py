@@ -16,11 +16,14 @@ Improvements over v2:
   - Richer tool call/result detail in summarizer input
 """
 
+import datetime as _dt
 import hashlib
 import json
 import logging
+import os
 import re
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent.auxiliary_client import call_llm, _is_connection_error
@@ -31,6 +34,7 @@ from agent.model_metadata import (
     estimate_messages_tokens_rough,
 )
 from agent.redact import redact_sensitive_text
+from shay_constants import get_shay_home
 
 logger = logging.getLogger(__name__)
 
@@ -372,6 +376,33 @@ class ContextCompressor(ContextEngine):
         self._last_compression_savings_pct = 100.0
         self._ineffective_compression_count = 0
         self._summary_failure_cooldown_until = 0.0  # transient errors must not block a fresh session
+        self._session_started_at = None
+        self._active_session_id = ""
+        self._session_platform = ""
+        self._session_project = ""
+        self._session_shay_home = str(get_shay_home())
+
+    def on_session_start(self, session_id: str, **kwargs) -> None:
+        super().on_session_start(session_id, **kwargs)
+        self._session_started_at = _dt.datetime.now(_dt.timezone.utc)
+        self._active_session_id = session_id or ""
+        self._session_platform = str(kwargs.get("platform") or "")
+        self._session_project = str(kwargs.get("project") or "")
+        self._session_shay_home = str(kwargs.get("shay_home") or get_shay_home())
+
+    def on_session_end(self, session_id: str, messages: List[Dict[str, Any]]) -> None:
+        super().on_session_end(session_id, messages)
+        if not messages:
+            return
+        memo = self._build_session_memo(session_id or self._active_session_id, messages)
+        if not memo:
+            return
+        memo_path = self._session_memo_path(session_id or self._active_session_id)
+        try:
+            memo_path.parent.mkdir(parents=True, exist_ok=True)
+            memo_path.write_text(memo, encoding="utf-8")
+        except Exception:
+            logger.debug("Failed to write session memo: %s", memo_path, exc_info=True)
 
     def update_model(
         self,
@@ -484,6 +515,118 @@ class ContextCompressor(ContextEngine):
         # succeeded.  Silent recovery would hide the broken config.
         self._last_aux_model_failure_error: Optional[str] = None
         self._last_aux_model_failure_model: Optional[str] = None
+        self._session_started_at: Optional[_dt.datetime] = None
+        self._active_session_id: str = ""
+        self._session_platform: str = ""
+        self._session_project: str = ""
+        self._session_shay_home: str = str(get_shay_home())
+
+    @staticmethod
+    def _slug_session_id(session_id: str) -> str:
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "-", (session_id or "session").strip())
+        return safe.strip("-") or "session"
+
+    def _session_memo_root(self) -> Path:
+        shay_home = Path(self._session_shay_home or get_shay_home())
+        env_vault = os.environ.get("SHAY_MEMORY_VAULT", "").strip()
+        if env_vault:
+            return Path(env_vault).expanduser() / "reflections" / "episodic" / "sessions"
+        candidates = [
+            shay_home / "obsidian" / "Shay-Memory",
+            Path.home() / "famtastic" / "obsidian" / "Shay-Memory",
+        ]
+        for base in candidates:
+            if base.exists():
+                return base / "reflections" / "episodic" / "sessions"
+        return candidates[-1] / "reflections" / "episodic" / "sessions"
+
+    def _session_memo_path(self, session_id: str) -> Path:
+        started = self._session_started_at or _dt.datetime.now(_dt.timezone.utc)
+        stamp = started.strftime("%Y%m%d_%H%M%S")
+        digest = hashlib.sha1((session_id or stamp).encode("utf-8", errors="ignore")).hexdigest()[:6]
+        return self._session_memo_root() / f"{stamp}_{digest}.md"
+
+    @staticmethod
+    def _extract_latest_user_ask(messages: List[Dict[str, Any]]) -> str:
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                text = _content_text_for_contains(msg.get("content")).strip()
+                if text:
+                    return text
+        return ""
+
+    @staticmethod
+    def _extract_latest_assistant_state(messages: List[Dict[str, Any]]) -> str:
+        for msg in reversed(messages):
+            if msg.get("role") == "assistant":
+                text = _content_text_for_contains(msg.get("content")).strip()
+                if text and not ContextCompressor._is_context_summary_content(text):
+                    return text
+        return ""
+
+    @staticmethod
+    def _recent_tool_activity(messages: List[Dict[str, Any]], limit: int = 8) -> List[str]:
+        activity: List[str] = []
+        call_map: Dict[str, tuple[str, str]] = {}
+        for msg in messages:
+            if msg.get("role") == "assistant":
+                for tc in msg.get("tool_calls") or []:
+                    if isinstance(tc, dict):
+                        cid = tc.get("id", "")
+                        fn = tc.get("function", {}) or {}
+                        call_map[cid] = (fn.get("name", "unknown"), fn.get("arguments", "") or "")
+            elif msg.get("role") == "tool":
+                cid = msg.get("tool_call_id", "")
+                tool_name, tool_args = call_map.get(cid, ("unknown", ""))
+                activity.append(_summarize_tool_result(tool_name, tool_args, _content_text_for_contains(msg.get("content"))))
+        return activity[-limit:]
+
+    def _build_session_memo(self, session_id: str, messages: List[Dict[str, Any]]) -> str:
+        started = self._session_started_at or _dt.datetime.now(_dt.timezone.utc)
+        ended = _dt.datetime.now(_dt.timezone.utc)
+        active_task = self._extract_latest_user_ask(messages)
+        assistant_state = self._extract_latest_assistant_state(messages)
+        summary_body = ""
+        idx, body = self._find_latest_context_summary(messages, 0, len(messages))
+        if idx is not None and body.strip():
+            summary_body = body.strip()
+        tool_lines = self._recent_tool_activity(messages)
+        if not any([active_task, assistant_state, summary_body, tool_lines]):
+            return ""
+
+        parts = [f"# Session memo — {session_id or 'session'}", ""]
+        if active_task:
+            parts.extend(["## Active Task", active_task[:3000].strip(), ""])
+        if assistant_state:
+            parts.extend(["## Final Assistant State", assistant_state[:5000].strip(), ""])
+        if tool_lines:
+            parts.append("## Recent Tool Activity")
+            parts.extend(f"- {line}" for line in tool_lines)
+            parts.append("")
+        if summary_body:
+            parts.extend(["## Compression Handoff Context", summary_body[:7000].strip(), ""])
+
+        frontmatter = [
+            "---",
+            f"session_id: {session_id or 'session'}",
+            "memory_layer: L1",
+            f"started_at: '{started.isoformat()}'",
+            f"ended_at: '{ended.isoformat()}'",
+            f"platform: '{self._session_platform}'",
+            f"project: {self._session_project or 'unknown'}",
+            f"model: {self.model}",
+            "memo_schema: handoff-v2",
+            "source_class: runtime-session",
+            "tags:",
+            "- memory/l1",
+            "- session-memo",
+            "- runtime-session",
+            f"permalink: shay-memory/reflections/episodic/sessions/{self._slug_session_id(session_id or 'session')}",
+            "---",
+            "",
+        ]
+        rendered = "\n".join(frontmatter + parts).strip() + "\n"
+        return redact_sensitive_text(rendered, force=True)
 
     def update_from_response(self, usage: Dict[str, Any]):
         """Update tracked token usage from API response."""

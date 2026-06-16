@@ -1,7 +1,9 @@
 """Tests for agent/context_compressor.py — compression logic, thresholds, truncation fallback."""
 
-import pytest
+from pathlib import Path
 from unittest.mock import patch, MagicMock
+
+import pytest
 
 from agent.context_compressor import ContextCompressor, SUMMARY_PREFIX
 
@@ -91,6 +93,52 @@ class TestCompress:
         # (head=assistant, tail=user in this fixture).  Verify the
         # original content is present in either case.
         assert msgs[-2]["content"] in result[-2]["content"]
+
+
+class TestSessionMemoPersistence:
+    def test_writes_redacted_session_memo(self, tmp_path):
+        vault = tmp_path / "Shay-Memory"
+        with patch("agent.context_compressor.get_model_context_length", return_value=100000):
+            compressor = ContextCompressor(model="test/model", quiet_mode=True)
+
+        compressor.on_session_start(
+            "sess-123",
+            platform="cli",
+            project="famtasticfritz",
+            shay_home=str(tmp_path / ".shay"),
+        )
+
+        messages = [
+            {"role": "user", "content": "Investigate memory loop failure"},
+            {"role": "assistant", "content": "I found the fault. token=sk-abcdefghijklmnopqrstuvwxyz123456"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "function": {"name": "terminal", "arguments": '{"command":"pytest -q"}'},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": '{"output":"2 passed"}'},
+            {"role": "assistant", "content": SUMMARY_PREFIX + "\n## Active Task\nRepair memory loop"},
+        ]
+
+        with patch.dict("os.environ", {"SHAY_MEMORY_VAULT": str(vault)}):
+            compressor.on_session_end("sess-123", messages)
+
+        memo_dir = vault / "reflections" / "episodic" / "sessions"
+        files = list(memo_dir.glob("*.md"))
+        assert len(files) == 1
+        content = files[0].read_text(encoding="utf-8")
+        assert "memo_schema: handoff-v2" in content
+        assert "source_class: runtime-session" in content
+        assert "## Active Task" in content
+        assert "## Recent Tool Activity" in content
+        assert "[terminal] ran `pytest -q` -> exit 0" in content
+        assert "sk-abcdefghijklmnopqrstuvwxyz123456" not in content
+        assert "sk-abc" in content or "[REDACTED]" in content
 
 
 class TestGenerateSummaryNoneContent:
