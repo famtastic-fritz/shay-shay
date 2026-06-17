@@ -4,6 +4,7 @@ from shay_cli.capabilities_cmd import (
     _configured_local_routes,
     _local_model_lane_capability,
     build_decision,
+    build_gate_report,
     cmd_capabilities,
     format_capability_list,
 )
@@ -279,6 +280,88 @@ def test_cmd_capabilities_decide_logs_success(monkeypatch, capsys):
     assert "Task: run local model classification" in captured.out
     assert len(logs) == 1
     assert logs[0]["action"] == "decide"
+    assert logs[0]["outcome"] == "success"
+
+
+def test_build_gate_report_fails_when_prerequisites_are_missing():
+    report = build_gate_report(
+        "send Gmail outreach",
+        gate="preflight",
+        registry=_sample_registry(),
+    )
+
+    assert report["status"] == "fail"
+    assert any(
+        item["id"] == "provider-routing" for item in report["matched_capabilities"]
+    )
+    assert any(
+        "Gmail delivery substrate" in item for item in report["missing_prerequisites"]
+    )
+
+
+def test_build_gate_report_requires_research_artifact_for_memory_work():
+    report = build_gate_report(
+        "ingest GitHub repo into Obsidian",
+        gate="closeout",
+        registry=_sample_registry(),
+    )
+
+    assert report["status"] == "pass"
+    assert "durable research artifact" in report["required_proof_surfaces"]
+    assert any(
+        "Agent-Capability-Matrix" in item for item in report["required_closeout_actions"]
+    )
+
+
+def test_cmd_capabilities_preflight_returns_blocked_exit_when_gate_fails(monkeypatch, capsys):
+    logs = []
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd.collect_capabilities", lambda: _sample_registry()
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._log_capability_run",
+        lambda **kwargs: logs.append(kwargs),
+    )
+
+    rc = cmd_capabilities(
+        SimpleNamespace(
+            capabilities_command="preflight",
+            task=["send", "Gmail", "outreach"],
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "Gate: preflight" in captured.out
+    assert "Status: fail" in captured.out
+    assert len(logs) == 1
+    assert logs[0]["action"] == "preflight"
+    assert logs[0]["outcome"] == "blocked"
+
+
+def test_cmd_capabilities_closeout_returns_success_when_gate_passes(monkeypatch, capsys):
+    logs = []
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd.collect_capabilities", lambda: _sample_registry()
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._log_capability_run",
+        lambda **kwargs: logs.append(kwargs),
+    )
+
+    rc = cmd_capabilities(
+        SimpleNamespace(
+            capabilities_command="closeout",
+            task=["run", "local", "model", "classification"],
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "Gate: closeout" in captured.out
+    assert "Required proof surfaces:" in captured.out
+    assert len(logs) == 1
+    assert logs[0]["action"] == "closeout"
     assert logs[0]["outcome"] == "success"
 
 

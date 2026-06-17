@@ -9440,6 +9440,24 @@ def main():
         "doctor",
         help="Run a read-only capability doctor pass",
     )
+    capabilities_preflight = capabilities_subparsers.add_parser(
+        "preflight",
+        help="Run the capability truth preflight gate for a task",
+    )
+    capabilities_preflight.add_argument(
+        "task",
+        nargs="+",
+        help="Task description to preflight (quote it for best results)",
+    )
+    capabilities_closeout = capabilities_subparsers.add_parser(
+        "closeout",
+        help="Render proof-aware closeout requirements for a task",
+    )
+    capabilities_closeout.add_argument(
+        "task",
+        nargs="+",
+        help="Task description to close out (quote it for best results)",
+    )
     capabilities_parser.set_defaults(func=cmd_capabilities)
 
     # =========================================================================
@@ -9488,6 +9506,7 @@ def main():
     intelligence_subparsers = intelligence_parser.add_subparsers(dest="intelligence_command")
     intelligence_subparsers.add_parser("status", help="Show Intelligence Layer readiness")
     intelligence_subparsers.add_parser("matrix", help="Show expanded capability matrix")
+    intelligence_subparsers.add_parser("truth", help="Show subsystem truth registry and reality classes")
     intelligence_subparsers.add_parser("agents", help="Show agent registry / worker roster")
     intelligence_subparsers.add_parser("events", help="Show recent/backfilled episodic records")
     intelligence_subparsers.add_parser("missions", help="Show FAMtastic mission graph")

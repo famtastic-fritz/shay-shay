@@ -1664,6 +1664,7 @@ def _run_single_child(
         _input_tokens = getattr(child, "session_prompt_tokens", 0)
         _output_tokens = getattr(child, "session_completion_tokens", 0)
         _model = getattr(child, "model", None)
+        _provider = getattr(child, "provider", None)
 
         entry: Dict[str, Any] = {
             "task_index": task_index,
@@ -1672,6 +1673,7 @@ def _run_single_child(
             "api_calls": api_calls,
             "duration_seconds": duration,
             "model": _model if isinstance(_model, str) else None,
+            "provider": _provider if isinstance(_provider, str) else None,
             "exit_reason": exit_reason,
             "tokens": {
                 "input": (

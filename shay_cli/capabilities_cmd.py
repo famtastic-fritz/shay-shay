@@ -121,6 +121,22 @@ class DecisionResult:
         return asdict(self)
 
 
+@dataclass
+class CapabilityGateReport:
+    task: str
+    gate: str
+    status: str
+    matched_capabilities: list[dict[str, str]]
+    blocking_capabilities: list[dict[str, str]]
+    missing_prerequisites: list[str]
+    warnings_gaps: list[str]
+    required_proof_surfaces: list[str]
+    required_closeout_actions: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -1170,6 +1186,128 @@ def format_decision(decision: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _matched_capability_rows(
+    decision: Mapping[str, Any], registry: Mapping[str, Mapping[str, Any]]
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for capability_id in decision.get("matched_capabilities") or []:
+        capability = registry.get(capability_id) or {}
+        rows.append({
+            "id": capability_id,
+            "status": _text(capability.get("status")) or "unknown",
+            "summary": _text(capability.get("summary")),
+        })
+    return rows
+
+
+def _required_proof_surfaces(task: str, matched_capabilities: list[str]) -> list[str]:
+    lowered = task.lower()
+    surfaces = [
+        "process-intelligence ledger entry",
+        "capability doctor pass",
+    ]
+    if any(
+        capability_id in matched_capabilities
+        for capability_id in {
+            "memory/provenance-substrate",
+            "research-to-action",
+            "episodic-memory",
+            "github-to-obsidian",
+        }
+    ) or any(keyword in lowered for keyword in {"research", "memory", "obsidian", "capability matrix"}):
+        surfaces.append("durable research artifact")
+    if any(
+        capability_id in matched_capabilities
+        for capability_id in {
+            "provider-routing",
+            "gateway-runtime",
+            "mcp-substrate",
+            "skill/plugin-inventory",
+            "local-model-lane",
+            "fallback-chain",
+            "worker-control",
+            "agent-registry",
+        }
+    ) or "capability" in lowered:
+        surfaces.append("shared capability matrix update")
+    return surfaces
+
+
+def build_gate_report(
+    task: str,
+    *,
+    gate: str,
+    registry: Mapping[str, Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    registry = registry or collect_capabilities()
+    decision = build_decision(task, registry=registry)
+    matched_rows = _matched_capability_rows(decision, registry)
+    blocking = [
+        row for row in matched_rows if row["status"] in {"unsafe", "blocked", "missing", "unknown"}
+    ]
+    status = "pass"
+    if blocking or (decision.get("missing_prerequisites") or []):
+        status = "fail"
+    proof_surfaces = _required_proof_surfaces(task, decision.get("matched_capabilities") or [])
+    closeout_actions = [
+        "Run `shay capabilities doctor` and capture the result with the work artifact.",
+        "Log the run in the process-intelligence spine with matched capabilities, blockers, and validation results.",
+    ]
+    if "durable research artifact" in proof_surfaces:
+        closeout_actions.append(
+            "Capture a durable research artifact that keeps observations separate from interpretations."
+        )
+    if "shared capability matrix update" in proof_surfaces:
+        closeout_actions.append(
+            "Update the shared Agent-Capability-Matrix note if this task changes installed/active/proven capability truth."
+        )
+    return CapabilityGateReport(
+        task=task,
+        gate=gate,
+        status=status,
+        matched_capabilities=matched_rows,
+        blocking_capabilities=blocking,
+        missing_prerequisites=list(decision.get("missing_prerequisites") or []),
+        warnings_gaps=list(decision.get("warnings_gaps") or []),
+        required_proof_surfaces=proof_surfaces,
+        required_closeout_actions=closeout_actions,
+    ).to_dict()
+
+
+def format_gate_report(report: Mapping[str, Any]) -> str:
+    lines = [
+        f"Task: {report.get('task', '')}",
+        f"Gate: {report.get('gate', '')}",
+        f"Status: {report.get('status', 'unknown')}",
+        "",
+        "Matched capability truth:",
+    ]
+    matched = report.get("matched_capabilities") or []
+    lines.extend(
+        [f"- {item['id']} [{item['status']}] {item['summary']}" for item in matched]
+        or ["- (none)"]
+    )
+    lines.extend(["", "Blocking capability truth:"])
+    blocking = report.get("blocking_capabilities") or []
+    lines.extend(
+        [f"- {item['id']} [{item['status']}] {item['summary']}" for item in blocking]
+        or ["- (none)"]
+    )
+    lines.extend(["", "Missing prerequisites:"])
+    missing = report.get("missing_prerequisites") or []
+    lines.extend([f"- {item}" for item in missing] or ["- (none)"])
+    lines.extend(["", "Warnings / gaps:"])
+    warnings = report.get("warnings_gaps") or []
+    lines.extend([f"- {item}" for item in warnings] or ["- (none)"])
+    lines.extend(["", "Required proof surfaces:"])
+    proof = report.get("required_proof_surfaces") or []
+    lines.extend([f"- {item}" for item in proof] or ["- (none)"])
+    lines.extend(["", "Required closeout actions:"])
+    actions = report.get("required_closeout_actions") or []
+    lines.extend([f"- {item}" for item in actions] or ["- (none)"])
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # CLI entrypoint + safe process-intelligence hook
 # ---------------------------------------------------------------------------
@@ -1259,6 +1397,31 @@ def cmd_capabilities(args) -> int:
         )
         return 0
 
+    if action in {"preflight", "closeout"}:
+        task = getattr(args, "task", "")
+        if isinstance(task, list):
+            task = " ".join(_text(item) for item in task if _text(item))
+        else:
+            task = _text(task)
+        if not task:
+            print(f'Usage: shay capabilities {action} "<task>"')
+            return 1
+        report = build_gate_report(task, gate=action, registry=registry)
+        print(format_gate_report(report))
+        _log_capability_run(
+            action=action,
+            outcome="success" if report.get("status") == "pass" else "blocked",
+            instruction_summary=f"{action} gate for: {task}",
+            decision={
+                "matched_capabilities": [
+                    item.get("id") for item in (report.get("matched_capabilities") or [])
+                ],
+                "missing_prerequisites": report.get("missing_prerequisites") or [],
+            },
+            registry=registry,
+        )
+        return 0 if report.get("status") == "pass" else 2
+
     if action == "decide":
         task = getattr(args, "task", "")
         if isinstance(task, list):
@@ -1285,10 +1448,12 @@ def cmd_capabilities(args) -> int:
 
 __all__ = [
     "build_decision",
+    "build_gate_report",
     "cmd_capabilities",
     "collect_capabilities",
     "format_capability_list",
     "format_capability_show",
     "format_decision",
     "format_doctor",
+    "format_gate_report",
 ]

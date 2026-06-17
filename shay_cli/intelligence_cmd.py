@@ -34,6 +34,14 @@ MISSING_OR_UNSAFE_STATUSES = {
     "avoid_by_policy",
 }
 
+REALITY_CLASSES = {
+    "proven_live",
+    "implemented_unverified",
+    "partial",
+    "seeded",
+    "deprecated",
+}
+
 WORKER_STATUSES = {
     "queued",
     "running",
@@ -264,7 +272,8 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def backfill_events() -> list[dict[str, Any]]:
     return [
-        {
+        normalize_event(
+            {
             "event_id": "event-capability-truth-layer-complete",
             "timestamp": "2026-06-14T00:00:00Z",
             "source": "manual-backfill",
@@ -299,15 +308,28 @@ def backfill_events() -> list[dict[str, Any]]:
                 "hyperswarm-doctrine",
             ],
             "related_agents": ["capability-cartographer", "work-router"],
-        }
+            }
+        )
     ]
 
 
-def create_event(payload: Mapping[str, Any], *, persist: bool = True) -> dict[str, Any]:
-    event = {
+def normalize_event(payload: Mapping[str, Any]) -> dict[str, Any]:
+    summary = payload.get("summary") or "manual event"
+    result = payload.get("result")
+    observation = payload.get("observation") or summary
+    interpretation = payload.get("interpretation")
+    if interpretation is None:
+        interpretation = payload.get("decision") or payload.get("status")
+    pattern = payload.get("pattern")
+    if pattern is None:
+        related_capabilities = list(payload.get("related_capabilities") or [])
+        related_agents = list(payload.get("related_agents") or [])
+        pattern_parts = related_capabilities + related_agents
+        pattern = ", ".join(pattern_parts) if pattern_parts else None
+    normalized = {
         "event_id": str(
             payload.get("event_id")
-            or f"event-{_slug(payload.get('summary', 'manual'))}-{_slug(_utc_now())}"
+            or f"event-{_slug(summary)}-{_slug(_utc_now())}"
         ),
         "timestamp": str(payload.get("timestamp") or _utc_now()),
         "source": payload.get("source") or "shay-intelligence-layer",
@@ -320,18 +342,26 @@ def create_event(payload: Mapping[str, Any], *, persist: bool = True) -> dict[st
         "plan_id": payload.get("plan_id"),
         "mission_id": payload.get("mission_id"),
         "task_id": payload.get("task_id"),
-        "summary": payload.get("summary") or "manual event",
+        "summary": summary,
         "decision": payload.get("decision"),
         "artifact_paths": list(payload.get("artifact_paths") or []),
         "files_touched": list(payload.get("files_touched") or []),
         "status": payload.get("status") or "recorded",
-        "result": payload.get("result"),
+        "result": result,
         "next_resume_point": payload.get("next_resume_point"),
         "sensitivity": payload.get("sensitivity") or "low",
         "source_pointer": payload.get("source_pointer"),
         "related_capabilities": list(payload.get("related_capabilities") or []),
         "related_agents": list(payload.get("related_agents") or []),
+        "observation": observation,
+        "interpretation": interpretation,
+        "pattern": pattern,
     }
+    return normalized
+
+
+def create_event(payload: Mapping[str, Any], *, persist: bool = True) -> dict[str, Any]:
+    event = normalize_event(payload)
     if persist:
         base = _ensure_storage()
         _write_json(base / "events" / f"{event['event_id']}.json", event)
@@ -345,6 +375,7 @@ def list_events(limit: int = 10) -> list[dict[str, Any]]:
     persisted = _read_jsonl(base / "events" / "events.jsonl")
     by_id: dict[str, dict[str, Any]] = {}
     for event in backfill_events() + persisted:
+        event = normalize_event(event)
         event_id = str(event.get("event_id") or "")
         if event_id:
             by_id[event_id] = event
@@ -359,6 +390,178 @@ def get_event(event_id: str) -> dict[str, Any] | None:
         if event.get("event_id") == event_id:
             return event
     return None
+
+
+def build_truth_registry() -> list[dict[str, Any]]:
+    from agent.process_intelligence import process_intelligence_home
+
+    process_home = process_intelligence_home()
+    intelligence_home = _ensure_storage()
+    root = Path(__file__).resolve().parents[1]
+    docs_root = root / "docs"
+    generated_docs = docs_root / "generated"
+    truth_rows = [
+        {
+            "subsystem_id": "capability-truth-layer",
+            "name": "Capability Truth Layer",
+            "status": "working",
+            "reality_class": "proven_live",
+            "owner_module": "shay_cli/capabilities_cmd.py",
+            "source_of_truth": "live capability probes merged with guarded policy overlays",
+            "persistence_paths": [
+                str(get_shay_home() / "config.yaml"),
+                str(process_home),
+            ],
+            "proof_artifacts": [
+                "shay capabilities list",
+                "shay capabilities decide <task>",
+            ],
+            "dependencies": ["process-intelligence-substrate", "identity-guard"],
+            "open_gaps": [],
+            "notes": "This is the strongest live substrate for routing truth today.",
+        },
+        {
+            "subsystem_id": "process-intelligence-substrate",
+            "name": "Process Intelligence Substrate",
+            "status": "working",
+            "reality_class": "proven_live",
+            "owner_module": "agent/process_intelligence.py",
+            "source_of_truth": "canonical run ledger and run directories",
+            "persistence_paths": [
+                str(process_home / "runs" / "runs.jsonl"),
+                str(process_home / "runs"),
+            ],
+            "proof_artifacts": [
+                "agent/process_intelligence.py",
+                str(process_home / "runs" / "runs.jsonl"),
+            ],
+            "dependencies": [],
+            "open_gaps": [],
+            "notes": "Best current candidate for the event spine.",
+        },
+        {
+            "subsystem_id": "intelligence-events-workers",
+            "name": "Intelligence Events and Workers",
+            "status": "working",
+            "reality_class": "proven_live",
+            "owner_module": "shay_cli/intelligence_cmd.py",
+            "source_of_truth": "intelligence storage under SHAY_INTELLIGENCE_HOME",
+            "persistence_paths": [
+                str(intelligence_home / "events" / "events.jsonl"),
+                str(intelligence_home / "workers"),
+                str(intelligence_home / "ledgers"),
+            ],
+            "proof_artifacts": [
+                "shay intelligence events",
+                "shay intelligence workers",
+                "tests/test_intelligence_layer.py",
+            ],
+            "dependencies": ["process-intelligence-substrate"],
+            "open_gaps": [],
+            "notes": "Event storage is normalized into observation, interpretation, pattern, and result fields.",
+        },
+        {
+            "subsystem_id": "mission-graph-registry",
+            "name": "Mission Graph Registry",
+            "status": "working",
+            "reality_class": "seeded",
+            "owner_module": "shay_cli/intelligence_cmd.py",
+            "source_of_truth": "seeded mission and plan records",
+            "persistence_paths": [],
+            "proof_artifacts": [
+                "shay intelligence missions",
+                "shay_cli/intelligence_seed.py",
+            ],
+            "dependencies": [],
+            "open_gaps": [
+                "mission graph is plan-shaped and not automatically reconciled against live execution state"
+            ],
+            "notes": "Useful control surface, but not authoritative runtime truth by itself.",
+        },
+        {
+            "subsystem_id": "cadence-registry",
+            "name": "Cadence Registry",
+            "status": "pending_activation",
+            "reality_class": "seeded",
+            "owner_module": "shay_cli/intelligence_seed.py",
+            "source_of_truth": "seeded cadence records",
+            "persistence_paths": [],
+            "proof_artifacts": [
+                "shay intelligence cadence list",
+                "shay_cli/intelligence_seed.py",
+            ],
+            "dependencies": [],
+            "open_gaps": [
+                "cadence records are intentionally disabled and not a live scheduler truth surface"
+            ],
+            "notes": "Policy/control metadata only until explicitly wired.",
+        },
+        {
+            "subsystem_id": "research-classification-registry",
+            "name": "Research Classification Registry",
+            "status": "working",
+            "reality_class": "seeded",
+            "owner_module": "shay_cli/intelligence_cmd.py",
+            "source_of_truth": "seeded research decision table with controlled aliases",
+            "persistence_paths": [str(docs_root / "research-artifact-capture-protocol.md")],
+            "proof_artifacts": [
+                "shay intelligence research OpenJarvis",
+                "docs/research-artifact-capture-protocol.md",
+            ],
+            "dependencies": [],
+            "open_gaps": [
+                "classification defaults are real code, but most entries are policy seeds rather than observed runtime outcomes"
+            ],
+            "notes": "Good intake classifier, not yet a learned pattern system.",
+        },
+        {
+            "subsystem_id": "identity-guard",
+            "name": "Identity Guard",
+            "status": "working",
+            "reality_class": "proven_live",
+            "owner_module": "identity_guard.py",
+            "source_of_truth": "required snippet audit plus emergency manifest under SHAY_HOME/private",
+            "persistence_paths": [
+                str(get_shay_home() / "private" / "identity-guard"),
+                str(get_shay_home() / "memories" / "USER.md"),
+            ],
+            "proof_artifacts": [
+                "shay identity status --json",
+                str(generated_docs / "identity-status-2026-06-15.json"),
+            ],
+            "dependencies": [],
+            "open_gaps": [
+                "shared blast-radius memory files must stay frozen unless explicitly coordinated"
+            ],
+            "notes": "Hard boundary surface; memory compaction proved this can trip on missing authority snippets.",
+        },
+        {
+            "subsystem_id": "delegate-route-proof",
+            "name": "Delegate Route Proof Surface",
+            "status": "working",
+            "reality_class": "proven_live",
+            "owner_module": "tools/delegate_tool.py",
+            "source_of_truth": "live delegated child probe artifacts and delegate regression tests",
+            "persistence_paths": [
+                str(root / "scripts" / "probe_delegate_route.py"),
+                str(generated_docs / "delegate-route-probe-2026-06-15.json"),
+            ],
+            "proof_artifacts": [
+                str(docs_root / "learning-loop-verification-run-2026-06-15.md"),
+                str(generated_docs / "delegate-route-probe-2026-06-15.json"),
+                "tests/tools/test_delegate.py",
+            ],
+            "dependencies": ["capability-truth-layer"],
+            "open_gaps": [
+                "delegation routing is proven for the sampled lane, not for every intelligence surface end-to-end"
+            ],
+            "notes": "Critical proof surface for separating declared routing from observed routing.",
+        },
+    ]
+    for row in truth_rows:
+        if row["reality_class"] not in REALITY_CLASSES:
+            raise ValueError(f"unknown reality class: {row['reality_class']}")
+    return truth_rows
 
 
 def build_mission_graph() -> dict[str, Any]:
@@ -1196,7 +1399,8 @@ def intelligence_status() -> dict[str, Any]:
     graph = build_mission_graph()
     readiness = swarm_readiness()
     gaps = build_gap_records()
-    command_surface_count = 34
+    truth_registry = build_truth_registry()
+    command_surface_count = 35
     blockers: list[str] = []
     required_ids = {record['capability_id'] for record in matrix}
     if not required_ids:
@@ -1235,6 +1439,10 @@ def intelligence_status() -> dict[str, Any]:
         'safe_hyperswarm_dry_run': 'working',
         'live_crons_enabled': False,
         'open_gap_count': len(gaps),
+        'truth_registry_count': len(truth_registry),
+        'proven_truth_count': sum(
+            1 for row in truth_registry if row.get('reality_class') == 'proven_live'
+        ),
         'verified_delivery_path': verified_delivery_path,
         'action_loop_status': action_loop_status,
         'worker_control_status': worker_control_status,
@@ -1425,6 +1633,29 @@ def _format_records(
     return "\n".join(lines)
 
 
+def format_truth_registry(rows: list[Mapping[str, Any]]) -> str:
+    lines = ["Truth Registry", ""]
+    for row in rows:
+        lines.extend([
+            f"- {row['subsystem_id']} [{row['reality_class']}] {row['name']}",
+            f"  owner: {row['owner_module']}",
+            f"  truth: {row['source_of_truth']}",
+            "  proof:",
+            *[f"    - {item}" for item in row.get('proof_artifacts') or []],
+            "  paths:",
+            *(
+                [f"    - {item}" for item in row.get('persistence_paths') or []]
+                or ["    - none"]
+            ),
+            "  open_gaps:",
+            *(
+                [f"    - {item}" for item in row.get('open_gaps') or []]
+                or ["    - none"]
+            ),
+        ])
+    return "\n".join(lines)
+
+
 def format_status(status: Mapping[str, Any]) -> str:
     return "\n".join([
         "Shay Intelligence Layer",
@@ -1436,6 +1667,8 @@ def format_status(status: Mapping[str, Any]) -> str:
         f"briefs: {status['brief_count']}",
         f"cadence records: {status['cadence_count']}",
         f"open gaps: {status.get('open_gap_count', 0)}",
+        f"truth registry rows: {status.get('truth_registry_count', 0)}",
+        f"proven truth rows: {status.get('proven_truth_count', 0)}",
         f"verified delivery path: {status.get('verified_delivery_path', 'unknown')}",
         f"action loop: {status.get('action_loop_status', 'unknown')}",
         f"worker controls: {status.get('worker_control_status', 'unknown')}",
@@ -1512,6 +1745,9 @@ def cmd_intelligence(args: Any) -> int:
         print("Open gaps by owner:")
         for owner, count in sorted(_group_gaps_by_owner(build_gap_records()).items()):
             print(f"- {owner}: {count}")
+        return 0
+    if command == "truth":
+        print(format_truth_registry(build_truth_registry()))
         return 0
     if command == "agents":
         print(
@@ -1620,13 +1856,16 @@ def cmd_intelligence(args: Any) -> int:
 __all__ = [
     "SAFETY_GATES",
     "WORKER_REQUIRED_FIELDS",
+    "REALITY_CLASSES",
     "build_gap_records",
     "build_mission_graph",
+    "build_truth_registry",
     "classify_research",
     "cmd_intelligence",
     "create_event",
     "critical_item_records",
     "intelligence_status",
+    "format_truth_registry",
     "list_events",
     "list_workers",
     "new_worker_record",

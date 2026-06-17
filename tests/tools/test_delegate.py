@@ -521,6 +521,7 @@ class TestDelegateObservability(unittest.TestCase):
         with patch("run_agent.AIAgent") as MockAgent:
             mock_child = MagicMock()
             mock_child.model = "claude-sonnet-4-6"
+            mock_child.provider = "ollama"
             mock_child.session_prompt_tokens = 5000
             mock_child.session_completion_tokens = 1200
             mock_child.run_conversation.return_value = {
@@ -544,6 +545,7 @@ class TestDelegateObservability(unittest.TestCase):
 
             # Core observability fields
             self.assertEqual(entry["model"], "claude-sonnet-4-6")
+            self.assertEqual(entry["provider"], "ollama")
             self.assertEqual(entry["exit_reason"], "completed")
             self.assertEqual(entry["tokens"]["input"], 5000)
             self.assertEqual(entry["tokens"]["output"], 1200)

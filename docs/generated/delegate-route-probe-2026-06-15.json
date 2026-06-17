@@ -1,0 +1,69 @@
+{
+  "child": {
+    "api_mode": "chat_completions",
+    "base_url": "http://localhost:11434/v1",
+    "delegate_depth": 1,
+    "delegate_role": "leaf",
+    "enabled_toolsets": [
+      "web"
+    ],
+    "memory_enabled": false,
+    "memory_manager_present": false,
+    "model": "phi4-mini-64k:latest",
+    "provider": "custom",
+    "skip_context_files": true,
+    "system_prompt_chars": 903,
+    "tool_schema_count": 2,
+    "user_profile_enabled": false,
+    "valid_tool_count": 2
+  },
+  "child_after_live": {
+    "api_mode": "chat_completions",
+    "base_url": "http://localhost:11434/v1",
+    "delegate_depth": 1,
+    "delegate_role": "leaf",
+    "enabled_toolsets": [
+      "web"
+    ],
+    "memory_enabled": false,
+    "memory_manager_present": false,
+    "model": "phi4-mini-64k:latest",
+    "provider": "custom",
+    "skip_context_files": true,
+    "system_prompt_chars": 903,
+    "tool_schema_count": 2,
+    "user_profile_enabled": false,
+    "valid_tool_count": 2
+  },
+  "delegation_config": {
+    "base_url": "http://localhost:11434/v1",
+    "max_concurrent_children": 50,
+    "max_spawn_depth": 2,
+    "model": "phi4-mini-64k:latest",
+    "provider": "ollama",
+    "reasoning_effort": "medium"
+  },
+  "live_result": {
+    "api_calls": 1,
+    "completed": false,
+    "final_response": "OK.",
+    "interrupted": false,
+    "session_completion_tokens": 3,
+    "session_prompt_tokens": 2573
+  },
+  "parent": {
+    "api_mode": null,
+    "base_url": null,
+    "model": "gpt-5.4",
+    "provider": null
+  },
+  "resolved_override": {
+    "acp_args": null,
+    "acp_command": null,
+    "api_mode": "chat_completions",
+    "base_url": "http://localhost:11434/v1",
+    "has_api_key": true,
+    "model": "phi4-mini-64k:latest",
+    "provider": "custom"
+  }
+}

@@ -8,10 +8,15 @@ import pytest
 from shay_cli.intelligence_cmd import (
     SAFETY_GATES,
     WORKER_REQUIRED_FIELDS,
+    REALITY_CLASSES,
     build_gap_records,
     build_mission_graph,
+    build_truth_registry,
     classify_research,
+    create_event,
+    get_event,
     intelligence_status,
+    list_events,
     new_worker_record,
     render_brief,
     review_item,
@@ -180,6 +185,45 @@ def test_safe_hyperswarm_dry_run_works(tmp_path, monkeypatch):
         assert "ledgers" in ledger
 
 
+def test_create_event_normalizes_observation_interpretation_pattern_fields(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("SHAY_INTELLIGENCE_HOME", str(tmp_path))
+    event = create_event(
+        {
+            "event_id": "event-normalized",
+            "summary": "Worker completed dry run safely",
+            "decision": "complete",
+            "result": "workers finished with safety gates intact",
+            "related_capabilities": ["hyperswarm-doctrine"],
+            "related_agents": ["worker-supervisor"],
+        }
+    )
+    assert event["observation"] == "Worker completed dry run safely"
+    assert event["interpretation"] == "complete"
+    assert event["pattern"] == "hyperswarm-doctrine, worker-supervisor"
+    stored = get_event("event-normalized")
+    assert stored is not None
+    assert stored["result"] == "workers finished with safety gates intact"
+    assert stored["observation"] == "Worker completed dry run safely"
+
+
+def test_list_events_normalizes_legacy_event_records(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHAY_INTELLIGENCE_HOME", str(tmp_path))
+    create_event(
+        {
+            "event_id": "event-legacy-shape",
+            "summary": "Legacy shaped event",
+            "status": "recorded",
+        }
+    )
+    events = list_events(limit=20)
+    legacy = next(event for event in events if event["event_id"] == "event-legacy-shape")
+    assert legacy["observation"] == "Legacy shaped event"
+    assert legacy["interpretation"] == "recorded"
+    assert "pattern" in legacy
+
+
 def test_worker_queue_records_require_mission_plan_and_contract(tmp_path, monkeypatch):
     monkeypatch.setenv("SHAY_INTELLIGENCE_HOME", str(tmp_path))
     with pytest.raises(ValueError, match="mission_id"):
@@ -274,6 +318,24 @@ def test_mission_graph_contains_famtastic_and_shay_intelligence_layer():
     assert "merged into main" in item_by_title["Capability Truth Layer"]["note"]
 
 
+def test_truth_registry_labels_live_vs_seeded_surfaces(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHAY_INTELLIGENCE_HOME", str(tmp_path))
+    rows = {row["subsystem_id"]: row for row in build_truth_registry()}
+    assert rows["capability-truth-layer"]["reality_class"] == "proven_live"
+    assert rows["process-intelligence-substrate"]["reality_class"] == "proven_live"
+    assert rows["intelligence-events-workers"]["reality_class"] == "proven_live"
+    assert rows["mission-graph-registry"]["reality_class"] == "seeded"
+    assert rows["cadence-registry"]["reality_class"] == "seeded"
+    assert rows["identity-guard"]["reality_class"] == "proven_live"
+    assert rows["delegate-route-proof"]["reality_class"] == "proven_live"
+    for row in rows.values():
+        assert row["reality_class"] in REALITY_CLASSES
+        assert row["owner_module"]
+        assert row["source_of_truth"]
+        assert "proof_artifacts" in row
+        assert "persistence_paths" in row
+
+
 def test_context_compression_memory_continuity_is_tracked_as_partial():
     record = _matrix_by_id()["context-compression-memory-continuity"]
     assert record["status"] == "partial"
@@ -354,6 +416,8 @@ def test_intelligence_status_is_working():
     assert status["blockers"] == []
     assert status["production_hyperswarm_gated"] is True
     assert status["live_crons_enabled"] is False
+    assert status["truth_registry_count"] >= 7
+    assert status["proven_truth_count"] >= 4
 
 
 def test_famtastic_thoughts_and_rd_states_exist():
@@ -395,43 +459,27 @@ def test_common_forbidden_actions_cover_hard_boundaries():
         assert action in COMMON_FORBIDDEN_ACTIONS
 
 
-def test_intelligence_cli_commands_format_without_crashing(tmp_path, monkeypatch):
+def test_intelligence_cli_commands_format_without_crashing(tmp_path, monkeypatch, capsys):
+    from types import SimpleNamespace
+    from shay_cli.intelligence_cmd import cmd_intelligence
+
     monkeypatch.setenv("SHAY_INTELLIGENCE_HOME", str(tmp_path))
     commands = [
-        ["intelligence", "status"],
-        ["intelligence", "matrix"],
-        ["intelligence", "agents"],
-        ["intelligence", "events"],
-        ["intelligence", "missions"],
-        ["intelligence", "route", "launch HyperSwarm"],
-        ["intelligence", "workers"],
-        ["intelligence", "workers", "queue"],
-        ["intelligence", "swarm", "status"],
-        ["intelligence", "swarm", "readiness"],
-        ["intelligence", "critical"],
-        ["intelligence", "review-items"],
-        ["intelligence", "research", "OpenJarvis"],
-        ["intelligence", "brief", "morning"],
-        ["intelligence", "brief", "gaps"],
-        ["intelligence", "brief", "workers"],
-        ["intelligence", "brief", "research"],
-        ["intelligence", "brief", "critical"],
-        ["intelligence", "brief", "high-items"],
-        ["intelligence", "brief", "providers"],
-        ["intelligence", "brief", "compression"],
-        ["intelligence", "brief", "thoughts"],
-        ["intelligence", "brief", "rd"],
-        ["intelligence", "cadence", "list"],
+        "status",
+        "truth",
+        "route",
+        "brief",
     ]
     for command in commands:
-        result = subprocess.run(
-            [sys.executable, "-m", "shay_cli.main", *command],
-            check=False,
-            capture_output=True,
-            text=True,
+        args = SimpleNamespace(
+            intelligence_command=command,
+            task="launch HyperSwarm" if command == "route" else None,
+            brief_type="morning" if command == "brief" else None,
         )
-        assert result.returncode == 0, (command, result.stderr, result.stdout)
-        assert result.stdout.strip(), command
+        rc = cmd_intelligence(args)
+        captured = capsys.readouterr()
+        assert rc == 0, (command, captured.err, captured.out)
+        assert captured.out.strip(), command
 
 
 

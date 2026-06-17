@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "shay_home": "/Users/famtasticfritz/.shay",
+  "manifest_path": "/Users/famtasticfritz/.shay/private/identity-guard/identity-manifest.json",
+  "emergency_dir": "/Users/famtasticfritz/.shay/private/identity-guard/emergency",
+  "current_version": 67,
+  "findings": [],
+  "files": [
+    {
+      "relative_path": "SOUL.md",
+      "display_name": "SOUL.md",
+      "actual_path": "/Users/famtasticfritz/.shay/SOUL.md",
+      "actual_exists": true,
+      "emergency_path": "/Users/famtasticfritz/.shay/private/identity-guard/emergency/SOUL.md",
+      "emergency_exists": true,
+      "version_path": "/Users/famtasticfritz/.shay/private/identity-guard/versions/v00067/SOUL.md",
+      "version_exists": true
+    },
+    {
+      "relative_path": "PERSONA.md",
+      "display_name": "PERSONA.md",
+      "actual_path": "/Users/famtasticfritz/.shay/PERSONA.md",
+      "actual_exists": true,
+      "emergency_path": "/Users/famtasticfritz/.shay/private/identity-guard/emergency/PERSONA.md",
+      "emergency_exists": true,
+      "version_path": "/Users/famtasticfritz/.shay/private/identity-guard/versions/v00067/PERSONA.md",
+      "version_exists": true
+    },
+    {
+      "relative_path": "memories/USER.md",
+      "display_name": "USER.md",
+      "actual_path": "/Users/famtasticfritz/.shay/memories/USER.md",
+      "actual_exists": true,
+      "emergency_path": "/Users/famtasticfritz/.shay/private/identity-guard/emergency/USER.md",
+      "emergency_exists": true,
+      "version_path": "/Users/famtasticfritz/.shay/private/identity-guard/versions/v00067/USER.md",
+      "version_exists": true
+    }
+  ]
+}
