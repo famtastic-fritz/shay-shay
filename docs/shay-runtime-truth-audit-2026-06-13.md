@@ -209,6 +209,9 @@ Gap implication: memory-surface ambiguity
 4. `enabled MCP` does not mean `proven MCP server`.
 5. `hub skill search miss` does not mean `local skill unavailable`.
 6. some command surfaces are interactive-only and therefore not equally auditable from non-interactive automation.
+7. execution readiness is now a separate gate surface from raw capability inventory.
+   - `shay capabilities preflight "<task>"` is where capability truth becomes executable readiness
+   - `shay capabilities closeout "<task>"` is where proof requirements become explicit closeout obligations
 
 ## Gaps opened or sharpened by this audit
 
