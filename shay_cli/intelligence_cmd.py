@@ -407,18 +407,22 @@ def build_truth_registry() -> list[dict[str, Any]]:
             "status": "working",
             "reality_class": "proven_live",
             "owner_module": "shay_cli/capabilities_cmd.py",
-            "source_of_truth": "live capability probes merged with guarded policy overlays",
+            "source_of_truth": "live capability probes merged with guarded policy overlays plus observed-proof overlays from the process-intelligence ledger",
             "persistence_paths": [
                 str(get_shay_home() / "config.yaml"),
                 str(process_home),
+                str(process_home / "runs" / "runs.jsonl"),
             ],
             "proof_artifacts": [
                 "shay capabilities list",
                 "shay capabilities decide <task>",
+                "shay capabilities show <capability-id>",
             ],
             "dependencies": ["process-intelligence-substrate", "identity-guard"],
-            "open_gaps": [],
-            "notes": "This is the strongest live substrate for routing truth today.",
+            "open_gaps": [
+                "Curated capability status still does not auto-flip from ledger evidence alone; eligible promotions remain review-gated on purpose.",
+            ],
+            "notes": "Routing truth now applies verifier-aware promotion rules from the run ledger while keeping final curated status changes review-gated.",
         },
         {
             "subsystem_id": "process-intelligence-substrate",

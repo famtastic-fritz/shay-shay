@@ -191,6 +191,18 @@ def test_clear_command_starts_new_session_before_redrawing(tmp_path):
     assert cli.conversation_history == []
 
 
+def test_clear_command_redraws_without_fresh_start_tip_noise(tmp_path, capsys):
+    cli = _prepare_cli_with_active_session(tmp_path)
+    cli.console = MagicMock()
+    cli.show_banner = MagicMock()
+
+    cli.process_command("/clear")
+
+    output = capsys.readouterr().out
+    assert "Fresh start!" not in output
+    assert "✦ Tip:" not in output
+
+
 def test_new_session_resets_token_counters(tmp_path):
     """Regression test for #2099: /new must zero all token counters."""
     cli = _prepare_cli_with_active_session(tmp_path)

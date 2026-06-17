@@ -113,6 +113,31 @@ def test_list_get_latest_and_summary_helpers_work_with_minimal_payload(tmp_path,
     assert "improvement recommendation:" in summary
 
 
+def test_normalized_validation_results_produces_stable_evidence_shape():
+    normalized = process_intelligence.normalized_validation_results(
+        {
+            "outcome": "success",
+            "validation_results": [
+                {
+                    "check": "provider-routing",
+                    "status": "passed",
+                    "message": "provider route verified",
+                    "verifier": "pytest",
+                    "artifact_refs": ["tests/test_capabilities_cmd.py"],
+                },
+                "fallback outcome text",
+            ],
+        }
+    )
+
+    assert normalized[0]["capability_id"] == "provider-routing"
+    assert normalized[0]["result_class"] == "success"
+    assert normalized[0]["is_verifier_backed"] is True
+    assert normalized[0]["artifact_refs"] == ["tests/test_capabilities_cmd.py"]
+    assert normalized[1]["summary"] == "fallback outcome text"
+    assert normalized[1]["status"] == "success"
+
+
 def test_run_id_path_traversal_is_rejected(tmp_path, monkeypatch):
     monkeypatch.setenv("SHAY_HOME", str(tmp_path / ".shay"))
 

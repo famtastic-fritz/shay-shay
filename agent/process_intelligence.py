@@ -123,6 +123,80 @@ _FAILURE_STATUSES = {"fail", "failed", "error", "errored", "blocked", "unsafe", 
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
+def _result_class_for_status(status: str) -> str:
+    lowered = _normalize_text(status).strip().lower()
+    if lowered in _SUCCESS_STATUSES:
+        return "success"
+    if lowered in _FAILURE_STATUSES:
+        return "failure"
+    return "neutral"
+
+
+def _normalize_artifact_refs(value: Any) -> list[str]:
+    refs: list[str] = []
+    for item in _normalize_list(value):
+        text = _normalize_text(item).strip()
+        if text and text not in refs:
+            refs.append(text)
+    return refs
+
+
+def normalize_validation_result(item: Any, *, fallback_outcome: Any = "unknown") -> dict[str, Any]:
+    if isinstance(item, Mapping):
+        check = _normalize_text(item.get("check") or item.get("id")).strip()
+        status = _normalize_text(item.get("status") or item.get("result") or fallback_outcome or "unknown").strip().lower() or "unknown"
+        summary = _normalize_text(
+            item.get("summary")
+            or item.get("message")
+            or item.get("detail")
+            or item.get("check")
+            or item.get("id")
+            or "validation event"
+        ).strip()
+        evidence_type = _normalize_text(item.get("evidence_type") or item.get("type") or "validation").strip().lower() or "validation"
+        verifier = _normalize_text(item.get("verifier") or item.get("validator") or item.get("tool")).strip()
+        artifact_refs = _normalize_artifact_refs(
+            item.get("artifact_refs") or item.get("artifacts") or item.get("proof_artifacts")
+        )
+        return {
+            "check": check,
+            "id": _normalize_text(item.get("id") or check).strip(),
+            "status": status,
+            "result_class": _result_class_for_status(status),
+            "summary": summary,
+            "message": _normalize_text(item.get("message") or item.get("summary") or summary).strip(),
+            "capability_id": _normalize_text(item.get("capability_id") or check).strip(),
+            "evidence_type": evidence_type,
+            "verifier": verifier,
+            "artifact_refs": artifact_refs,
+            "is_verifier_backed": bool(verifier or artifact_refs),
+        }
+
+    summary = _normalize_text(item).strip() or "validation event"
+    status = _normalize_text(fallback_outcome or "unknown").strip().lower() or "unknown"
+    return {
+        "check": "",
+        "id": "",
+        "status": status,
+        "result_class": _result_class_for_status(status),
+        "summary": summary,
+        "message": summary,
+        "capability_id": "",
+        "evidence_type": "validation",
+        "verifier": "",
+        "artifact_refs": [],
+        "is_verifier_backed": False,
+    }
+
+
+def normalized_validation_results(record: Mapping[str, Any]) -> list[dict[str, Any]]:
+    outcome = record.get("outcome")
+    return [
+        normalize_validation_result(item, fallback_outcome=outcome)
+        for item in _normalize_list(record.get("validation_results"))
+    ]
+
+
 def process_intelligence_home() -> Path:
     return get_shay_home() / PROCESS_INTELLIGENCE_DIRNAME
 
@@ -535,11 +609,9 @@ def _section_lines(items: list[Any], *, fallback: str = "(none)", limit: int = 4
 
 def _successful_validation_items(record: Mapping[str, Any]) -> list[Any]:
     matches: list[Any] = []
-    for item in _normalize_list(record.get("validation_results")):
-        if isinstance(item, Mapping):
-            status = _normalize_text(item.get("status") or item.get("result")).strip().lower()
-            if status in _SUCCESS_STATUSES:
-                matches.append(item)
+    for item in normalized_validation_results(record):
+        if item.get("result_class") == "success":
+            matches.append(item)
     if not matches and _normalize_text(record.get("outcome")).strip().lower() in _SUCCESS_STATUSES:
         matches.append(f"Outcome recorded as {record.get('outcome')}")
     return matches
@@ -547,11 +619,9 @@ def _successful_validation_items(record: Mapping[str, Any]) -> list[Any]:
 
 def _failed_items(record: Mapping[str, Any]) -> list[Any]:
     matches: list[Any] = []
-    for item in _normalize_list(record.get("validation_results")):
-        if isinstance(item, Mapping):
-            status = _normalize_text(item.get("status") or item.get("result")).strip().lower()
-            if status in _FAILURE_STATUSES:
-                matches.append(item)
+    for item in normalized_validation_results(record):
+        if item.get("result_class") == "failure":
+            matches.append(item)
     matches.extend(_normalize_list(record.get("blockers")))
     matches.extend(_normalize_list(record.get("safety_events")))
     return matches

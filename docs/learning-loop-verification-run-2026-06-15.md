@@ -21,9 +21,9 @@ Corrected mission:
 Checklist:
 - [x] Preserve lane boundary and avoid shared blast-radius files
 - [x] Rebuild the checklist around the corrected architecture gap
-- [ ] Finish truth reconstruction across curator, capabilities, intelligence, process ledger, research capture, and memory surfaces
-- [ ] Define canonical source-of-truth rules and reality classes
-- [ ] Define model-optimized research/build swarm lanes with telemetry requirements
+- [x] Finish truth reconstruction across curator, capabilities, intelligence, process ledger, research capture, and memory surfaces
+- [x] Define canonical source-of-truth rules and reality classes
+- [x] Define model-optimized research/build swarm lanes with telemetry requirements
 - [ ] Implement the first grounded enforcement slice for capability-matrix checking and proof-aware learning-loop behavior
 - [ ] Run verification and capture durable proof artifacts
 - [ ] Update docs/report surfaces and leave the branch ready for commit
@@ -35,6 +35,7 @@ Current truth:
 4. The intelligence layer should become an assembled view/orchestration surface, not pretend to be the source of truth.
 5. Capability records need explicit separation between intended state and observed/proven state.
 6. Capability updates written to the shared Obsidian/basic-memory truth surface can become visible to future sessions if the process is enforced consistently.
+7. A sibling control-plane repair in `~/famtastic` proved that direct parent verification beats child self-reporting: after backfilling task rows and closeout packets, `node scripts/plans/audit.js` was the real proof surface for zero drift, not the delegate-wave summaries.
 
 Observation log:
 1. Canonical Shay repo exists at `/Users/famtasticfritz/famtastic/shay-shay`.
@@ -50,9 +51,13 @@ Interpretation log:
 2. The key miss to prevent is treating seeded policy/status as if it were runtime proof.
 3. The first implementation slice should enforce checking/updating capability truth rather than trying to build the whole empire at once.
 4. Any future swarm needs per-lane model/provider telemetry and minimal context packets so we can learn from each run instead of narrating after the fact.
+5. The control plane needs an explicit difference between “active but between task waves” and “active with live executable tasks,” otherwise zero-task actives keep looking healthy by narrative instead of proof.
 
 Proof surfaces to fill:
 - Repo artifact: this file
+- Source-of-truth doctrine: `docs/shay-source-of-truth-rules-2026-06-17.md`
+- Swarm preflight packet: `docs/shay-swarm-preflight-packet-2026-06-17.md`
+- Truth reconstruction artifact: `/Users/famtasticfritz/famtastic/obsidian/Shay-Memory/research/2026-06-17-shay-truth-reconstruction.md`
 - Config/runtime truth: `~/.shay/config.yaml`
 - Capability truth code: `shay_cli/capabilities_cmd.py`
 - Intelligence layer code: `shay_cli/intelligence_cmd.py`
@@ -60,6 +65,10 @@ Proof surfaces to fill:
 - Curator worker: `agent/curator.py`
 - Shared capability matrix note: `/Users/famtasticfritz/famtastic/obsidian/01-Shay-Platform/Agent-Capability-Matrix.md`
 - Research artifact protocol: `docs/research-artifact-capture-protocol.md`
+- Flat-file control-plane audit proof: `/Users/famtasticfritz/famtastic/scripts/plans/audit.js`
+
+Current closeout note:
+- A narrow subagent pressure test during this run produced two unusable child summaries and one weak external scan. That negative result strengthened the doctrine instead of weakening it: child outputs are evidence candidates only, and the parent lane remains the sole closure authority.
 
 Resume sentence:
 Reopen `/Users/famtasticfritz/famtastic/shay-shay/docs/learning-loop-verification-run-2026-06-15.md`, continue from the first unchecked checklist item, and do not claim closure until capability truth, proof surfaces, and update gates are wired tightly enough to survive the next session without guesswork.

@@ -697,6 +697,165 @@ def _hyperswarm_doctrine_capability(inventory: Mapping[str, Any]) -> CapabilityR
     )
 
 
+def _normalize_observed_capability_id(value: Any) -> str:
+    candidate = _text(value)
+    if not candidate:
+        return ""
+    return _normalized_capability_lookup(candidate)
+
+
+def _evaluate_promotion_signal(
+    *,
+    observed_successes: int,
+    observed_failures: int,
+    verifier_backed_successes: int,
+    supporting_run_ids: set[str],
+) -> tuple[str, str, str]:
+    run_count = len({run_id for run_id in supporting_run_ids if run_id})
+    if observed_failures > 0 and observed_successes == 0:
+        return (
+            "partial",
+            "fix-failures-before-promotion",
+            "Failure-only evidence exists; repair the capability before any promotion decision.",
+        )
+    if observed_failures > 0:
+        return (
+            "partial",
+            "mixed-evidence-review-required",
+            "Mixed success/failure evidence exists; keep this partial until the failures are explained or cleared.",
+        )
+    if observed_successes >= 2 and verifier_backed_successes >= 1 and run_count >= 2:
+        return (
+            "proven_live",
+            "eligible-for-curated-promotion",
+            "Verifier-backed success evidence exists across multiple runs; this is eligible for curated promotion to proven_live.",
+        )
+    if observed_successes > 0:
+        return (
+            "implemented_unverified",
+            "collect-more-verifier-proof",
+            "Observed success exists, but promotion still needs verifier-backed proof across repeated runs.",
+        )
+    return (
+        "implemented_unverified",
+        "no-observed-proof",
+        "No observed proof is recorded yet.",
+    )
+
+
+def _capability_observation_overlay(limit: int = 50) -> dict[str, dict[str, Any]]:
+    try:
+        from agent.process_intelligence import list_run_records, normalized_validation_results
+    except Exception:
+        return {}
+
+    overlays: dict[str, dict[str, Any]] = {}
+    try:
+        records = list_run_records(limit=limit)
+    except Exception:
+        return overlays
+
+    for record in records:
+        if not isinstance(record, Mapping):
+            continue
+        run_id = _text(record.get("run_id"))
+        ended_at = _text(record.get("ended_at") or record.get("started_at"))
+        outcome = _text(record.get("outcome")) or "unknown"
+        lane = _text(record.get("lane"))
+        task_name = _text(record.get("task_name"))
+        for item in normalized_validation_results(record):
+            capability_id = _normalize_observed_capability_id(
+                item.get("capability_id") or item.get("check") or item.get("id")
+            )
+            if not capability_id:
+                continue
+            status = _text(item.get("status") or item.get("result")).lower()
+            if not status:
+                continue
+            overlay = overlays.setdefault(
+                capability_id,
+                {
+                    "observed_successes": 0,
+                    "observed_failures": 0,
+                    "last_observed_at": "",
+                    "last_run_id": "",
+                    "last_outcome": "",
+                    "last_lane": "",
+                    "last_task_name": "",
+                    "last_summary": "",
+                    "verifier_backed_successes": 0,
+                    "supporting_run_ids": [],
+                    "suggested_reality_class": "implemented_unverified",
+                    "promotion_policy": "no-observed-proof",
+                    "promotion_summary": "No observed proof is recorded yet.",
+                },
+            )
+            result_class = _text(item.get("result_class")).lower()
+            if result_class == "success":
+                overlay["observed_successes"] += 1
+                if item.get("is_verifier_backed"):
+                    overlay["verifier_backed_successes"] += 1
+            elif result_class == "failure":
+                overlay["observed_failures"] += 1
+            else:
+                continue
+            if run_id and run_id not in overlay["supporting_run_ids"]:
+                overlay["supporting_run_ids"].append(run_id)
+            overlay["last_summary"] = _text(
+                item.get("summary") or item.get("message") or item.get("check") or capability_id
+            )
+            overlay["last_observed_at"] = ended_at
+            overlay["last_run_id"] = run_id
+            overlay["last_outcome"] = outcome
+            overlay["last_lane"] = lane
+            overlay["last_task_name"] = task_name
+            (
+                overlay["suggested_reality_class"],
+                overlay["promotion_policy"],
+                overlay["promotion_summary"],
+            ) = _evaluate_promotion_signal(
+                observed_successes=int(overlay.get("observed_successes") or 0),
+                observed_failures=int(overlay.get("observed_failures") or 0),
+                verifier_backed_successes=int(overlay.get("verifier_backed_successes") or 0),
+                supporting_run_ids=set(overlay.get("supporting_run_ids") or []),
+            )
+    return overlays
+
+
+def _apply_capability_observation_overlay(
+    registry: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    overlays = _capability_observation_overlay()
+    if not overlays:
+        return registry
+
+    for capability_id, observed in overlays.items():
+        current = registry.get(capability_id)
+        if current is None:
+            continue
+        updated = dict(current)
+        details = dict(updated.get("details") or {})
+        details["observation_overlay"] = observed
+        updated["details"] = details
+
+        warnings = list(updated.get("warnings") or [])
+        successes = int(observed.get("observed_successes") or 0)
+        failures = int(observed.get("observed_failures") or 0)
+        if successes:
+            note = f"Observed proof exists in process-intelligence ledger ({successes} success event(s)); {observed.get('promotion_summary', 'promotion review still required.')}"
+            if note not in warnings:
+                warnings.append(note)
+        if failures:
+            note = (
+                f"Recent ledger evidence also contains {failures} failure event(s); do not overclaim this capability from a single success."
+            )
+            if note not in warnings:
+                warnings.append(note)
+        updated["warnings"] = warnings
+        registry[capability_id] = updated
+    return registry
+
+
 # ---------------------------------------------------------------------------
 # Registry assembly
 # ---------------------------------------------------------------------------
@@ -779,7 +938,8 @@ def collect_capabilities() -> dict[str, dict[str, Any]]:
             hyperswarm,
         ]
     }
-    return _merge_intelligence_capability_matrix(registry)
+    registry = _merge_intelligence_capability_matrix(registry)
+    return _apply_capability_observation_overlay(registry)
 
 
 # ---------------------------------------------------------------------------
@@ -1106,14 +1266,27 @@ def format_capability_list(registry: Mapping[str, Mapping[str, Any]]) -> str:
     rows = _ordered_capabilities(registry)
     lines = ["Capability Truth Layer", ""]
     for row in rows:
-        lines.append(f"- {row['id']} [{row['status']}] {row['summary']}")
+        observation = (row.get("details") or {}).get("observation_overlay") or {}
+        suffix = ""
+        if observation.get("observed_successes"):
+            suffix = f" | observed-proof={observation.get('observed_successes')}"
+        lines.append(f"- {row['id']} [{row['status']}] {row['summary']}{suffix}")
     return "\n".join(lines)
 
 
 def format_capability_show(capability: Mapping[str, Any]) -> str:
+    observation = (capability.get("details") or {}).get("observation_overlay") or {}
     lines = [
         f"{capability['id']} [{capability['status']}]",
         capability.get("summary", ""),
+        (
+            "Observed proof: "
+            + (
+                f"{observation.get('observed_successes', 0)} success / {observation.get('observed_failures', 0)} failure event(s); suggested reality class={observation.get('suggested_reality_class', 'n/a')}; promotion policy={observation.get('promotion_policy', 'n/a')}"
+                if observation
+                else "none recorded"
+            )
+        ),
         "",
         "Details:",
         json.dumps(capability.get("details", {}), indent=2, sort_keys=True),

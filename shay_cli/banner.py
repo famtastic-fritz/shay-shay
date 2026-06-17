@@ -113,16 +113,8 @@ def _git_branch(cwd: str) -> str | None:
 
 
 def _time_of_day_greeting() -> str:
-    """Return a short startup greeting."""
-    hour = time.localtime().tm_hour
     user = os.environ.get("SHAY_USER_NICKNAME") or os.environ.get("USER") or getpass.getuser() or "there"
-    if hour < 12:
-        prefix = "Good morning"
-    elif hour < 18:
-        prefix = "Good afternoon"
-    else:
-        prefix = "Good evening"
-    return f"{prefix}, {user}."
+    return f"Map Bole, {user}. Let’s move."
 
 
 def _summarize_local_mailbox() -> dict | None:
@@ -561,7 +553,7 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
     total_skills = sum(len(s) for s in skills_by_category.values())
     toolset_count = len(enabled_toolsets) if enabled_toolsets else 0
 
-    right_lines = [f"[bold {accent}]Command Center[/]"]
+    right_lines = [f"[bold {accent}]Mission Control[/]"]
     right_lines.append(f"[{text}]Tools[/] [dim {dim}]→[/] [{accent}]{len(tools)}[/]")
     right_lines.append(f"[{text}]Toolsets[/] [dim {dim}]→[/] [{accent}]{toolset_count}[/]")
     right_lines.append(f"[{text}]Skills[/] [dim {dim}]→[/] [{accent}]{total_skills}[/]")
@@ -576,15 +568,15 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
 
     attention_items = _build_attention_items()
     right_lines.append("")
-    right_lines.append(f"[bold {accent}]Attention Queue[/]")
+    right_lines.append(f"[bold {accent}]Live Signal[/]")
     if attention_items:
         for item in attention_items:
             right_lines.append(f"[{text}]•[/] [{text}]{item}[/]")
     else:
-        right_lines.append(f"[dim {dim}]No local startup alerts.[/]")
+        right_lines.append(f"[dim {dim}]No live startup signal.[/]")
 
     right_lines.append("")
-    right_lines.append(f"[bold {accent}]Quick Actions[/]")
+    right_lines.append(f"[bold {accent}]Launch Commands[/]")
     right_lines.append(f"[dim {dim}]{'  '.join(_build_quick_actions())}[/]")
 
     try:

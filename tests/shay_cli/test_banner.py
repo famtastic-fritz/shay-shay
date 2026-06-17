@@ -133,3 +133,30 @@ def test_build_welcome_banner_title_falls_back_when_no_tag():
     raw = buf.getvalue()
     assert "Shay-Shay v" in raw, "Version label missing from title"
     assert "\x1b]8;" not in raw, "OSC-8 hyperlink should not be emitted without a tag"
+
+
+def test_build_welcome_banner_uses_mission_control_copy_not_generic_command_center():
+    with (
+        patch.object(banner, "get_available_skills", return_value={}),
+        patch.object(banner, "get_update_result", return_value=None),
+        patch.object(banner, "get_latest_release_tag", return_value=None),
+    ):
+        console = Console(record=True, force_terminal=False, color_system=None, width=160)
+        banner.build_welcome_banner(
+            console=console,
+            model="anthropic/test-model",
+            cwd="/tmp/project",
+            tools=[{"function": {"name": "read_file"}}],
+            enabled_toolsets=["file"],
+            session_id="session-123",
+        )
+
+    output = console.export_text()
+    assert "Mission Control" in output
+    assert "Live Signal" in output
+    assert "Launch Commands" in output
+    assert "Map Bole, " in output
+    assert "Let’s move." in output
+    assert "Command Center" not in output
+    assert "Attention Queue" not in output
+    assert "Quick Actions" not in output

@@ -6,7 +6,9 @@ from shay_cli.capabilities_cmd import (
     build_decision,
     build_gate_report,
     cmd_capabilities,
+    collect_capabilities,
     format_capability_list,
+    format_capability_show,
 )
 
 
@@ -167,6 +169,281 @@ def test_format_capability_list_includes_core_registry_rows():
     assert "Capability Truth Layer" in output
     assert "provider-routing [ready]" in output
     assert "hyperswarm-doctrine [unsafe]" in output
+
+
+def test_format_capability_show_includes_observed_proof_line():
+    capability = _sample_registry()["provider-routing"]
+    capability["details"] = {
+        **capability["details"],
+        "observation_overlay": {
+            "observed_successes": 2,
+            "observed_failures": 1,
+            "suggested_reality_class": "implemented_unverified",
+            "promotion_policy": "mixed-evidence-review-required",
+        },
+    }
+
+    output = format_capability_show(capability)
+
+    assert "Observed proof: 2 success / 1 failure event(s)" in output
+    assert "suggested reality class=implemented_unverified" in output
+    assert "promotion policy=mixed-evidence-review-required" in output
+
+
+def test_collect_capabilities_applies_process_intelligence_observation_overlay(monkeypatch):
+    monkeypatch.setattr("shay_cli.capabilities_cmd._safe_load_config", lambda: {})
+    monkeypatch.setattr("shay_cli.capabilities_cmd._skill_inventory", lambda: {"enabled": []})
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._provider_routing_capability",
+        lambda config: type("Record", (), {"id": "provider-routing", "to_dict": lambda self: _sample_registry()["provider-routing"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._toolset_resolution_capability",
+        lambda config: type("Record", (), {"id": "toolset-resolution", "to_dict": lambda self: _sample_registry()["toolset-resolution"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._gateway_runtime_capability",
+        lambda: type("Record", (), {"id": "gateway-runtime", "to_dict": lambda self: _sample_registry()["gateway-runtime"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._mcp_substrate_capability",
+        lambda config: type("Record", (), {
+            "id": "mcp-substrate",
+            "details": {"enabled_servers": []},
+            "to_dict": lambda self: _sample_registry()["mcp-substrate"],
+        })(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._skill_plugin_inventory_capability",
+        lambda inventory: type("Record", (), {"id": "skill/plugin-inventory", "to_dict": lambda self: _sample_registry()["skill/plugin-inventory"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._memory_provenance_capability",
+        lambda enabled: type("Record", (), {"id": "memory/provenance-substrate", "to_dict": lambda self: _sample_registry()["memory/provenance-substrate"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._process_intelligence_capability",
+        lambda: type("Record", (), {"id": "process-intelligence-substrate", "to_dict": lambda self: _sample_registry()["process-intelligence-substrate"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._local_model_lane_capability",
+        lambda config, provider: type("Record", (), {"id": "local-model-lane", "to_dict": lambda self: _sample_registry()["local-model-lane"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._fallback_chain_capability",
+        lambda config: type("Record", (), {"id": "fallback-chain", "to_dict": lambda self: _sample_registry()["fallback-chain"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._hyperswarm_doctrine_capability",
+        lambda inventory: type("Record", (), {"id": "hyperswarm-doctrine", "to_dict": lambda self: _sample_registry()["hyperswarm-doctrine"]})(),
+    )
+    monkeypatch.setattr("shay_cli.capabilities_cmd._merge_intelligence_capability_matrix", lambda registry: registry)
+    monkeypatch.setattr(
+        "agent.process_intelligence.list_run_records",
+        lambda limit=50: [
+            {
+                "run_id": "run-1",
+                "ended_at": "2026-06-17T12:00:00Z",
+                "outcome": "success",
+                "lane": "capability-truth-layer",
+                "task_name": "verify provider routing",
+                "validation_results": [
+                    {
+                        "check": "provider-routing",
+                        "status": "passed",
+                        "summary": "provider route verified",
+                        "verifier": "pytest",
+                    }
+                ],
+            }
+        ],
+    )
+
+    registry = collect_capabilities()
+
+    observed = registry["provider-routing"]["details"]["observation_overlay"]
+    assert observed["observed_successes"] == 1
+    assert observed["last_run_id"] == "run-1"
+    assert observed["verifier_backed_successes"] == 1
+    assert observed["promotion_policy"] == "collect-more-verifier-proof"
+    assert any(
+        "promotion still needs verifier-backed proof across repeated runs" in warning
+        for warning in registry["provider-routing"]["warnings"]
+    )
+
+
+def test_collect_capabilities_marks_multi_run_verifier_backed_success_as_promotion_eligible(monkeypatch):
+    monkeypatch.setattr("shay_cli.capabilities_cmd._safe_load_config", lambda: {})
+    monkeypatch.setattr("shay_cli.capabilities_cmd._skill_inventory", lambda: {"enabled": []})
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._provider_routing_capability",
+        lambda config: type("Record", (), {"id": "provider-routing", "to_dict": lambda self: _sample_registry()["provider-routing"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._toolset_resolution_capability",
+        lambda config: type("Record", (), {"id": "toolset-resolution", "to_dict": lambda self: _sample_registry()["toolset-resolution"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._gateway_runtime_capability",
+        lambda: type("Record", (), {"id": "gateway-runtime", "to_dict": lambda self: _sample_registry()["gateway-runtime"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._mcp_substrate_capability",
+        lambda config: type("Record", (), {
+            "id": "mcp-substrate",
+            "details": {"enabled_servers": []},
+            "to_dict": lambda self: _sample_registry()["mcp-substrate"],
+        })(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._skill_plugin_inventory_capability",
+        lambda inventory: type("Record", (), {"id": "skill/plugin-inventory", "to_dict": lambda self: _sample_registry()["skill/plugin-inventory"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._memory_provenance_capability",
+        lambda enabled: type("Record", (), {"id": "memory/provenance-substrate", "to_dict": lambda self: _sample_registry()["memory/provenance-substrate"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._process_intelligence_capability",
+        lambda: type("Record", (), {"id": "process-intelligence-substrate", "to_dict": lambda self: _sample_registry()["process-intelligence-substrate"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._local_model_lane_capability",
+        lambda config, provider: type("Record", (), {"id": "local-model-lane", "to_dict": lambda self: _sample_registry()["local-model-lane"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._fallback_chain_capability",
+        lambda config: type("Record", (), {"id": "fallback-chain", "to_dict": lambda self: _sample_registry()["fallback-chain"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._hyperswarm_doctrine_capability",
+        lambda inventory: type("Record", (), {"id": "hyperswarm-doctrine", "to_dict": lambda self: _sample_registry()["hyperswarm-doctrine"]})(),
+    )
+    monkeypatch.setattr("shay_cli.capabilities_cmd._merge_intelligence_capability_matrix", lambda registry: registry)
+    monkeypatch.setattr(
+        "agent.process_intelligence.list_run_records",
+        lambda limit=50: [
+            {
+                "run_id": "run-2",
+                "ended_at": "2026-06-17T12:05:00Z",
+                "outcome": "success",
+                "lane": "capability-truth-layer",
+                "task_name": "verify provider routing again",
+                "validation_results": [
+                    {
+                        "check": "provider-routing",
+                        "status": "passed",
+                        "summary": "provider route verified again",
+                        "verifier": "pytest",
+                    }
+                ],
+            },
+            {
+                "run_id": "run-1",
+                "ended_at": "2026-06-17T12:00:00Z",
+                "outcome": "success",
+                "lane": "capability-truth-layer",
+                "task_name": "verify provider routing",
+                "validation_results": [
+                    {
+                        "check": "provider-routing",
+                        "status": "passed",
+                        "summary": "provider route verified",
+                        "verifier": "pytest",
+                    }
+                ],
+            },
+        ],
+    )
+
+    registry = collect_capabilities()
+
+    observed = registry["provider-routing"]["details"]["observation_overlay"]
+    assert observed["observed_successes"] == 2
+    assert observed["verifier_backed_successes"] == 2
+    assert observed["suggested_reality_class"] == "proven_live"
+    assert observed["promotion_policy"] == "eligible-for-curated-promotion"
+
+
+def test_collect_capabilities_marks_mixed_evidence_as_partial(monkeypatch):
+    monkeypatch.setattr("shay_cli.capabilities_cmd._safe_load_config", lambda: {})
+    monkeypatch.setattr("shay_cli.capabilities_cmd._skill_inventory", lambda: {"enabled": []})
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._provider_routing_capability",
+        lambda config: type("Record", (), {"id": "provider-routing", "to_dict": lambda self: _sample_registry()["provider-routing"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._toolset_resolution_capability",
+        lambda config: type("Record", (), {"id": "toolset-resolution", "to_dict": lambda self: _sample_registry()["toolset-resolution"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._gateway_runtime_capability",
+        lambda: type("Record", (), {"id": "gateway-runtime", "to_dict": lambda self: _sample_registry()["gateway-runtime"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._mcp_substrate_capability",
+        lambda config: type("Record", (), {
+            "id": "mcp-substrate",
+            "details": {"enabled_servers": []},
+            "to_dict": lambda self: _sample_registry()["mcp-substrate"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._skill_plugin_inventory_capability",
+        lambda inventory: type("Record", (), {"id": "skill/plugin-inventory", "to_dict": lambda self: _sample_registry()["skill/plugin-inventory"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._memory_provenance_capability",
+        lambda enabled: type("Record", (), {"id": "memory/provenance-substrate", "to_dict": lambda self: _sample_registry()["memory/provenance-substrate"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._process_intelligence_capability",
+        lambda: type("Record", (), {"id": "process-intelligence-substrate", "to_dict": lambda self: _sample_registry()["process-intelligence-substrate"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._local_model_lane_capability",
+        lambda config, provider: type("Record", (), {"id": "local-model-lane", "to_dict": lambda self: _sample_registry()["local-model-lane"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._fallback_chain_capability",
+        lambda config: type("Record", (), {"id": "fallback-chain", "to_dict": lambda self: _sample_registry()["fallback-chain"]})(),
+    )
+    monkeypatch.setattr(
+        "shay_cli.capabilities_cmd._hyperswarm_doctrine_capability",
+        lambda inventory: type("Record", (), {"id": "hyperswarm-doctrine", "to_dict": lambda self: _sample_registry()["hyperswarm-doctrine"]})(),
+    )
+    monkeypatch.setattr("shay_cli.capabilities_cmd._merge_intelligence_capability_matrix", lambda registry: registry)
+    monkeypatch.setattr(
+        "agent.process_intelligence.list_run_records",
+        lambda limit=50: [
+            {
+                "run_id": "run-1",
+                "ended_at": "2026-06-17T12:00:00Z",
+                "outcome": "success",
+                "lane": "capability-truth-layer",
+                "task_name": "verify provider routing",
+                "validation_results": [
+                    {
+                        "check": "provider-routing",
+                        "status": "passed",
+                        "summary": "provider route verified",
+                        "verifier": "pytest",
+                    },
+                    {
+                        "check": "provider-routing",
+                        "status": "failed",
+                        "summary": "fallback route failed under load",
+                        "verifier": "pytest",
+                    },
+                ],
+            }
+        ],
+    )
+
+    registry = collect_capabilities()
+
+    observed = registry["provider-routing"]["details"]["observation_overlay"]
+    assert observed["suggested_reality_class"] == "partial"
+    assert observed["promotion_policy"] == "mixed-evidence-review-required"
 
 
 def test_decide_github_to_obsidian_uses_memory_and_skills():
