@@ -5,6 +5,7 @@ from pathlib import Path
 
 from identity_guard import (
     IDENTITY_SPECS,
+    _identity_guard_mode,
     ensure_identity_snapshot,
     load_manifest,
     lock_identity_backups,
@@ -44,6 +45,7 @@ def _status_payload() -> dict:
         )
     return {
         "ok": audit.ok,
+        "mode": _identity_guard_mode(),
         "shay_home": audit.shay_home,
         "manifest_path": audit.manifest_path,
         "emergency_dir": audit.emergency_dir,
@@ -54,7 +56,12 @@ def _status_payload() -> dict:
 
 
 def _print_status(payload: dict) -> None:
-    print(f"Identity status: {'OK' if payload['ok'] else 'DRIFT'}")
+    if payload["ok"] and payload["findings"]:
+        status = "WARN"
+    else:
+        status = "OK" if payload["ok"] else "DRIFT"
+    print(f"Identity status: {status}")
+    print(f"Mode: {payload['mode']}")
     print(f"SHAY_HOME: {payload['shay_home']}")
     print(f"Manifest: {payload['manifest_path']}")
     print(f"Emergency dir: {payload['emergency_dir']}")

@@ -82,7 +82,28 @@ def test_identity_status_command_reports_ok(shay_home, capsys, monkeypatch):
 
     assert rc == 0
     assert "Identity status: OK" in out
+    assert "Mode: normal" in out
     assert "PERSONA.md" in out
+
+
+def test_identity_status_command_reports_warn_for_warning_only_drift(shay_home, capsys, monkeypatch):
+    ensure_identity_snapshot(reason="baseline")
+    monkeypatch.setattr("identity_guard.sys.platform", "linux")
+    (shay_home / "memories" / "USER.md").write_text(
+        "nothing supersedes Fritz or his direct directives\n",
+        encoding="utf-8",
+    )
+
+    class Args:
+        identity_command = "status"
+        json = False
+
+    rc = cmd_identity(Args())
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "Identity status: WARN" in out
+    assert "missing_recommended_snippets" in out
 
 
 def test_identity_snapshot_command_prints_version(shay_home, capsys, monkeypatch):

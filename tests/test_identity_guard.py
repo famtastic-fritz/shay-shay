@@ -56,6 +56,20 @@ def test_verify_detects_required_line_drift(shay_home):
     assert any(f.code == "missing_required_snippets" for f in result.findings)
 
 
+def test_verify_treats_missing_user_behavior_line_as_warning(shay_home):
+    ensure_identity_snapshot(reason="baseline")
+    (shay_home / "memories" / "USER.md").write_text(
+        "nothing supersedes Fritz or his direct directives\n",
+        encoding="utf-8",
+    )
+
+    result = verify_identity_files()
+
+    assert result.ok is True
+    assert any(f.code == "missing_recommended_snippets" for f in result.findings)
+    assert not any(f.severity == "critical" for f in result.findings)
+
+
 def test_restore_from_emergency_restores_missing_file(shay_home):
     ensure_identity_snapshot(reason="baseline")
     (shay_home / "PERSONA.md").unlink()
@@ -91,10 +105,7 @@ def test_startup_check_bootstraps_manifest_when_missing(shay_home):
 
 def test_startup_check_suppresses_duplicate_incident_spam(shay_home, monkeypatch):
     ensure_identity_snapshot(reason="baseline")
-    (shay_home / "memories" / "USER.md").write_text(
-        "nothing supersedes Fritz or his direct directives\n",
-        encoding="utf-8",
-    )
+    (shay_home / "SOUL.md").write_text("Learn Fritz\n", encoding="utf-8")
     monkeypatch.setenv("SHAY_IDENTITY_GUARD_DEDUP_SECONDS", "21600")
 
     first = startup_identity_check(send_alert=False, auto_restore_missing=True)
@@ -112,25 +123,46 @@ def test_startup_check_suppresses_duplicate_incident_spam(shay_home, monkeypatch
     assert len(second_incidents) == 1
 
 
-def test_startup_check_writes_new_incident_after_cooldown(shay_home, monkeypatch):
+def test_startup_check_normal_mode_suppresses_warning_only_noise(shay_home, monkeypatch):
     ensure_identity_snapshot(reason="baseline")
     (shay_home / "memories" / "USER.md").write_text(
         "nothing supersedes Fritz or his direct directives\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("SHAY_IDENTITY_GUARD_DEDUP_SECONDS", "1")
+    monkeypatch.delenv("SHAY_IDENTITY_GUARD_MODE", raising=False)
 
-    first = startup_identity_check(send_alert=False, auto_restore_missing=True)
+    result = startup_identity_check(send_alert=False, auto_restore_missing=True)
     incident_dir = shay_home / "private" / "identity-guard" / "incidents"
-    first_incidents = sorted(incident_dir.glob("identity-incident-*.json"))
-    time.sleep(1.1)
 
-    second = startup_identity_check(send_alert=False, auto_restore_missing=True)
-    second_incidents = sorted(incident_dir.glob("identity-incident-*.json"))
+    assert result.ok is True
+    assert result.incident_path is None
+    assert not sorted(incident_dir.glob("identity-incident-*.json"))
 
-    assert first.ok is False
-    assert first.incident_path is not None
-    assert second.ok is False
-    assert second.incident_path is not None
-    assert len(first_incidents) == 1
-    assert len(second_incidents) == 2
+
+def test_startup_check_paranoid_mode_surfaces_warning_only_drift(shay_home, monkeypatch):
+    ensure_identity_snapshot(reason="baseline")
+    (shay_home / "memories" / "USER.md").write_text(
+        "nothing supersedes Fritz or his direct directives\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SHAY_IDENTITY_GUARD_MODE", "paranoid")
+
+    result = startup_identity_check(send_alert=False, auto_restore_missing=True)
+    incident_dir = shay_home / "private" / "identity-guard" / "incidents"
+
+    assert result.ok is True
+    assert result.incident_path is not None
+    assert sorted(incident_dir.glob("identity-incident-*.json"))
+
+
+def test_startup_check_quiet_mode_suppresses_critical_noise(shay_home, monkeypatch):
+    ensure_identity_snapshot(reason="baseline")
+    (shay_home / "SOUL.md").write_text("Learn Fritz\n", encoding="utf-8")
+    monkeypatch.setenv("SHAY_IDENTITY_GUARD_MODE", "quiet")
+
+    result = startup_identity_check(send_alert=False, auto_restore_missing=True)
+    incident_dir = shay_home / "private" / "identity-guard" / "incidents"
+
+    assert result.ok is False
+    assert result.incident_path is None
+    assert not sorted(incident_dir.glob("identity-incident-*.json"))

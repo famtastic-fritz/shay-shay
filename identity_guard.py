@@ -28,6 +28,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import yaml
+
 from shay_constants import get_default_shay_root, get_shay_home
 
 
@@ -35,20 +37,30 @@ IDENTITY_GUARD_VERSION = 1
 IDENTITY_MANIFEST_VERSION = 1
 DEFAULT_INCIDENT_DEDUP_COOLDOWN_SECONDS = 6 * 60 * 60
 
-_REQUIRED_SNIPPETS: dict[str, tuple[str, ...]] = {
-    "SOUL.md": (
-        "Nothing supersedes Fritz.",
-        "Fritz's direct message / directive right now",
-        "Learn Fritz",
-    ),
-    "PERSONA.md": (
-        "Nothing supersedes Fritz.",
-        "Fritz's direct intent outranks everything.",
-    ),
-    "memories/USER.md": (
-        "nothing supersedes Fritz or his direct directives",
-        "dynamic ultra-brief responses",
-    ),
+_REQUIRED_SNIPPETS: dict[str, dict[str, tuple[str, ...]]] = {
+    "SOUL.md": {
+        "critical": (
+            "Nothing supersedes Fritz.",
+            "Fritz's direct message / directive right now",
+            "Learn Fritz",
+        ),
+        "warning": (),
+    },
+    "PERSONA.md": {
+        "critical": (
+            "Nothing supersedes Fritz.",
+            "Fritz's direct intent outranks everything.",
+        ),
+        "warning": (),
+    },
+    "memories/USER.md": {
+        "critical": (
+            "nothing supersedes Fritz or his direct directives",
+        ),
+        "warning": (
+            "dynamic ultra-brief responses",
+        ),
+    },
 }
 
 
@@ -59,7 +71,18 @@ class IdentityFileSpec:
 
     @property
     def required_snippets(self) -> tuple[str, ...]:
-        return _REQUIRED_SNIPPETS.get(self.relative_path, ())
+        buckets = _REQUIRED_SNIPPETS.get(self.relative_path, {})
+        return tuple(buckets.get("critical", ())) + tuple(buckets.get("warning", ()))
+
+    @property
+    def critical_snippets(self) -> tuple[str, ...]:
+        buckets = _REQUIRED_SNIPPETS.get(self.relative_path, {})
+        return tuple(buckets.get("critical", ()))
+
+    @property
+    def warning_snippets(self) -> tuple[str, ...]:
+        buckets = _REQUIRED_SNIPPETS.get(self.relative_path, {})
+        return tuple(buckets.get("warning", ()))
 
 
 IDENTITY_SPECS: tuple[IdentityFileSpec, ...] = (
@@ -155,6 +178,26 @@ def _incident_dedup_cooldown_seconds() -> int:
         return max(0, int(raw))
     except ValueError:
         return DEFAULT_INCIDENT_DEDUP_COOLDOWN_SECONDS
+
+
+def _identity_guard_mode() -> str:
+    env_value = os.environ.get("SHAY_IDENTITY_GUARD_MODE", "").strip().lower()
+    if env_value in {"quiet", "normal", "paranoid"}:
+        return env_value
+
+    config_path = _home() / "config.yaml"
+    if config_path.exists():
+        try:
+            cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            cfg = {}
+        if isinstance(cfg, dict):
+            identity_cfg = cfg.get("identity_guard")
+            if isinstance(identity_cfg, dict):
+                mode = str(identity_cfg.get("mode", "")).strip().lower()
+                if mode in {"quiet", "normal", "paranoid"}:
+                    return mode
+    return "normal"
 
 
 def _current_version_path() -> Path:
@@ -310,15 +353,27 @@ def _findings_for_spec(spec: IdentityFileSpec, manifest_files: dict[str, Any]) -
         )
         return findings
 
-    missing = [snippet for snippet in spec.required_snippets if snippet not in content]
-    if missing:
+    critical_missing = [snippet for snippet in spec.critical_snippets if snippet not in content]
+    if critical_missing:
         findings.append(
             IdentityFinding(
                 severity="critical",
                 code="missing_required_snippets",
                 path=str(actual),
                 message=f"Identity file drifted: required authority lines missing in {spec.relative_path}",
-                missing_snippets=missing,
+                missing_snippets=critical_missing,
+            )
+        )
+
+    warning_missing = [snippet for snippet in spec.warning_snippets if snippet not in content]
+    if warning_missing:
+        findings.append(
+            IdentityFinding(
+                severity="warning",
+                code="missing_recommended_snippets",
+                path=str(actual),
+                message=f"Identity file drifted: recommended behavior lines missing in {spec.relative_path}",
+                missing_snippets=warning_missing,
             )
         )
 
@@ -530,8 +585,9 @@ def _write_incident(result: IdentityAuditResult, restored: list[str]) -> Identit
 
 
 def _stderr_alert(result: IdentityAuditResult, restored: list[str]) -> None:
+    highest = "CRITICAL" if any(f.severity == "critical" for f in result.findings) else "WARNING"
     lines = [
-        "[shay identity guard] CRITICAL identity drift detected.",
+        f"[shay identity guard] {highest} identity drift detected.",
         f"SHAY_HOME: {result.shay_home}",
     ]
     for finding in result.findings:
@@ -611,8 +667,9 @@ def startup_identity_check(*, send_alert: bool = True, auto_restore_missing: boo
 
     Drift path:
     - auto-restore missing files from emergency backup when possible
-    - write incident + recovery interview
-    - alert via stderr and optional home-channel send
+    - normal mode: alert/log only on critical findings or auto-restores
+    - paranoid mode: alert/log on warnings too
+    - quiet mode: skip startup alert noise entirely unless the caller inspects status
     """
     _identity_guard_dir().mkdir(parents=True, exist_ok=True)
     _incident_dir().mkdir(parents=True, exist_ok=True)
@@ -626,13 +683,29 @@ def startup_identity_check(*, send_alert: bool = True, auto_restore_missing: boo
 
     restored = auto_restore_missing_files() if auto_restore_missing else []
     result = verify_identity_files()
+    mode = _identity_guard_mode()
+    has_critical = any(f.severity == "critical" for f in result.findings)
+    has_findings = bool(result.findings)
 
-    if result.ok and not restored:
+    if result.ok and not result.findings and not restored:
         ensure_identity_snapshot(reason="startup-ok")
         return result
 
     if restored:
         result = verify_identity_files()
+        has_critical = any(f.severity == "critical" for f in result.findings)
+        has_findings = bool(result.findings)
+
+    should_surface = False
+    if mode == "paranoid":
+        should_surface = has_findings or bool(restored)
+    elif mode == "normal":
+        should_surface = has_critical or bool(restored)
+    elif mode == "quiet":
+        should_surface = False
+
+    if not should_surface:
+        return result
 
     if _is_duplicate_incident(result, restored):
         return result
