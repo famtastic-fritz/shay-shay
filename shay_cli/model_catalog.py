@@ -46,6 +46,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -75,6 +78,90 @@ _SHAY_USER_AGENT = f"shay-cli/{_SHAY_VERSION}"
 # mtime, so calling code never has to think about this.
 _catalog_cache: dict[str, Any] | None = None
 _catalog_cache_source_mtime: float = 0.0
+
+_RAW_GITHUB_HOST = "https://raw.githubusercontent.com"
+
+
+def _repo_root() -> Path:
+    """Return the local repo root when running from a source checkout."""
+    return Path(__file__).resolve().parent.parent
+
+
+def _git_command(args: list[str]) -> str | None:
+    """Run a git command from the repo root and return stripped stdout."""
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=_repo_root(),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out = result.stdout.strip()
+    return out or None
+
+
+def _parse_github_slug(remote_url: str) -> str | None:
+    """Extract owner/repo from common GitHub remote URL forms."""
+    value = remote_url.strip()
+    match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", value)
+    if not match:
+        return None
+    slug = match.group(1).strip().strip("/")
+    return slug or None
+
+
+def _build_raw_github_url(repo_slug: str, branch: str) -> str:
+    return (
+        f"{_RAW_GITHUB_HOST}/{repo_slug}/{branch}"
+        "/website/static/api/model-catalog.json"
+    )
+
+
+def _fallback_manifest_urls(primary_url: str) -> list[str]:
+    """Return fallback manifest URLs worth trying after the configured URL fails.
+
+    Motivation: forked or self-hosted Shay deployments often point the model
+    catalog at a docs hostname that doesn't resolve locally yet, or that sits
+    behind a bot challenge. A raw GitHub URL for the checked-out repo is much
+    more reliable for a simple JSON fetch and keeps the curated picker fresh
+    without requiring a full docs deploy.
+    """
+    candidates: list[str] = []
+
+    env_url = os.environ.get("SHAY_MODEL_CATALOG_FALLBACK_URL", "").strip()
+    if env_url and env_url != primary_url:
+        candidates.append(env_url)
+
+    remote = _git_command(["remote", "get-url", "origin"])
+    slug = _parse_github_slug(remote) if remote else None
+    if slug:
+        branch_candidates: list[str] = []
+        current_branch = _git_command(["rev-parse", "--abbrev-ref", "HEAD"])
+        if current_branch and current_branch != "HEAD":
+            branch_candidates.append(current_branch)
+        branch_candidates.extend(["main", "master"])
+
+        seen_branches: set[str] = set()
+        for branch in branch_candidates:
+            normalized = branch.strip()
+            if not normalized or normalized in seen_branches:
+                continue
+            seen_branches.add(normalized)
+            candidate = _build_raw_github_url(slug, normalized)
+            if candidate != primary_url:
+                candidates.append(candidate)
+
+    deduped: list[str] = []
+    seen_urls: set[str] = set()
+    for candidate in candidates:
+        if candidate and candidate not in seen_urls:
+            seen_urls.add(candidate)
+            deduped.append(candidate)
+    return deduped
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +202,18 @@ def _cache_path() -> Path:
 
 def _fetch_manifest(url: str, timeout: float) -> dict[str, Any] | None:
     """HTTP GET the manifest URL and return a parsed dict, or None on failure."""
+    urls = [url, *_fallback_manifest_urls(url)]
+    for candidate in urls:
+        data = _fetch_manifest_once(candidate, timeout)
+        if data is not None:
+            if candidate != url:
+                logger.info("model catalog fallback succeeded via %s", candidate)
+            return data
+    return None
+
+
+def _fetch_manifest_once(url: str, timeout: float) -> dict[str, Any] | None:
+    """Fetch a single manifest URL without trying any secondary fallbacks."""
     try:
         req = urllib.request.Request(
             url,

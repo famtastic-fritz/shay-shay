@@ -53,9 +53,12 @@ Field notes:
 
 ## Fetch behavior
 
+Shay-Shay tries the configured `model_catalog.url` first. If that host is down, blocked, or sits behind a bot challenge, source checkouts also try raw GitHub URLs for the checked-out repo (`origin` remote, then current branch, `main`, and `master`) before falling back to disk cache or the in-repo snapshot.
+
 | When | What happens |
 |---|---|
 | `/model` or `shay model` | Fetches if disk cache is stale, else uses cache |
+| Configured URL fails from a git checkout | Tries raw GitHub manifest URLs for the current repo before giving up |
 | Disk cache fresh (< TTL) | No network hit |
 | Network failure with cache | Silent fallback to cache, one log line |
 | Network failure, no cache | Silent fallback to in-repo snapshot |

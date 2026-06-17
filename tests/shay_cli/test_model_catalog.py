@@ -139,6 +139,44 @@ class TestFetchFailure:
             result = model_catalog.get_catalog(force_refresh=True)
         assert result == {}
 
+    def test_fetch_manifest_tries_raw_github_fallbacks(self, isolated_home):
+        from shay_cli import model_catalog
+
+        manifest = _valid_manifest()
+        with patch.object(
+            model_catalog,
+            "_fallback_manifest_urls",
+            return_value=["https://raw.githubusercontent.com/example/repo/main/website/static/api/model-catalog.json"],
+        ), patch.object(
+            model_catalog,
+            "_fetch_manifest_once",
+            side_effect=[None, manifest],
+        ) as fetch_once:
+            result = model_catalog._fetch_manifest("https://broken.example/catalog.json", 8.0)
+
+        assert result == manifest
+        assert fetch_once.call_count == 2
+        assert fetch_once.call_args_list[0].args[0] == "https://broken.example/catalog.json"
+        assert fetch_once.call_args_list[1].args[0] == (
+            "https://raw.githubusercontent.com/example/repo/main/website/static/api/model-catalog.json"
+        )
+
+    def test_fallback_manifest_urls_builds_current_repo_raw_candidates(self, isolated_home):
+        from shay_cli import model_catalog
+
+        with patch.object(
+            model_catalog,
+            "_git_command",
+            side_effect=["git@github.com:famtastic-fritz/shay-shay.git", "feature/test"],
+        ):
+            urls = model_catalog._fallback_manifest_urls("https://broken.example/catalog.json")
+
+        assert urls == [
+            "https://raw.githubusercontent.com/famtastic-fritz/shay-shay/feature/test/website/static/api/model-catalog.json",
+            "https://raw.githubusercontent.com/famtastic-fritz/shay-shay/main/website/static/api/model-catalog.json",
+            "https://raw.githubusercontent.com/famtastic-fritz/shay-shay/master/website/static/api/model-catalog.json",
+        ]
+
     def test_network_failure_falls_back_to_disk_cache(self, isolated_home):
         from shay_cli import model_catalog
         # Prime disk cache with a fresh copy.
