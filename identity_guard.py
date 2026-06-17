@@ -33,6 +33,7 @@ from shay_constants import get_default_shay_root, get_shay_home
 
 IDENTITY_GUARD_VERSION = 1
 IDENTITY_MANIFEST_VERSION = 1
+DEFAULT_INCIDENT_DEDUP_COOLDOWN_SECONDS = 6 * 60 * 60
 
 _REQUIRED_SNIPPETS: dict[str, tuple[str, ...]] = {
     "SOUL.md": (
@@ -144,6 +145,16 @@ def _manifest_path() -> Path:
 
 def _incident_dir() -> Path:
     return _identity_guard_dir() / "incidents"
+
+
+def _incident_dedup_cooldown_seconds() -> int:
+    raw = os.environ.get("SHAY_IDENTITY_GUARD_DEDUP_SECONDS", "").strip()
+    if not raw:
+        return DEFAULT_INCIDENT_DEDUP_COOLDOWN_SECONDS
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return DEFAULT_INCIDENT_DEDUP_COOLDOWN_SECONDS
 
 
 def _current_version_path() -> Path:
@@ -439,6 +450,70 @@ def _recovery_interview_markdown(result: IdentityAuditResult, restored: list[str
     ).strip() + "\n"
 
 
+def _incident_signature(result: IdentityAuditResult, restored: list[str]) -> dict[str, Any]:
+    findings_payload = []
+    for finding in result.findings:
+        findings_payload.append(
+            {
+                "severity": finding.severity,
+                "code": finding.code,
+                "path": Path(finding.path).name,
+                "missing_snippets": sorted(finding.missing_snippets or []),
+            }
+        )
+    findings_payload.sort(key=lambda item: (item["severity"], item["code"], item["path"]))
+    return {
+        "findings": findings_payload,
+        "auto_restored": sorted(restored),
+    }
+
+
+def _load_latest_incident_signature() -> tuple[dict[str, Any] | None, int | None]:
+    incident_dir = _incident_dir()
+    if not incident_dir.exists():
+        return None, None
+    incident_files = sorted(incident_dir.glob("identity-incident-*.json"))
+    if not incident_files:
+        return None, None
+    latest = incident_files[-1]
+    try:
+        payload = json.loads(latest.read_text(encoding="utf-8"))
+    except Exception:
+        return None, None
+    if not isinstance(payload, dict):
+        return None, None
+    normalized_findings = []
+    for finding in payload.get("findings", []):
+        if not isinstance(finding, dict):
+            continue
+        normalized_findings.append(
+            {
+                "severity": finding.get("severity"),
+                "code": finding.get("code"),
+                "path": Path(str(finding.get("path", ""))).name,
+                "missing_snippets": sorted(finding.get("missing_snippets") or []),
+            }
+        )
+    normalized_findings.sort(key=lambda item: (item["severity"], item["code"], item["path"]))
+    signature = {
+        "findings": normalized_findings,
+        "auto_restored": sorted(payload.get("auto_restored", [])),
+    }
+    return signature, int(latest.stat().st_mtime)
+
+
+def _is_duplicate_incident(result: IdentityAuditResult, restored: list[str]) -> bool:
+    cooldown = _incident_dedup_cooldown_seconds()
+    if cooldown <= 0:
+        return False
+    latest_signature, latest_ts = _load_latest_incident_signature()
+    if latest_signature is None or latest_ts is None:
+        return False
+    if time.time() - latest_ts > cooldown:
+        return False
+    return latest_signature == _incident_signature(result, restored)
+
+
 def _write_incident(result: IdentityAuditResult, restored: list[str]) -> IdentityAuditResult:
     incident_dir = _incident_dir()
     incident_dir.mkdir(parents=True, exist_ok=True)
@@ -558,6 +633,9 @@ def startup_identity_check(*, send_alert: bool = True, auto_restore_missing: boo
 
     if restored:
         result = verify_identity_files()
+
+    if _is_duplicate_incident(result, restored):
+        return result
 
     result = _write_incident(result, restored)
     _stderr_alert(result, restored)
