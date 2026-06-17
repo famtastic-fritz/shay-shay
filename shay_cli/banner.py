@@ -4,6 +4,7 @@ Pure display functions with no ShayCLI state dependency.
 """
 
 import json
+import getpass
 import logging
 import os
 import shutil
@@ -90,6 +91,112 @@ SHAY_CADUCEUS = """[#CD7F32]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⡀⠀⣀⣀⠀�
 [#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠳⠈⣡⠞⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
 [#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]"""
 
+
+def _git_branch(cwd: str) -> str | None:
+    """Return the current git branch for ``cwd``, or ``None`` when unavailable."""
+    path = Path(cwd).expanduser()
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=1,
+            check=False,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    branch = (result.stdout or "").strip()
+    return branch or None
+
+
+def _time_of_day_greeting() -> str:
+    """Return a short startup greeting."""
+    hour = time.localtime().tm_hour
+    user = os.environ.get("SHAY_USER_NICKNAME") or os.environ.get("USER") or getpass.getuser() or "there"
+    if hour < 12:
+        prefix = "Good morning"
+    elif hour < 18:
+        prefix = "Good afternoon"
+    else:
+        prefix = "Good evening"
+    return f"{prefix}, {user}."
+
+
+def _summarize_local_mailbox() -> dict | None:
+    """Return a compact summary of the local mailbox, if present."""
+    user = os.environ.get("USER") or getpass.getuser()
+    mailbox = Path("/var/mail") / user
+    if not mailbox.exists() or not mailbox.is_file():
+        return None
+    try:
+        raw = mailbox.read_text(errors="replace")
+    except Exception:
+        return None
+
+    chunks = [part for part in raw.split("\nFrom ") if part.strip()]
+    if not chunks:
+        return None
+
+    latest = chunks[-1]
+    subject = ""
+    sender = ""
+    body_lines: list[str] = []
+    in_body = False
+    for raw_line in latest.splitlines():
+        line = raw_line.rstrip("\n")
+        if not in_body:
+            if not line.strip():
+                in_body = True
+                continue
+            lowered = line.lower()
+            if lowered.startswith("subject:"):
+                subject = line.split(":", 1)[1].strip()
+            elif lowered.startswith("from:"):
+                sender = line.split(":", 1)[1].strip()
+        elif line.strip():
+            body_lines.append(line.strip())
+
+    preview = next((line for line in body_lines if line), "")
+    return {"count": len(chunks), "subject": subject, "sender": sender, "preview": preview}
+
+
+def _clean_mail_text(value: str, *, limit: int) -> str:
+    """Trim noisy cron details from mailbox text for startup display."""
+    cleaned = " ".join((value or "").split())
+    replacements = [
+        ("Cron <", "Cron "),
+        (">> ~/.famtastic/logs/cron-analysis.log 2>&1", ""),
+        ("/Users/famtasticfritz/.famtastic/logs/cron-analysis.log", "cron-analysis.log"),
+        ("No such file or directory", "missing cron-analysis.log"),
+    ]
+    for needle, repl in replacements:
+        cleaned = cleaned.replace(needle, repl)
+    cleaned = " ".join(cleaned.split())
+    if len(cleaned) > limit:
+        cleaned = cleaned[: limit - 3].rstrip() + "..."
+    return cleaned
+
+
+def _build_attention_items() -> list[str]:
+    """Collect startup attention items."""
+    items: list[str] = []
+    mailbox = _summarize_local_mailbox()
+    if mailbox:
+        count = int(mailbox.get("count") or 0)
+        subject = _clean_mail_text(mailbox.get("subject") or "local mailbox activity", limit=56)
+        preview = _clean_mail_text(
+            mailbox.get("preview") or mailbox.get("sender") or "check local mail",
+            limit=64,
+        )
+        items.append(f"{count} local mail item(s) — {subject}: {preview}")
+    return items
+
+
+def _build_quick_actions() -> list[str]:
+    return ["/resume", "/agents", "/model", "/new", "/history", "/help"]
 
 
 # =========================================================================
@@ -403,217 +510,99 @@ def _display_toolset_name(toolset_name: str) -> str:
         else toolset_name
     )
 
-
 def build_welcome_banner(console: Console, model: str, cwd: str,
                          tools: List[dict] = None,
                          enabled_toolsets: List[str] = None,
                          session_id: str = None,
                          get_toolset_for_tool=None,
                          context_length: int = None):
-    """Build and print a welcome banner with caduceus on left and info on right.
-
-    Args:
-        console: Rich Console instance.
-        model: Current model name.
-        cwd: Current working directory.
-        tools: List of tool definitions.
-        enabled_toolsets: List of enabled toolset names.
-        session_id: Session identifier.
-        get_toolset_for_tool: Callable to map tool name -> toolset name.
-        context_length: Model's context window size in tokens.
-    """
-    from model_tools import check_tool_availability, TOOLSET_REQUIREMENTS
-    if get_toolset_for_tool is None:
-        from model_tools import get_toolset_for_tool
-
+    """Build and print the command-center startup banner."""
     tools = tools or []
     enabled_toolsets = enabled_toolsets or []
-
-    _, unavailable_toolsets = check_tool_availability(quiet=True)
-    disabled_tools = set()
-    # Tools whose toolset has a check_fn are lazy-initialized (e.g. honcho,
-    # homeassistant) — they show as unavailable at banner time because the
-    # check hasn't run yet, but they aren't misconfigured.
-    lazy_tools = set()
-    for item in unavailable_toolsets:
-        toolset_name = item.get("name", "")
-        ts_req = TOOLSET_REQUIREMENTS.get(toolset_name, {})
-        tools_in_ts = item.get("tools", [])
-        if ts_req.get("check_fn"):
-            lazy_tools.update(tools_in_ts)
-        else:
-            disabled_tools.update(tools_in_ts)
 
     layout_table = Table.grid(padding=(0, 2))
     layout_table.add_column("left", justify="center")
     layout_table.add_column("right", justify="left")
 
-    # Resolve skin colors once for the entire banner
     accent = _skin_color("banner_accent", "#FFBF00")
     dim = _skin_color("banner_dim", "#B8860B")
     text = _skin_color("banner_text", "#FFF8DC")
     session_color = _skin_color("session_border", "#8B8682")
 
-    # Use skin's custom caduceus art if provided
     try:
         from shay_cli.skin_engine import get_active_skin
         _bskin = get_active_skin()
-        _hero = _bskin.banner_hero if hasattr(_bskin, 'banner_hero') and _bskin.banner_hero else SHAY_CADUCEUS
+        _hero = _bskin.banner_hero if hasattr(_bskin, "banner_hero") and _bskin.banner_hero else SHAY_CADUCEUS
     except Exception:
         _bskin = None
         _hero = SHAY_CADUCEUS
-    left_lines = ["", _hero, ""]
+
+    branch = _git_branch(cwd)
+    greeting = _time_of_day_greeting()
     model_short = model.split("/")[-1] if "/" in model else model
     if model_short.endswith(".gguf"):
         model_short = model_short[:-5]
     if len(model_short) > 28:
         model_short = model_short[:25] + "..."
-    ctx_str = f" [dim {dim}]·[/] [dim {dim}]{_format_context_length(context_length)} context[/]" if context_length else ""
-    left_lines.append(f"[{accent}]{model_short}[/]{ctx_str} [dim {dim}]·[/] [dim {dim}]Nous Research[/]")
-    left_lines.append(f"[dim {dim}]{cwd}[/]")
+
+    left_lines = ["", _hero, "", f"[bold {accent}]{greeting}[/]"]
+    runtime_line = f"[{text}]Model[/] [dim {dim}]→[/] [{accent}]{model_short}[/]"
+    if context_length:
+        runtime_line += f" [dim {dim}]·[/] [dim {dim}]{_format_context_length(context_length)} context[/]"
+    left_lines.append(runtime_line)
+    left_lines.append(f"[{text}]Workspace[/] [dim {dim}]→[/] [dim {dim}]{cwd}[/]")
+    if branch:
+        left_lines.append(f"[{text}]Branch[/] [dim {dim}]→[/] [{accent}]{branch}[/]")
     if session_id:
-        left_lines.append(f"[dim {session_color}]Session: {session_id}[/]")
+        left_lines.append(f"[{text}]Session[/] [dim {dim}]→[/] [dim {session_color}]{session_id}[/]")
     left_content = "\n".join(left_lines)
 
-    right_lines = [f"[bold {accent}]Available Tools[/]"]
-    toolsets_dict: Dict[str, list] = {}
-
-    for tool in tools:
-        tool_name = tool["function"]["name"]
-        toolset = _display_toolset_name(get_toolset_for_tool(tool_name) or "other")
-        toolsets_dict.setdefault(toolset, []).append(tool_name)
-
-    for item in unavailable_toolsets:
-        toolset_id = item.get("id", item.get("name", "unknown"))
-        display_name = _display_toolset_name(toolset_id)
-        if display_name not in toolsets_dict:
-            toolsets_dict[display_name] = []
-        for tool_name in item.get("tools", []):
-            if tool_name not in toolsets_dict[display_name]:
-                toolsets_dict[display_name].append(tool_name)
-
-    sorted_toolsets = sorted(toolsets_dict.keys())
-    display_toolsets = sorted_toolsets[:8]
-    remaining_toolsets = len(sorted_toolsets) - 8
-
-    for toolset in display_toolsets:
-        tool_names = toolsets_dict[toolset]
-        colored_names = []
-        for name in sorted(tool_names):
-            if name in disabled_tools:
-                colored_names.append(f"[red]{name}[/]")
-            elif name in lazy_tools:
-                colored_names.append(f"[yellow]{name}[/]")
-            else:
-                colored_names.append(f"[{text}]{name}[/]")
-
-        tools_str = ", ".join(colored_names)
-        if len(", ".join(sorted(tool_names))) > 45:
-            short_names = []
-            length = 0
-            for name in sorted(tool_names):
-                if length + len(name) + 2 > 42:
-                    short_names.append("...")
-                    break
-                short_names.append(name)
-                length += len(name) + 2
-            colored_names = []
-            for name in short_names:
-                if name == "...":
-                    colored_names.append("[dim]...[/]")
-                elif name in disabled_tools:
-                    colored_names.append(f"[red]{name}[/]")
-                elif name in lazy_tools:
-                    colored_names.append(f"[yellow]{name}[/]")
-                else:
-                    colored_names.append(f"[{text}]{name}[/]")
-            tools_str = ", ".join(colored_names)
-
-        right_lines.append(f"[dim {dim}]{toolset}:[/] {tools_str}")
-
-    if remaining_toolsets > 0:
-        right_lines.append(f"[dim {dim}](and {remaining_toolsets} more toolsets...)[/]")
-
-    # MCP Servers section (only if configured)
-    try:
-        from tools.mcp_tool import get_mcp_status
-        mcp_status = get_mcp_status()
-    except Exception:
-        mcp_status = []
-
-    if mcp_status:
-        right_lines.append("")
-        right_lines.append(f"[bold {accent}]MCP Servers[/]")
-        for srv in mcp_status:
-            if srv["connected"]:
-                right_lines.append(
-                    f"[dim {dim}]{srv['name']}[/] [{text}]({srv['transport']})[/] "
-                    f"[dim {dim}]—[/] [{text}]{srv['tools']} tool(s)[/]"
-                )
-            else:
-                right_lines.append(
-                    f"[red]{srv['name']}[/] [dim]({srv['transport']})[/] "
-                    f"[red]— failed[/]"
-                )
-
-    right_lines.append("")
-    right_lines.append(f"[bold {accent}]Available Skills[/]")
     skills_by_category = get_available_skills()
     total_skills = sum(len(s) for s in skills_by_category.values())
+    toolset_count = len(enabled_toolsets) if enabled_toolsets else 0
 
-    if skills_by_category:
-        for category in sorted(skills_by_category.keys()):
-            skill_names = sorted(skills_by_category[category])
-            if len(skill_names) > 8:
-                display_names = skill_names[:8]
-                skills_str = ", ".join(display_names) + f" +{len(skill_names) - 8} more"
-            else:
-                skills_str = ", ".join(skill_names)
-            if len(skills_str) > 50:
-                skills_str = skills_str[:47] + "..."
-            right_lines.append(f"[dim {dim}]{category}:[/] [{text}]{skills_str}[/]")
-    else:
-        right_lines.append(f"[dim {dim}]No skills installed[/]")
+    right_lines = [f"[bold {accent}]Command Center[/]"]
+    right_lines.append(f"[{text}]Tools[/] [dim {dim}]→[/] [{accent}]{len(tools)}[/]")
+    right_lines.append(f"[{text}]Toolsets[/] [dim {dim}]→[/] [{accent}]{toolset_count}[/]")
+    right_lines.append(f"[{text}]Skills[/] [dim {dim}]→[/] [{accent}]{total_skills}[/]")
 
-    right_lines.append("")
-    mcp_connected = sum(1 for s in mcp_status if s["connected"]) if mcp_status else 0
-    summary_parts = [f"{len(tools)} tools", f"{total_skills} skills"]
-    if mcp_connected:
-        summary_parts.append(f"{mcp_connected} MCP servers")
-    summary_parts.append("/help for commands")
-    # Show active profile name when not 'default'
     try:
         from shay_cli.profiles import get_active_profile_name
         _profile_name = get_active_profile_name()
         if _profile_name and _profile_name != "default":
-            right_lines.append(f"[bold {accent}]Profile:[/] [{text}]{_profile_name}[/]")
+            right_lines.append(f"[{text}]Profile[/] [dim {dim}]→[/] [{accent}]{_profile_name}[/]")
     except Exception:
-        pass  # Never break the banner over a profiles.py bug
+        pass
 
-    right_lines.append(f"[dim {dim}]{' · '.join(summary_parts)}[/]")
+    attention_items = _build_attention_items()
+    right_lines.append("")
+    right_lines.append(f"[bold {accent}]Attention Queue[/]")
+    if attention_items:
+        for item in attention_items:
+            right_lines.append(f"[{text}]•[/] [{text}]{item}[/]")
+    else:
+        right_lines.append(f"[dim {dim}]No local startup alerts.[/]")
 
-    # Update check — use prefetched result if available
+    right_lines.append("")
+    right_lines.append(f"[bold {accent}]Quick Actions[/]")
+    right_lines.append(f"[dim {dim}]{'  '.join(_build_quick_actions())}[/]")
+
     try:
         behind = get_update_result(timeout=0.5)
         if behind is not None and behind != 0:
             from shay_cli.config import get_managed_update_command, recommended_update_command
+            right_lines.append("")
             if behind > 0:
                 commits_word = "commit" if behind == 1 else "commits"
-                right_lines.append(
-                    f"[bold yellow]⚠ {behind} {commits_word} behind[/]"
-                    f"[dim yellow] — run [bold]{recommended_update_command()}[/bold] to update[/]"
-                )
+                right_lines.append(f"[bold yellow]Update[/] [dim {dim}]→[/] [yellow]{behind} {commits_word} behind[/]")
+                right_lines.append(f"[dim {dim}]Run[/] [bold]{recommended_update_command()}[/bold]")
             else:
-                # UPDATE_AVAILABLE_NO_COUNT: nix-built shay; we know an update
-                # exists but not by how much, and we don't know how the user
-                # installed it (nix run, profile, system flake, home-manager).
                 managed_cmd = get_managed_update_command()
-                line = "[bold yellow]⚠ update available[/]"
+                right_lines.append("[bold yellow]Update[/] [dim yellow]→[/] [yellow]available[/]")
                 if managed_cmd:
-                    line += f"[dim yellow] — run [bold]{managed_cmd}[/bold][/]"
-                right_lines.append(line)
+                    right_lines.append(f"[dim {dim}]Run[/] [bold]{managed_cmd}[/bold]")
     except Exception:
-        pass  # Never break the banner over an update check
+        pass
 
     right_content = "\n".join(right_lines)
     layout_table.add_row(left_content, right_content)
@@ -637,7 +626,7 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
     console.print()
     term_width = shutil.get_terminal_size().columns
     if term_width >= 95:
-        _logo = _bskin.banner_logo if _bskin and hasattr(_bskin, 'banner_logo') and _bskin.banner_logo else SHAY_AGENT_LOGO
+        _logo = _bskin.banner_logo if _bskin and hasattr(_bskin, "banner_logo") and _bskin.banner_logo else SHAY_AGENT_LOGO
         console.print(_logo)
         console.print()
     console.print(outer_panel)

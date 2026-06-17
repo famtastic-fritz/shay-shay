@@ -2129,19 +2129,15 @@ def _build_compact_banner() -> str:
     title_color = _skin.get_color("banner_title", "#FFBF00") if _skin else "#FFBF00"
     dim_color = _skin.get_color("banner_dim", "#B8860B") if _skin else "#B8860B"
 
-    if skin_name == "default":
-        line1 = "⚕ NOUS SHAY - AI Agent Framework"
-        tiny_line = "⚕ NOUS SHAY"
-    else:
-        agent_name = _skin.get_branding("agent_name", "Shay-Shay") if _skin else "Shay-Shay"
-        line1 = f"{agent_name} - AI Agent Framework"
-        tiny_line = agent_name
+    agent_name = _skin.get_branding("agent_name", "Shay-Shay") if _skin else "Shay-Shay"
+    line1 = f"{agent_name} mission control"
+    tiny_line = agent_name
 
     version_line = format_banner_version_label()
 
     w = min(shutil.get_terminal_size().columns - 2, 88)
     if w < 30:
-        return f"\n[{title_color}]{tiny_line}[/] [dim {dim_color}]- Nous Research[/]\n"
+        return f"\n[{title_color}]{tiny_line}[/] [dim {dim_color}]- mission control[/]\n"
 
     inner = w - 2  # inside the box border
     bar = "═" * w
@@ -11029,12 +11025,8 @@ class ShayCLI:
         try:
             from shay_cli.skin_engine import get_active_skin
             _welcome_skin = get_active_skin()
-            _welcome_text = _welcome_skin.get_branding("welcome", "Welcome, Shay-Shay! Type your message or /help for commands.")
-            _welcome_color = _welcome_skin.get_color("banner_text", "#FFF8DC")
         except Exception:
-            _welcome_text = "Welcome, Shay-Shay! Type your message or /help for commands."
-            _welcome_color = "#FFF8DC"
-        self._console_print(f"[{_welcome_color}]{_welcome_text}[/]")
+            _welcome_skin = None
 
         # Redaction opt-out warning (#17691): ON by default, loud when off.
         # The redactor snapshots its state at import time so any toggle now
@@ -11077,18 +11069,6 @@ class ShayCLI:
                     pass  # best-effort — banner will fire again next session
         except Exception:
             pass  # banner is non-critical — never break startup
-        # Show a random tip to help users discover features
-        try:
-            from shay_cli.tips import get_random_tip
-            _tip = get_random_tip()
-            try:
-                _tip_color = _welcome_skin.get_color("banner_dim", "#B8860B")
-            except Exception:
-                _tip_color = "#B8860B"
-            self._console_print(f"[dim {_tip_color}]✦ Tip: {_tip}[/]")
-        except Exception:
-            pass  # Tips are non-critical — never break startup
-
         # Curator — kick off a background skill-maintenance pass on startup
         # if the schedule says we're due.  Runs in a daemon thread so it
         # never blocks the interactive loop.  Best-effort; any failure is
