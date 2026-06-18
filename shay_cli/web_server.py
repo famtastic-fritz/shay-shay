@@ -70,9 +70,22 @@ app = FastAPI(title="Shay-Shay", version=__version__)
 # Session token for protecting sensitive endpoints (reveal).
 # Generated fresh on every server start — dies when the process exits.
 # Injected into the SPA HTML so only the legitimate web UI can use it.
+#
+# Desktop shells pre-generate a token and pass it via env so the native
+# wrapper can authenticate its WS/API calls against the embedded dashboard.
+# Honor that token when present; otherwise fall back to a fresh per-process
+# token for standalone browser launches.
 # ---------------------------------------------------------------------------
-_SESSION_TOKEN = secrets.token_urlsafe(32)
+_SESSION_TOKEN = (
+    os.environ.get("SHAY_DASHBOARD_SESSION_TOKEN")
+    or os.environ.get("HERMES_DASHBOARD_SESSION_TOKEN")
+    or secrets.token_urlsafe(32)
+)
 _SESSION_HEADER_NAME = "X-Shay-Shay-Session-Token"
+_LEGACY_SESSION_HEADER_NAMES = (
+    "X-Hermes-Session-Token",
+    "X-Shay-Session-Token",
+)
 
 # In-browser Chat tab (/chat, /api/pty, …).  Off unless ``shay dashboard --tui``
 # or SHAY_DASHBOARD_TUI=1.  Set from :func:`start_server`.
@@ -124,6 +137,14 @@ def _has_valid_session_token(request: Request) -> bool:
         _SESSION_TOKEN.encode(),
     ):
         return True
+
+    for legacy_name in _LEGACY_SESSION_HEADER_NAMES:
+        legacy_value = request.headers.get(legacy_name, "")
+        if legacy_value and hmac.compare_digest(
+            legacy_value.encode(),
+            _SESSION_TOKEN.encode(),
+        ):
+            return True
 
     auth = request.headers.get("authorization", "")
     expected = f"Bearer {_SESSION_TOKEN}"

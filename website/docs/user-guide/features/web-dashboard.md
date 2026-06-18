@@ -8,6 +8,12 @@ description: "Browser-based dashboard for managing configuration, API keys, sess
 
 The web dashboard is a browser-based UI for managing your Shay-Shay installation. Instead of editing YAML files or running CLI commands, you can configure settings, manage API keys, and monitor sessions from a clean web interface.
 
+There are now two live dashboard surfaces:
+- Shay Desktop launches its own localhost-backed dashboard on `http://127.0.0.1:9120` and uses that for the desktop app and Shay Workspace integration.
+- `shay dashboard` remains available as a standalone optional browser surface on `http://127.0.0.1:9119`.
+
+Treat the desktop-hosted surface as the primary rebranded app runtime. Treat `shay dashboard` as the lightweight optional browser-only surface.
+
 ## Quick Start
 
 ```bash

@@ -2,6 +2,12 @@
 
 Browser-based dashboard for managing Shay-Shay configuration, API keys, and monitoring active sessions.
 
+Current live surface map:
+- Desktop-hosted dashboard: `http://127.0.0.1:9120` (spawned by Shay Desktop and used by Shay Workspace)
+- Standalone CLI dashboard: `shay dashboard` on `http://127.0.0.1:9119`
+
+Use the desktop-hosted surface when you want the rebranded local app stack. Use the standalone CLI dashboard only as an optional lightweight browser surface.
+
 ## Stack
 
 - **Vite** + **React 19** + **TypeScript**
