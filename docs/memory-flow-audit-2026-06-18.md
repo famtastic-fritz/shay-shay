@@ -92,7 +92,7 @@ Ad hoc verification against `MemoryStore` with a temp memory dir and temp spillo
 
 ## Recommendations
 
-- Keep `USER.md` + `MEMORY.md` around a practical combined target of ~4k chars so injected memory stays useful instead of noisy.
+- Keep `USER.md` + `MEMORY.md` under a practical combined target of ~2k chars so injected memory stays useful instead of noisy.
 - Add a future retrieval layer that can consult spillover ledgers deliberately when a pointer-backed detail is needed.
 - Consider a periodic compaction/audit command that reports prompt-memory size, duplicate drift, and pointer coverage.
 - Keep the shared Obsidian spillover ledgers as the default target so off-prompt detail remains durable and inspectable across sessions.

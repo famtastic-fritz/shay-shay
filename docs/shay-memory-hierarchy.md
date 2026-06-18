@@ -49,6 +49,7 @@ Classification:
 Notes:
 - This layer is intentionally bounded.
 - It should contain compact, durable facts, not logs, progress reports, or bulky reference material.
+- Practical target: keep `MEMORY.md` + `USER.md` under ~2k combined in Fritz's runtime so the always-loaded layer stays sharp.
 - This layer is intentionally mixed: compact durable facts stay inline; oversized or prompt-bloating detail is stored off-prompt behind pointer entries.
 - When a new memory entry or replacement is too large or would push the bounded layer past its useful limit, the built-in memory tool now routes the full detail into an off-prompt spillover ledger and keeps prompt memory compact.
 - Mid-session writes persist to disk but are not guaranteed to become live prompt context until the next prompt rebuild/session load.
