@@ -36,17 +36,21 @@ Source of truth:
 - `~/.shay/memories/USER.md`
 
 Role:
-- Holds durable facts that should be available without retrieval.
+- Holds only the compact durable facts that truly need no retrieval.
 - Injected into the system prompt through the built-in memory store.
+- Works as a pointer/index layer to richer off-prompt truth surfaces when entries are too large or would bloat the prompt.
 
 Classification:
 - Active
 - Auto-injected
 - Snapshot-based per session
+- Spillover-aware as of 2026-06-18
 
 Notes:
 - This layer is intentionally bounded.
 - It should contain compact, durable facts, not logs, progress reports, or bulky reference material.
+- This layer is intentionally mixed: compact durable facts stay inline; oversized or prompt-bloating detail is stored off-prompt behind pointer entries.
+- When a new memory entry or replacement is too large or would push the bounded layer past its useful limit, the built-in memory tool now routes the full detail into an off-prompt spillover ledger and keeps prompt memory compact.
 - Mid-session writes persist to disk but are not guaranteed to become live prompt context until the next prompt rebuild/session load.
 
 ### Layer 3 — Project and repo context

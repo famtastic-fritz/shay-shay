@@ -28,6 +28,7 @@ import logging
 import os
 import re
 import tempfile
+from datetime import datetime, timezone
 from contextlib import contextmanager
 from pathlib import Path
 from shay_constants import get_shay_home
@@ -57,6 +58,12 @@ def get_memory_dir() -> Path:
     return get_shay_home() / "memories"
 
 ENTRY_DELIMITER = "\n§\n"
+DEFAULT_SHARED_VAULT_ROOT = Path.home() / "famtastic" / "obsidian" / "01-Shay-Platform" / "Prompt-Memory"
+DEFAULT_PRIVATE_FALLBACK_ROOT = get_shay_home() / "private" / "prompt-memory"
+POINTER_ENTRY_TEMPLATES = {
+    "memory": "Prompt-memory spillover ledger: ~/famtastic/obsidian/01-Shay-Platform/Prompt-Memory/MEMORY-DETAILS.md",
+    "user": "Prompt-memory spillover ledger: ~/famtastic/obsidian/01-Shay-Platform/Prompt-Memory/USER-DETAILS.md",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -221,8 +228,88 @@ class MemoryStore:
             return self.user_char_limit
         return self.memory_char_limit
 
+    @staticmethod
+    def _spillover_root() -> Path:
+        env_root = os.environ.get("SHAY_PROMPT_MEMORY_VAULT", "").strip()
+        if env_root:
+            return Path(env_root).expanduser()
+        if DEFAULT_SHARED_VAULT_ROOT.parent.exists():
+            return DEFAULT_SHARED_VAULT_ROOT
+        return DEFAULT_PRIVATE_FALLBACK_ROOT
+
+    def _spillover_note_path(self, target: str) -> Path:
+        filename = "USER-DETAILS.md" if target == "user" else "MEMORY-DETAILS.md"
+        return self._spillover_root() / filename
+
+    def _pointer_entry(self, target: str) -> str:
+        path = self._spillover_note_path(target)
+        preferred = POINTER_ENTRY_TEMPLATES[target]
+        if str(path).startswith(str(Path.home() / "famtastic" / "obsidian")):
+            return preferred
+        return f"Prompt-memory spillover ledger: {path}"
+
+    def _append_to_spillover(self, target: str, content: str, *, reason: str) -> Path:
+        path = self._spillover_note_path(target)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        title = path.stem.replace("-", " ").title()
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+        block = (
+            f"\n## {timestamp} — {reason}\n"
+            f"- target: {target}\n"
+            f"- source: built-in memory tool\n\n"
+            f"{content.strip()}\n"
+        )
+        if path.exists():
+            existing = path.read_text(encoding="utf-8")
+        else:
+            existing = (
+                "---\n"
+                f"title: {title}\n"
+                "type: note\n"
+                "---\n\n"
+                f"# {title}\n\n"
+                "This note stores prompt-memory spillover that should stay off the always-loaded prompt layer.\n"
+            )
+        path.write_text(existing.rstrip() + "\n" + block, encoding="utf-8")
+        return path
+
+    def _ensure_pointer_entry(self, target: str) -> bool:
+        entries = self._entries_for(target)
+        pointer = self._pointer_entry(target)
+        if pointer in entries:
+            return False
+        entries.append(pointer)
+        self._set_entries(target, entries)
+        return True
+
+    def _should_spillover(self, target: str, content: str, projected_total: int) -> bool:
+        current = self._char_count(target)
+        limit = self._char_limit(target)
+        usage_ratio = (current / limit) if limit else 0
+        content_len = len(content)
+        if projected_total > limit:
+            return True
+        if content_len >= 280:
+            return True
+        if usage_ratio >= 0.80 and content_len >= 180:
+            return True
+        return False
+
+    def _save_spillover(self, target: str, content: str, *, reason: str) -> Dict[str, Any]:
+        path = self._append_to_spillover(target, content, reason=reason)
+        pointer_added = self._ensure_pointer_entry(target)
+        self.save_to_disk(target)
+        message = "Saved to off-prompt spillover ledger."
+        if pointer_added:
+            message += " Added compact pointer entry to prompt memory."
+        return {
+            **self._success_response(target, message),
+            "spillover": True,
+            "spillover_path": str(path),
+        }
+
     def add(self, target: str, content: str) -> Dict[str, Any]:
-        """Append a new entry. Returns error if it would exceed the char limit."""
+        """Append a new entry. Spill larger detail into an off-prompt ledger when needed."""
         content = content.strip()
         if not content:
             return {"success": False, "error": "Content cannot be empty."}
@@ -247,18 +334,12 @@ class MemoryStore:
             new_entries = entries + [content]
             new_total = len(ENTRY_DELIMITER.join(new_entries))
 
-            if new_total > limit:
-                current = self._char_count(target)
-                return {
-                    "success": False,
-                    "error": (
-                        f"Memory at {current:,}/{limit:,} chars. "
-                        f"Adding this entry ({len(content)} chars) would exceed the limit. "
-                        f"Replace or remove existing entries first."
-                    ),
-                    "current_entries": entries,
-                    "usage": f"{current:,}/{limit:,}",
-                }
+            if self._should_spillover(target, content, new_total):
+                return self._save_spillover(
+                    target,
+                    content,
+                    reason="auto-routed from prompt memory",
+                )
 
             entries.append(content)
             self._set_entries(target, entries)
@@ -302,21 +383,25 @@ class MemoryStore:
                 # All identical -- safe to replace just the first
 
             idx = matches[0][0]
-            limit = self._char_limit(target)
 
-            # Check that replacement doesn't blow the budget
+            # Check whether replacement should spill off-prompt instead of bloating prompt memory
             test_entries = entries.copy()
             test_entries[idx] = new_content
             new_total = len(ENTRY_DELIMITER.join(test_entries))
 
-            if new_total > limit:
-                return {
-                    "success": False,
-                    "error": (
-                        f"Replacement would put memory at {new_total:,}/{limit:,} chars. "
-                        f"Shorten the new content or remove other entries first."
-                    ),
-                }
+            if self._should_spillover(target, new_content, new_total):
+                removed = entries.pop(idx)
+                self._set_entries(target, entries)
+                spill_result = self._save_spillover(
+                    target,
+                    new_content,
+                    reason=f"replacement for prompt-memory entry matching '{old_text}'",
+                )
+                spill_result["message"] = (
+                    f"Replaced prompt-memory entry with spillover ledger entry. "
+                    f"Removed: {removed[:80]}{'...' if len(removed) > 80 else ''}"
+                )
+                return spill_result
 
             entries[idx] = new_content
             self._set_entries(target, entries)
