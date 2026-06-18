@@ -89,6 +89,7 @@ Ad hoc verification against `MemoryStore` with a temp memory dir and temp spillo
 - Pointer-style architecture should be enforced in code, not only described in docs.
 - Replacements matter as much as adds; if only `add()` spills over, prompt bloat comes back through `replace()`.
 - The always-injected layer should stay mixed and thin: compact durable facts inline, larger detail off-prompt behind pointers.
+- Research recall has the same shape problem: capture alone is not enough without an enforced preflight against prior artifacts.
 
 ## Recommendations
 
@@ -96,6 +97,7 @@ Ad hoc verification against `MemoryStore` with a temp memory dir and temp spillo
 - Add a future retrieval layer that can consult spillover ledgers deliberately when a pointer-backed detail is needed.
 - Consider a periodic compaction/audit command that reports prompt-memory size, duplicate drift, and pointer coverage.
 - Keep the shared Obsidian spillover ledgers as the default target so off-prompt detail remains durable and inspectable across sessions.
+- Apply the same closed-loop principle to research: preflight first, capture second, then resume from the saved artifact next time.
 
 ## Remaining gap
 

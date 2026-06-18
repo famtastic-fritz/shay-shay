@@ -1,7 +1,7 @@
 # Research artifact capture protocol
 
 Status: active
-Date: 2026-06-16
+Date: 2026-06-18
 
 Purpose:
 Stop meaningful research from evaporating as terminal output or chat residue. Every meaningful research pass should leave a durable artifact that future Shay can reopen, query, and reuse.
@@ -21,17 +21,37 @@ This especially applies to:
 - market or vendor scans
 - any investigation Fritz explicitly wants remembered
 
+## Closed-loop rule
+
+Before meaningful new research starts, run a preflight against prior research.
+The minimum preflight checks are:
+1. research registry / ledger
+2. research note scan
+3. session recall surface
+4. verdict: `already researched` / `partially researched` / `new topic`
+
+Use:
+- `scripts/research_preflight.py`
+
+If the verdict is not `new topic`, review the strongest prior artifact first and only do net-new research on the missing delta.
+
 ## Minimum artifact contract
 
 Every durable research artifact must contain:
 1. Summary
 2. Research question
-3. Observations
-4. Interpretations
-5. Capability notes
-6. Source ledger
-7. Next actions
-8. Resume sentence
+3. Reuse status
+4. Observations
+5. Interpretations
+6. Capability notes
+7. Source ledger
+8. Next actions
+9. Resume sentence
+
+Minimum reuse-status fields:
+- freshness
+- verdict
+- related topics
 
 ## Observation vs interpretation
 
@@ -54,28 +74,43 @@ Never merge these two sections.
 Primary notes:
 - `~/famtastic/obsidian/Shay-Memory/research/`
 
-Append-only ledger:
+Append-only artifact ledger:
 - `~/famtastic/obsidian/Shay-Memory/research/_ledger/research-artifacts.jsonl`
 
-The helper uses those defaults through `$HOME`, but both can be overridden with:
+Append-only registry / fast lookup index:
+- `~/famtastic/obsidian/Shay-Memory/research/_ledger/research-registry.jsonl`
+
+The helpers use those defaults through `$HOME`, but paths can be overridden with:
 - `SHAY_RESEARCH_ROOT`
 - `SHAY_RESEARCH_LEDGER`
+- `SHAY_RESEARCH_REGISTRY`
+- `SHAY_STATE_DB`
 
-## Fast capture helper
+## Fast helpers
 
 Use:
 - `scripts/research_capture.py`
+- `scripts/research_preflight.py`
 
-It writes:
+Capture writes:
 - one markdown note under the research folder
-- one JSONL record in the append-only ledger
+- one JSONL record in the append-only artifact ledger
+- one compact JSONL record in the append-only registry
+
+Preflight reads:
+- registry first
+- artifact ledger as fallback
+- markdown research notes as backup surface
+- `state.db` for transcript/session hits when available
 
 ## Expected usage pattern
 
-1. Do the research.
-2. Capture the durable artifact before finalizing.
-3. In the final response, point to the artifact path.
-4. If the research changed a stable workflow, patch or create a skill too.
+1. Run research preflight.
+2. Review strongest prior artifact if one exists.
+3. Do only the missing research.
+4. Capture the durable artifact before finalizing.
+5. In the final response, point to the artifact path and say whether the result extended prior work or created a new topic.
+6. If the research changed a stable workflow, patch or create a skill too.
 
 ## GitHub research capture requirements
 
@@ -106,3 +141,4 @@ It does mean every meaningful research pass does.
 Fritz's standard is not just "answer the current question."
 It is "build a system that learns from every useful pass and can reuse it later."
 If research is not captured, Shay cannot compound.
+If research is not checked before a new pass, Shay still wastes motion.

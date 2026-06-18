@@ -1,7 +1,7 @@
 # Shay-Shay canonical memory hierarchy
 
 Status: canonical policy
-Last updated: 2026-06-12
+Last updated: 2026-06-18
 Scope: defines which memory layers are authoritative, how they are used at runtime, and which stores are legacy or manual-only.
 
 ## Purpose
@@ -101,6 +101,11 @@ Classification:
 Notes:
 - This layer is available when tools call into it.
 - It is not the same thing as prompt memory.
+- Meaningful research in this layer should behave as a closed loop: preflight against prior artifacts, then capture the new delta back into the vault.
+- Canonical research surfaces inside this layer are:
+  - `~/famtastic/obsidian/Shay-Memory/research/`
+  - `~/famtastic/obsidian/Shay-Memory/research/_ledger/research-artifacts.jsonl`
+  - `~/famtastic/obsidian/Shay-Memory/research/_ledger/research-registry.jsonl`
 
 ### Layer 6 — Private memory vault
 Source of truth:
@@ -160,6 +165,11 @@ If the question is "where should Shay look for historical or structured knowledg
 - Obsidian/MCP for structured shared knowledge
 - `~/.shay/private/` only when explicitly and intentionally consulted
 
+If the question is "how should meaningful research behave," the answer is:
+- run research preflight first
+- reuse prior artifacts when they exist
+- capture the new delta into the research vault before finalizing
+
 ## Related policy docs
 
 - `docs/shay-memory-compaction-policy.md`
@@ -167,3 +177,4 @@ If the question is "where should Shay look for historical or structured knowledg
 - `docs/shay-session-artifact-policy.md`
 - `docs/shay-db-status.md`
 - `docs/shay-memory-architecture-review-2026-06-12.md`
+- `docs/research-artifact-capture-protocol.md`
