@@ -24,6 +24,15 @@ from shay_cli.intelligence_cmd import (
     run_safe_swarm_dry_run,
     swarm_readiness,
 )
+from shay_cli.intelligence_control_plane import (
+    build_route_scorecards,
+    explain_route,
+    get_agent_template_registry,
+    get_control_plane_modules,
+    get_memory_truth_surfaces,
+    get_provider_model_registry,
+    instantiate_worker_from_template,
+)
 from shay_cli.intelligence_seed import (
     BRIEF_COMMANDS,
     BRIEF_TYPES,
@@ -508,3 +517,103 @@ def test_intelligence_matrix_command_includes_gap_owner_summary(capsys):
     assert rc == 0
     assert "Capability Matrix" in captured.out
     assert "Open gaps by owner:" in captured.out
+
+
+def test_control_plane_surfaces_are_populated():
+    modules = {row["module_id"]: row for row in get_control_plane_modules()}
+    assert {
+        "memory-truth",
+        "capability-registry",
+        "provider-model-registry",
+        "agency-registry",
+        "telemetry-proof",
+        "routing-engine",
+    } <= set(modules)
+    providers = {row["route_id"]: row for row in get_provider_model_registry()}
+    assert "openai-codex-gpt-5.4" in providers
+    templates = {row["template_id"]: row for row in get_agent_template_registry()}
+    assert "implementation-worker" in templates
+    surfaces = {row["surface_id"]: row for row in get_memory_truth_surfaces()}
+    assert "process-intelligence-ledger" in surfaces
+
+
+def test_instantiate_worker_from_template_carries_route_contract():
+    worker = instantiate_worker_from_template(
+        "implementation-worker",
+        worker_id="worker-impl-001",
+        mission_id="mission-shay-intelligence-layer",
+        plan_id="plan-shay-intelligence-layer",
+        task="wire the CLI",
+    )
+    assert worker["template_id"] == "implementation-worker"
+    assert worker["source_agent_id"] == "worker-supervisor"
+    assert worker["preferred_routes"]
+    assert "verification_path" in worker
+
+
+def test_route_scorecards_aggregate_routed_runs(tmp_path, monkeypatch):
+    from agent.process_intelligence import log_run
+
+    monkeypatch.setenv("SHAY_HOME", str(tmp_path))
+    log_run(
+        {
+            "run_id": "run-scorecard-001",
+            "task_name": "Explain route selection",
+            "task_family": "implementation",
+            "template_id": "implementation-worker",
+            "provider_model_route": "openai-codex-gpt-5.4",
+            "outcome": "success",
+            "duration_seconds": 12,
+            "validation_results": [
+                {
+                    "check": "pytest",
+                    "status": "success",
+                    "tool": "pytest",
+                    "artifact_refs": ["tests/test_intelligence_layer.py"],
+                }
+            ],
+        }
+    )
+    cards = build_route_scorecards(limit=20)
+    card = next(
+        row
+        for row in cards
+        if row["template_id"] == "implementation-worker"
+        and row["route_id"] == "openai-codex-gpt-5.4"
+    )
+    assert card["run_count"] >= 1
+    assert card["success_rate"] >= 1.0
+    assert card["verification_rate"] >= 1.0
+
+
+def test_control_plane_explain_returns_evidence():
+    route = explain_route("implement intelligence CLI control plane")
+    assert route["chosen_template"] == "implementation-worker"
+    assert route["chosen_route"] == "openai-codex-gpt-5.4"
+    assert route["evidence"]["selection_reason"]
+
+
+def test_control_plane_cli_commands_format_without_crashing(tmp_path, monkeypatch, capsys):
+    from types import SimpleNamespace
+    from shay_cli.intelligence_cmd import cmd_intelligence
+
+    monkeypatch.setenv("SHAY_INTELLIGENCE_HOME", str(tmp_path))
+    commands = [
+        ("modules", None),
+        ("providers", None),
+        ("templates", None),
+        ("memory", None),
+        ("scorecards", None),
+        ("explain", ["implement", "routing", "evidence"]),
+    ]
+    for subcommand, task in commands:
+        rc = cmd_intelligence(
+            SimpleNamespace(
+                intelligence_command="control-plane",
+                control_plane_command=subcommand,
+                task=task,
+            )
+        )
+        captured = capsys.readouterr()
+        assert rc == 0, (subcommand, captured.err, captured.out)
+        assert captured.out.strip(), subcommand

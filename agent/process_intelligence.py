@@ -48,6 +48,25 @@ REQUIRED_FIELDS: tuple[str, ...] = (
     "next_actions",
     "lessons_learned",
     "redactions",
+    "task_family",
+    "task_subtype",
+    "requested_outcome",
+    "template_id",
+    "instantiated_agent_id",
+    "provider_model_route",
+    "provider",
+    "model",
+    "toolsets",
+    "route_explanation",
+    "route_confidence_before",
+    "route_confidence_after",
+    "review_outcome",
+    "verification_outcome",
+    "user_acceptance",
+    "correction_required",
+    "retries",
+    "failure_mode",
+    "evidence_refs",
 )
 
 _LIST_FIELDS = {
@@ -67,6 +86,8 @@ _LIST_FIELDS = {
     "next_actions",
     "lessons_learned",
     "redactions",
+    "toolsets",
+    "evidence_refs",
 }
 
 _SENSITIVE_EXACT_KEYS = {
@@ -482,6 +503,25 @@ def prepare_run_record(payload: Mapping[str, Any]) -> dict[str, Any]:
         "next_actions": [],
         "lessons_learned": [],
         "redactions": [],
+        "task_family": _sanitize_value(_normalize_text(payload.get("task_family")), "task_family", redactions),
+        "task_subtype": _sanitize_value(_normalize_text(payload.get("task_subtype")), "task_subtype", redactions),
+        "requested_outcome": _sanitize_value(_normalize_text(payload.get("requested_outcome")), "requested_outcome", redactions),
+        "template_id": _sanitize_value(_normalize_text(payload.get("template_id")), "template_id", redactions),
+        "instantiated_agent_id": _sanitize_value(_normalize_text(payload.get("instantiated_agent_id")), "instantiated_agent_id", redactions),
+        "provider_model_route": _sanitize_value(_normalize_text(payload.get("provider_model_route")), "provider_model_route", redactions),
+        "provider": _sanitize_value(_normalize_text(payload.get("provider")), "provider", redactions),
+        "model": _sanitize_value(_normalize_text(payload.get("model")), "model", redactions),
+        "toolsets": [],
+        "route_explanation": _sanitize_value(_normalize_text(payload.get("route_explanation")), "route_explanation", redactions),
+        "route_confidence_before": _sanitize_value(_normalize_text(payload.get("route_confidence_before")), "route_confidence_before", redactions),
+        "route_confidence_after": _sanitize_value(_normalize_text(payload.get("route_confidence_after")), "route_confidence_after", redactions),
+        "review_outcome": _sanitize_value(_normalize_text(payload.get("review_outcome")), "review_outcome", redactions),
+        "verification_outcome": _sanitize_value(_normalize_text(payload.get("verification_outcome")), "verification_outcome", redactions),
+        "user_acceptance": _sanitize_value(_normalize_text(payload.get("user_acceptance")), "user_acceptance", redactions),
+        "correction_required": _sanitize_value(_normalize_text(payload.get("correction_required")), "correction_required", redactions),
+        "retries": _sanitize_value(_normalize_text(payload.get("retries")), "retries", redactions),
+        "failure_mode": _sanitize_value(_normalize_text(payload.get("failure_mode")), "failure_mode", redactions),
+        "evidence_refs": [],
     }
 
     for field in _LIST_FIELDS - {"redactions"}:

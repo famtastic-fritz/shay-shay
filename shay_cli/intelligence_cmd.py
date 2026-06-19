@@ -8,6 +8,14 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from shay_constants import get_shay_home
+from shay_cli.intelligence_control_plane import (
+    build_route_scorecards,
+    explain_route,
+    get_agent_template_registry,
+    get_control_plane_modules,
+    get_memory_truth_surfaces,
+    get_provider_model_registry,
+)
 from shay_cli.intelligence_seed import (
     BRIEF_COMMANDS,
     BRIEF_TYPES,
@@ -1737,6 +1745,39 @@ def format_research(result: Mapping[str, Any]) -> str:
     ])
 
 
+def format_control_plane_route(route: Mapping[str, Any]) -> str:
+    evidence = route.get("evidence", {})
+    scorecard = evidence.get("route_scorecard")
+    lines = [
+        f"Task: {route['task']}",
+        f"task_family: {route['task_family']}",
+        f"template: {route['chosen_template']}",
+        f"provider/model route: {route['chosen_route']}",
+        f"source agent: {route['template_record']['source_agent_id']}",
+        "selection reason:",
+        *(f"- {item}" for item in evidence.get("selection_reason", [])),
+    ]
+    if scorecard:
+        lines.extend(
+            [
+                "telemetry evidence:",
+                f"- run_count: {scorecard['run_count']}",
+                f"- success_rate: {scorecard['success_rate']}",
+                f"- verification_rate: {scorecard['verification_rate']}",
+                f"- last_outcome: {scorecard['last_outcome']}",
+            ]
+        )
+    else:
+        lines.extend(["telemetry evidence:", "- no routed scorecard yet"])
+    lines.append("rejected alternatives:")
+    rejected = route.get("rejected_alternatives") or []
+    lines.extend(
+        [f"- {item['template_id']}: {item['reason']}" for item in rejected]
+        or ["- none"]
+    )
+    return "\n".join(lines)
+
+
 def cmd_intelligence(args: Any) -> int:
     command = getattr(args, "intelligence_command", None) or "status"
     if command == "status":
@@ -1753,6 +1794,62 @@ def cmd_intelligence(args: Any) -> int:
     if command == "truth":
         print(format_truth_registry(build_truth_registry()))
         return 0
+    if command == "control-plane":
+        subcommand = getattr(args, "control_plane_command", None) or "modules"
+        if subcommand == "modules":
+            print(
+                _format_records(
+                    "Intelligence Control Plane Modules",
+                    get_control_plane_modules(),
+                    "module_id",
+                )
+            )
+            return 0
+        if subcommand == "providers":
+            print(
+                _format_records(
+                    "Provider / Model Registry",
+                    get_provider_model_registry(),
+                    "route_id",
+                    status_key="production_state",
+                )
+            )
+            return 0
+        if subcommand == "templates":
+            print(
+                _format_records(
+                    "Agent Template Registry",
+                    get_agent_template_registry(),
+                    "template_id",
+                )
+            )
+            return 0
+        if subcommand == "memory":
+            print(
+                _format_records(
+                    "Memory / Truth Surfaces",
+                    get_memory_truth_surfaces(),
+                    "surface_id",
+                    status_key="surface_type",
+                )
+            )
+            return 0
+        if subcommand == "scorecards":
+            print(
+                _format_records(
+                    "Route Scorecards",
+                    build_route_scorecards(),
+                    "template_id",
+                    status_key="route_id",
+                )
+            )
+            return 0
+        if subcommand == "explain":
+            task = getattr(args, "task", "")
+            if isinstance(task, list):
+                task = " ".join(str(item) for item in task)
+            print(format_control_plane_route(explain_route(str(task))))
+            return 0
     if command == "agents":
         print(
             _format_records(
@@ -1870,6 +1967,7 @@ __all__ = [
     "critical_item_records",
     "intelligence_status",
     "format_truth_registry",
+    "format_control_plane_route",
     "list_events",
     "list_workers",
     "new_worker_record",

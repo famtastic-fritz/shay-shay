@@ -9507,6 +9507,20 @@ def main():
     intelligence_subparsers.add_parser("status", help="Show Intelligence Layer readiness")
     intelligence_subparsers.add_parser("matrix", help="Show expanded capability matrix")
     intelligence_subparsers.add_parser("truth", help="Show subsystem truth registry and reality classes")
+    control_plane_parser = intelligence_subparsers.add_parser(
+        "control-plane",
+        help="Inspect Intelligence Control Plane modules, routes, templates, memory, and telemetry",
+    )
+    control_plane_subparsers = control_plane_parser.add_subparsers(dest="control_plane_command")
+    control_plane_subparsers.add_parser("modules", help="Show control-plane module boundaries")
+    control_plane_subparsers.add_parser("providers", help="Show provider/model registry")
+    control_plane_subparsers.add_parser("templates", help="Show agent template registry")
+    control_plane_subparsers.add_parser("memory", help="Show memory/truth surfaces")
+    control_plane_subparsers.add_parser("scorecards", help="Show route telemetry scorecards")
+    control_plane_explain = control_plane_subparsers.add_parser(
+        "explain", help="Explain a routed task with template/route evidence"
+    )
+    control_plane_explain.add_argument("task", nargs="+", help="Task to explain")
     intelligence_subparsers.add_parser("agents", help="Show agent registry / worker roster")
     intelligence_subparsers.add_parser("events", help="Show recent/backfilled episodic records")
     intelligence_subparsers.add_parser("missions", help="Show FAMtastic mission graph")
