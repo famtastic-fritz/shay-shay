@@ -1845,6 +1845,20 @@ def test_config_set_model_syncs_tui_provider_env(monkeypatch):
         server._sessions.clear()
 
 
+def test_render_personality_prompt_supports_plain_dict_profiles():
+    prompt = server._render_personality_prompt(
+        {
+            "system_prompt": "Respond in natural language.",
+            "tone": "Direct, calm, human",
+            "style": "Plain English, short sentences",
+        }
+    )
+
+    assert "Respond in natural language." in prompt
+    assert "Tone: Direct, calm, human" in prompt
+    assert "Style: Plain English, short sentences" in prompt
+
+
 def test_config_set_personality_rejects_unknown_name(monkeypatch):
     monkeypatch.setattr(
         server,
