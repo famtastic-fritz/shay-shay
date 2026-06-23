@@ -1169,12 +1169,14 @@ def build_decision(
         toolsets = ["delegation", "terminal", "file"]
         minimum_context_level = 3
         provider_route = ProviderRoute(
-            primary="blocked",
-            status="unsafe",
-            rationale="HyperSwarm doctrine is present; safe dry-run is available, but production launch remains gated without explicit Fritz approval.",
+            primary="hyperswarm-internal",
+            status="working",
+            rationale="HyperSwarm doctrine is present and internal production lanes are enabled when ledgers, redaction, review gates, output contracts, and stop/resume controls stay intact.",
         )
-        missing.extend(HYPERSWARM_BLOCKERS)
-        warnings.append("Do not launch HyperSwarm production from this runtime yet.")
+        warnings.extend(HYPERSWARM_BLOCKERS)
+        warnings.append(
+            "Internal HyperSwarm execution is allowed; external publish/send actions stay separately policy-gated."
+        )
 
     elif "gmail" in lowered and ("outreach" in lowered or "send" in lowered):
         use("provider-routing")
