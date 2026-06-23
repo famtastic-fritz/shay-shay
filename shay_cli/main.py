@@ -9528,6 +9528,21 @@ def main():
         "route", help="Route a task through capability matrix + agent registry"
     )
     intelligence_route.add_argument("task", nargs="+", help="Task to route")
+    intelligence_trace = intelligence_subparsers.add_parser(
+        "trace",
+        help="Show ask-to-fire mapping, proof surfaces, and routed command chain",
+        description=(
+            "Trace a natural-language ask into the normalized intent, routed task, "
+            "command chain, and proof surfaces without executing the chain."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  shay intelligence trace \"build this app\"\n"
+            "  shay intelligence trace \"show me what needs my attention\"\n"
+            "  shay intelligence trace \"fix context compression memory continuity\""
+        ),
+    )
+    intelligence_trace.add_argument("task", nargs="+", help="Natural-language ask to trace")
     workers_parser = intelligence_subparsers.add_parser(
         "workers", help="Show/manage worker queue and control records"
     )

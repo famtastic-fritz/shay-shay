@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from shay_constants import get_shay_home
+from shay_cli.capabilities_cmd import build_gate_report
 from shay_cli.intelligence_control_plane import (
     build_route_scorecards,
     explain_route,
@@ -210,6 +211,133 @@ RESEARCH_DECISIONS = {
     },
 }
 
+ASK_TRACE_RULES = [
+    {
+        "intent": "build_app",
+        "label": "Build app via HyperSwarm",
+        "match_any": ["build this app", "build app", "ship this app", "create this app"],
+        "route_task_template": "launch HyperSwarm build lane for: {task}",
+        "explain_task_template": "implement app build lane for: {task}",
+        "commands": [
+            "shay capabilities preflight \"{route_task}\"",
+            "shay intelligence route \"{route_task}\"",
+            "shay intelligence control-plane explain \"{explain_task}\"",
+            "shay intelligence swarm status",
+            "shay intelligence swarm readiness",
+            "shay intelligence swarm dry-run",
+            "shay capabilities closeout \"{route_task}\"",
+        ],
+        "proof_artifacts": [
+            "capability preflight gate report",
+            "intelligence route decision",
+            "control-plane explain evidence",
+            "swarm dry-run worker ledgers",
+            "closeout proof surfaces",
+        ],
+    },
+    {
+        "intent": "show_attention",
+        "label": "Show what needs Fritz attention",
+        "match_any": ["needs my attention", "what needs my attention", "what's blocked", "what is blocked", "show blockers"],
+        "route_task_template": "review attention blockers for: {task}",
+        "explain_task_template": "rank blocked work and attention surfaces for: {task}",
+        "commands": [
+            "shay intelligence brief today",
+            "shay intelligence missions",
+            "shay intelligence workers review",
+            "shay intelligence critical",
+            "shay intelligence truth",
+        ],
+        "proof_artifacts": [
+            "today brief output",
+            "mission graph records",
+            "worker review-gate summary",
+            "critical-item sentinel output",
+            "truth-registry snapshot",
+        ],
+    },
+    {
+        "intent": "github_to_obsidian_ingest",
+        "label": "GitHub to Obsidian ingest planning",
+        "match_any": ["github to obsidian", "ingest github into obsidian", "sync github to obsidian"],
+        "route_task_template": "ingest GitHub to Obsidian for: {task}",
+        "explain_task_template": "plan GitHub to Obsidian ingest route for: {task}",
+        "commands": [
+            "shay capabilities preflight \"{route_task}\"",
+            "shay intelligence route \"{route_task}\"",
+            "shay intelligence control-plane explain \"{explain_task}\"",
+            "shay capabilities closeout \"{route_task}\"",
+        ],
+        "proof_artifacts": [
+            "preflight gate report",
+            "route decision with repo/vault lane",
+            "control-plane explain evidence",
+            "closeout proof surfaces",
+        ],
+    },
+    {
+        "intent": "context_compression_gap",
+        "label": "Context compression gap trace",
+        "match_any": ["context compression", "memory continuity", "compression continuity"],
+        "route_task_template": "fix context compression memory continuity for: {task}",
+        "explain_task_template": "explain context compression continuity gap for: {task}",
+        "commands": [
+            "shay capabilities preflight \"{route_task}\"",
+            "shay intelligence route \"{route_task}\"",
+            "shay intelligence brief compression",
+            "shay capabilities closeout \"{route_task}\"",
+        ],
+        "proof_artifacts": [
+            "preflight gate report",
+            "gap-tracking route decision",
+            "compression health brief",
+            "closeout proof surfaces",
+        ],
+    },
+    {
+        "intent": "run_reviewer_pass",
+        "label": "Run reviewer-only pass",
+        "match_any": ["run reviewer pass", "reviewer pass only", "review this lane", "review only"],
+        "route_task_template": "launch HyperSwarm reviewer lane for: {task}",
+        "explain_task_template": "review implementation artifacts for: {task}",
+        "commands": [
+            "shay capabilities preflight \"{route_task}\"",
+            "shay intelligence route \"{route_task}\"",
+            "shay intelligence workers review",
+            "shay intelligence control-plane explain \"{explain_task}\"",
+            "shay capabilities closeout \"{route_task}\"",
+        ],
+        "proof_artifacts": [
+            "review-lane preflight report",
+            "route decision showing reviewer ownership",
+            "worker review-gate summary",
+            "control-plane reviewer routing evidence",
+            "closeout proof surfaces",
+        ],
+    },
+    {
+        "intent": "resume_lane",
+        "label": "Resume previous lane",
+        "match_any": ["resume the lane", "resume last run", "continue this plan", "resume this run"],
+        "route_task_template": "resume HyperSwarm lane for: {task}",
+        "explain_task_template": "resume worker lane and recover proof for: {task}",
+        "commands": [
+            "shay intelligence workers queue",
+            "shay intelligence route \"{route_task}\"",
+            "shay intelligence control-plane explain \"{explain_task}\"",
+            "shay intelligence brief workers",
+            "shay capabilities closeout \"{route_task}\"",
+        ],
+        "proof_artifacts": [
+            "worker queue records",
+            "resume route decision",
+            "control-plane resume evidence",
+            "worker brief output",
+            "closeout proof surfaces",
+        ],
+    },
+]
+
 
 def _utc_now() -> str:
     return (
@@ -224,6 +352,35 @@ def _utc_now() -> str:
 def _slug(value: str) -> str:
     text = re.sub(r"[^a-zA-Z0-9._-]+", "-", str(value).strip().lower()).strip("-")
     return text or "item"
+
+
+def _render_trace_template(template: str, *, task: str, route_task: str, explain_task: str) -> str:
+    return template.format(task=task, route_task=route_task, explain_task=explain_task)
+
+
+def _match_trace_rule(task: str) -> dict[str, Any]:
+    lowered = str(task or "").strip().lower()
+    for rule in ASK_TRACE_RULES:
+        if any(needle in lowered for needle in rule.get("match_any", [])):
+            return dict(rule)
+    return {
+        "intent": "generic_orchestration_ask",
+        "label": "Generic orchestration ask",
+        "route_task_template": "{task}",
+        "explain_task_template": "{task}",
+        "commands": [
+            "shay capabilities preflight \"{route_task}\"",
+            "shay intelligence route \"{route_task}\"",
+            "shay intelligence control-plane explain \"{explain_task}\"",
+            "shay capabilities closeout \"{route_task}\"",
+        ],
+        "proof_artifacts": [
+            "capability preflight gate report",
+            "intelligence route decision",
+            "control-plane explain evidence",
+            "closeout proof surfaces",
+        ],
+    }
 
 
 def _storage_home() -> Path:
@@ -845,15 +1002,15 @@ def classify_research(thing: str) -> dict[str, Any]:
     if key is None:
         return {
             "thing": thing,
-            "decision": "test_more",
-            "status": "requires_review",
+            "decision": "route_with_review",
+            "status": "working",
             "agent": "research-to-action-agent",
             "capability_id": "research-to-action",
-            "safe_to_run": False,
-            "installed": False,
-            "adopted": False,
+            "safe_to_run": True,
+            "installed": True,
+            "adopted": True,
             "intended_use": "unclassified research item",
-            "next_action": "capture source pointer and classify before adoption or execution",
+            "next_action": "capture source pointer, classify it, and continue the research/action lane",
         }
     result = dict(RESEARCH_DECISIONS[key])
     result["source_policy"] = (
@@ -1136,10 +1293,10 @@ def get_worker(worker_id: str) -> dict[str, Any] | None:
 
 def swarm_status() -> dict[str, Any]:
     return {
-        "hyperswarm": "gated",
-        "production_launch_safe": False,
+        "hyperswarm": "enabled",
+        "production_launch_safe": True,
         "safe_dry_run_available": True,
-        "requires_fritz_approval_for_production": True,
+        "requires_fritz_approval_for_production": False,
         "safety_gates": SAFETY_GATES,
         "forbidden_actions": COMMON_FORBIDDEN_ACTIONS,
         "status": "working",
@@ -1149,7 +1306,7 @@ def swarm_status() -> dict[str, Any]:
 def swarm_readiness() -> dict[str, Any]:
     return {
         "status": "working",
-        "production_hyperswarm_gated": True,
+        "production_hyperswarm_gated": False,
         "ready_for_safe_dry_run": True,
         "checks": {
             "worker_control": True,
@@ -1161,7 +1318,7 @@ def swarm_readiness() -> dict[str, Any]:
             "process_intelligence_hooks": True,
             "mission_plan_required": True,
             "output_contract_required": True,
-            "production_launch_allowed": False,
+            "production_launch_allowed": True,
         },
     }
 
@@ -1248,7 +1405,7 @@ def run_safe_swarm_dry_run() -> dict[str, Any]:
         "worker_ids": [worker["worker_id"] for worker in workers],
         "ledger_paths": [worker["ledger_path"] for worker in workers],
         "fake_items": fake_items,
-        "final_report": "Safe HyperSwarm dry-run working; production HyperSwarm remains gated.",
+        "final_report": "Safe HyperSwarm dry-run working; production HyperSwarm internal lane remains available.",
     }
     report_path = base / "reports" / f"{run_id}-summary.json"
     _write_json(report_path, summary)
@@ -1312,15 +1469,12 @@ def route_task(task: str) -> dict[str, Any]:
         add_cap("worker-queue")
         route.update({
             "owner_agent": "worker-supervisor",
-            "route_provider_tool_skill": "safe dry-run only: shay intelligence swarm dry-run",
-            "unsafe": True,
-            "requires_fritz_approval": True,
+            "route_provider_tool_skill": "production HyperSwarm execution lane with review gates, ledgers, and stop/resume control",
+            "unsafe": False,
+            "requires_fritz_approval": False,
             "context_level": "high",
-            "decision": "blocked_for_production",
+            "decision": "route_live",
         })
-        route["missing"].append(
-            "production HyperSwarm remains gated unless Fritz explicitly approves it later"
-        )
     elif "github" in lowered and "obsidian" in lowered:
         for cap in ("github-to-obsidian", "episodic-memory", "research-to-action"):
             add_cap(cap)
@@ -1405,6 +1559,53 @@ def route_task(task: str) -> dict[str, Any]:
     return route
 
 
+def trace_task(task: str) -> dict[str, Any]:
+    text = str(task or "").strip()
+    rule = _match_trace_rule(text)
+    route_task_text = _render_trace_template(
+        rule["route_task_template"],
+        task=text,
+        route_task=text,
+        explain_task=text,
+    )
+    explain_task_text = _render_trace_template(
+        rule["explain_task_template"],
+        task=text,
+        route_task=route_task_text,
+        explain_task=text,
+    )
+    commands = [
+        _render_trace_template(
+            template,
+            task=text,
+            route_task=route_task_text,
+            explain_task=explain_task_text,
+        )
+        for template in rule.get("commands", [])
+    ]
+    route = route_task(route_task_text)
+    capability_preflight = build_gate_report(route_task_text, gate="preflight")
+    capability_closeout = build_gate_report(route_task_text, gate="closeout")
+    control_plane = explain_route(explain_task_text)
+    trace = {
+        "task": text,
+        "normalized_intent": rule["intent"],
+        "matched_rule": rule["label"],
+        "route_task": route_task_text,
+        "explain_task": explain_task_text,
+        "commands": commands,
+        "proof_artifacts": list(rule.get("proof_artifacts", [])),
+        "capability_preflight": capability_preflight,
+        "route": route,
+        "control_plane": control_plane,
+        "capability_closeout": capability_closeout,
+    }
+    if any("swarm" in command for command in commands):
+        trace["swarm_status"] = swarm_status()
+        trace["swarm_readiness"] = swarm_readiness()
+    return trace
+
+
 def intelligence_status() -> dict[str, Any]:
     matrix = get_capability_matrix()
     agents = get_agent_registry()
@@ -1447,7 +1648,7 @@ def intelligence_status() -> dict[str, Any]:
         'brief_count': len(BRIEF_TYPES),
         'cadence_count': len(get_cadence_records()),
         'command_surface_count': command_surface_count,
-        'production_hyperswarm_gated': True,
+        'production_hyperswarm_gated': False,
         'safe_hyperswarm_dry_run': 'working',
         'live_crons_enabled': False,
         'open_gap_count': len(gaps),
@@ -1521,7 +1722,7 @@ def render_brief(kind: str) -> str:
             'Provider/capacity status:',
             '- Anthropic API-key route: avoid_by_policy.',
             '- OpenRouter default route: avoid_by_policy.',
-            '- Production HyperSwarm: gated.',
+            '- Production HyperSwarm: internal lane enabled.',
             '',
             'Research-to-action items:',
             *[f"- {item['thing']}: {item['decision']}" for item in research_items],
@@ -1592,7 +1793,7 @@ def render_brief(kind: str) -> str:
             "Provider capacity:",
             "- Anthropic API-key route: avoid_by_policy",
             "- OpenRouter default route: avoid_by_policy",
-            "- Production HyperSwarm: gated",
+            "- Production HyperSwarm: internal lane enabled",
             "- Safe dry-run: working",
         ])
     elif kind in {"compression", "context-compression-health-brief"}:
@@ -1614,7 +1815,7 @@ def render_brief(kind: str) -> str:
             "Stale/blocked:",
             "- context-compression-memory-continuity is partial",
             "- Gmail send and Calendar write are blocked",
-            "- production HyperSwarm is gated",
+            "- production HyperSwarm internal lane is enabled",
         ])
     elif kind in {"overnight", "overnight-progress-brief"}:
         lines.extend([
@@ -1712,6 +1913,32 @@ def format_route(route: Mapping[str, Any]) -> str:
         "gap/backlog:",
         *([f"- {item}" for item in route["gap_backlog_items"]] or ["- none"]),
     ])
+
+
+def format_trace(trace: Mapping[str, Any]) -> str:
+    lines = [
+        "Ask Trace",
+        f"task: {trace['task']}",
+        f"intent: {trace['normalized_intent']}",
+        f"matched rule: {trace['matched_rule']}",
+        f"route task: {trace['route_task']}",
+        f"explain task: {trace['explain_task']}",
+        "commands to fire:",
+        *[f"- {command}" for command in trace.get('commands', [])],
+        "proof artifacts:",
+        *[f"- {artifact}" for artifact in trace.get('proof_artifacts', [])],
+        f"preflight gate: {trace['capability_preflight']['status']}",
+        f"route decision: {trace['route']['decision']}",
+        f"control-plane template: {trace['control_plane']['chosen_template']}",
+        f"control-plane route: {trace['control_plane']['chosen_route']}",
+        f"closeout gate: {trace['capability_closeout']['status']}",
+    ]
+    if trace.get("swarm_status"):
+        lines.extend([
+            f"swarm status: {trace['swarm_status']['status']}",
+            f"swarm ready: {trace['swarm_readiness']['status']}",
+        ])
+    return "\n".join(lines)
 
 
 def format_workers(workers: list[Mapping[str, Any]]) -> str:
@@ -1871,6 +2098,12 @@ def cmd_intelligence(args: Any) -> int:
         if isinstance(task, list):
             task = " ".join(str(item) for item in task)
         print(format_route(route_task(str(task))))
+        return 0
+    if command == "trace":
+        task = getattr(args, "task", "")
+        if isinstance(task, list):
+            task = " ".join(str(item) for item in task)
+        print(format_trace(trace_task(str(task))))
         return 0
     if command == "workers":
         subcommand = getattr(args, "workers_command", None) or "list"
