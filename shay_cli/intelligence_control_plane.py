@@ -108,6 +108,24 @@ class TaskFamilyRoutingRecord:
         return asdict(self)
 
 
+@dataclass
+class ProductWorkerPoolRecord:
+    product_id: str
+    stage_id: str
+    stage_label: str
+    objective: str
+    template_id: str
+    primary_routes: list[str]
+    escalation_routes: list[str]
+    forbidden_routes: list[str]
+    required_capabilities: list[str]
+    proof_surfaces: list[str]
+    known_gaps: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 CONTROL_PLANE_SCHEMA_IDS = {
     "module_boundary": "intelligence-control-plane/module-boundary/v1",
     "provider_model_record": "intelligence-control-plane/provider-model-record/v1",
@@ -118,6 +136,7 @@ CONTROL_PLANE_SCHEMA_IDS = {
     "memory_surface_record": "intelligence-control-plane/memory-surface-record/v1",
     "routing_tier_record": "intelligence-control-plane/routing-tier-record/v1",
     "task_family_routing_record": "intelligence-control-plane/task-family-routing-record/v1",
+    "product_worker_pool_record": "intelligence-control-plane/product-worker-pool-record/v1",
 }
 
 
@@ -905,6 +924,78 @@ def get_task_family_routing_matrix() -> list[dict[str, Any]]:
     return [record.to_dict() for record in TASK_FAMILY_ROUTING_REGISTRY]
 
 
+PRODUCT_WORKER_POOL_REGISTRY: list[ProductWorkerPoolRecord] = [
+    ProductWorkerPoolRecord(
+        product_id="famtastic-by-the-numbers",
+        stage_id="v1",
+        stage_label="Free chart + premium unlock foundation",
+        objective="Ship the first real numerology app with transparent chart math, durable premium unlock architecture, and browser-proofed happy path.",
+        template_id="implementation-worker",
+        primary_routes=["glm-5.1", "ollama-qwen3-14b", "openai-gpt-5.4-mini"],
+        escalation_routes=["anthropic-claude-code-sonnet-4.6", "openai-codex-gpt-5.4"],
+        forbidden_routes=["glm-5.2"],
+        required_capabilities=["tools", "code", "browser-proof"],
+        proof_surfaces=[
+            "apps/famtastic-by-the-numbers/tests/smoke.mjs",
+            "apps/famtastic-by-the-numbers/server.js",
+            "apps/famtastic-by-the-numbers/lib/paypal.js",
+        ],
+        known_gaps=[
+            "PayPal browser approval UI is still not wired; proof mode currently uses direct create/capture flow.",
+            "Real production payment capture still depends on live PayPal credentials and reachable MySQL.",
+        ],
+    ),
+    ProductWorkerPoolRecord(
+        product_id="famtastic-by-the-numbers",
+        stage_id="v2",
+        stage_label="Deeper compatibility + stronger premium read",
+        objective="Expand the premium value layer from teaser logic into a deeper compatibility and interpretation engine without overstating certainty.",
+        template_id="local-bulk-drafter",
+        primary_routes=["glm-5.2", "ollama-deepseek-r1-64k", "ollama-qwen3-32k", "ollama-gemma4"],
+        escalation_routes=["google-gemini-2.5-pro", "openai-codex-gpt-5.4"],
+        forbidden_routes=[],
+        required_capabilities=["long-context synthesis", "structured writing", "review backup"],
+        proof_surfaces=[
+            "apps/famtastic-by-the-numbers/app.js::calculateCompatibility",
+            "apps/famtastic-by-the-numbers/app.js::buildPremiumExperience",
+            "apps/famtastic-by-the-numbers/README.md",
+        ],
+        known_gaps=[
+            "Compatibility logic is materially deeper than the original gap log claimed, but still remains heuristic rather than full-chart or timing-driven.",
+            "Premium interpretation copy can outrun the underlying scoring depth if not kept honest.",
+        ],
+    ),
+    ProductWorkerPoolRecord(
+        product_id="famtastic-by-the-numbers",
+        stage_id="v3",
+        stage_label="Richer timing + alternate lineage expansion",
+        objective="Add timing depth and eventually alternate lineage support without mixing systems or drifting into fake precision.",
+        template_id="provider-intel-researcher",
+        primary_routes=["glm-5.2", "google-gemini-2.5-pro", "ollama-deepseek-r1-64k"],
+        escalation_routes=["openai-codex-gpt-5.4", "anthropic-claude-code-sonnet-4.6"],
+        forbidden_routes=[],
+        required_capabilities=["research synthesis", "schema discipline", "lineage separation"],
+        proof_surfaces=[
+            "apps/famtastic-by-the-numbers/app.js::buildDailyGuidance",
+            "obsidian/01-Shay-Platform/famtastic-by-the-numbers-wave1/v1-schema.md",
+            "apps/famtastic-by-the-numbers/GAPS.md",
+        ],
+        known_gaps=[
+            "Daily guidance is still lightweight and not yet multi-cycle.",
+            "No Chaldean or alternate lineage mode exists yet; lineage separation is still doctrine, not implementation.",
+        ],
+    ),
+]
+
+
+def get_product_worker_pool_registry(product_id: str | None = None) -> list[dict[str, Any]]:
+    rows = [record.to_dict() for record in PRODUCT_WORKER_POOL_REGISTRY]
+    if not product_id:
+        return rows
+    wanted = str(product_id).strip().lower()
+    return [row for row in rows if str(row["product_id"]).strip().lower() == wanted]
+
+
 def classify_task_family(task: str, *, no_agent: bool = False, script: str | None = None) -> str:
     lowered = str(task or "").strip().lower()
     if no_agent or script:
@@ -1163,6 +1254,7 @@ __all__ = [
     "get_agent_template_registry",
     "get_control_plane_modules",
     "get_memory_truth_surfaces",
+    "get_product_worker_pool_registry",
     "get_provider_model_registry",
     "get_routing_tier_registry",
     "get_task_family_routing_matrix",

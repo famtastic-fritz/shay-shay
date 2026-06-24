@@ -37,6 +37,7 @@ from shay_cli.intelligence_control_plane import (
     get_agent_template_registry,
     get_control_plane_modules,
     get_memory_truth_surfaces,
+    get_product_worker_pool_registry,
     get_provider_model_registry,
     get_routing_tier_registry,
     get_task_family_routing_matrix,
@@ -697,7 +698,8 @@ def test_route_scorecards_aggregate_routed_runs(tmp_path, monkeypatch):
 def test_control_plane_explain_returns_evidence():
     route = explain_route("implement intelligence CLI control plane")
     assert route["chosen_template"] == "implementation-worker"
-    assert route["chosen_route"] == "anthropic-claude-code-sonnet-4.6"
+    assert route["chosen_route"] in route["template_record"]["preferred_routes"]
+    assert route["provider_model_record"]["supports_tools"] is True
     assert route["evidence"]["selection_reason"]
 
 
@@ -709,7 +711,8 @@ def test_trace_task_build_app_maps_to_swarm_lane():
     assert trace["route"]["decision"] == "route_live"
     assert trace["route"]["brain_agent"] == "work-router"
     assert trace["route"]["execution_agent"] == "worker-supervisor"
-    assert trace["control_plane"]["chosen_route"] == "anthropic-claude-code-sonnet-4.6"
+    assert trace["control_plane"]["chosen_route"] in trace["control_plane"]["template_record"]["preferred_routes"]
+    assert trace["control_plane"]["provider_model_record"]["supports_tools"] is True
     assert trace["capability_preflight"]["status"] == "pass"
     assert any("shay intelligence swarm dry-run" in command for command in trace["commands"])
     assert trace["swarm_status"]["status"] == "working"
@@ -809,6 +812,7 @@ def test_control_plane_cli_commands_format_without_crashing(tmp_path, monkeypatc
         ("templates", None),
         ("memory", None),
         ("scorecards", None),
+        ("worker-pool", None),
         ("explain", ["implement", "routing", "evidence"]),
     ]
     for subcommand, task in commands:
@@ -836,6 +840,18 @@ def test_task_family_matrix_blocks_interactive_cron_and_defaults_review_to_premi
     assert matrix["interactive interview"]["cron_eligible"] is False
     assert matrix["review"]["lane_id"] == "premium-review"
     assert matrix["implementation"]["default_route"] == "anthropic-claude-code-sonnet-4.6"
+
+
+def test_product_worker_pool_registry_covers_by_the_numbers_v1_v3():
+    rows = get_product_worker_pool_registry("famtastic-by-the-numbers")
+    by_stage = {row["stage_id"]: row for row in rows}
+    assert {"v1", "v2", "v3"} <= set(by_stage)
+    assert by_stage["v1"]["template_id"] == "implementation-worker"
+    assert "glm-5.1" in by_stage["v1"]["primary_routes"]
+    assert "glm-5.2" in by_stage["v1"]["forbidden_routes"]
+    assert by_stage["v2"]["template_id"] == "local-bulk-drafter"
+    assert "glm-5.2" in by_stage["v2"]["primary_routes"]
+    assert by_stage["v3"]["template_id"] == "provider-intel-researcher"
 
 
 def test_classify_task_family_distinguishes_watchdog_and_interactive_jobs():

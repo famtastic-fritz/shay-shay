@@ -23,6 +23,7 @@ from shay_cli.intelligence_control_plane import (
     get_agent_template_registry,
     get_control_plane_modules,
     get_memory_truth_surfaces,
+    get_product_worker_pool_registry,
     get_provider_model_registry,
     get_routing_tier_registry,
     get_task_family_routing_matrix,
@@ -3006,6 +3007,26 @@ def format_task_family_matrix(rows: list[Mapping[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def format_product_worker_pool(rows: list[Mapping[str, Any]]) -> str:
+    lines = ["Product Worker Pool Matrix", ""]
+    if not rows:
+        lines.append("- no product worker pool records found")
+        return "\n".join(lines)
+    for row in rows:
+        lines.append(f"- {row['product_id']}:{row['stage_id']} template={row['template_id']}")
+        lines.append(f"  stage: {row['stage_label']}")
+        lines.append(f"  objective: {row['objective']}")
+        lines.append(f"  primary_routes: {', '.join(row['primary_routes'])}")
+        lines.append(f"  escalation_routes: {', '.join(row['escalation_routes']) if row['escalation_routes'] else 'none'}")
+        lines.append(f"  forbidden_routes: {', '.join(row['forbidden_routes']) if row['forbidden_routes'] else 'none'}")
+        lines.append(f"  required_capabilities: {', '.join(row['required_capabilities'])}")
+        for proof in row.get('proof_surfaces', []):
+            lines.append(f"  proof: {proof}")
+        for gap in row.get('known_gaps', []):
+            lines.append(f"  gap: {gap}")
+    return "\n".join(lines)
+
+
 def format_cron_audit(report: Mapping[str, Any]) -> str:
     summary = report.get('summary', {})
     lines = [
@@ -3154,6 +3175,10 @@ def cmd_intelligence(args: Any) -> int:
             return 0
         if subcommand == "task-families":
             print(format_task_family_matrix(get_task_family_routing_matrix()))
+            return 0
+        if subcommand == "worker-pool":
+            product_id = getattr(args, "product_id", None)
+            print(format_product_worker_pool(get_product_worker_pool_registry(product_id)))
             return 0
         if subcommand == "cron-audit":
             print(format_cron_audit(audit_cron_jobs()))

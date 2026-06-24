@@ -9528,6 +9528,8 @@ def main():
     control_plane_subparsers.add_parser("probe-registry", help="Show persisted live probe registry")
     control_plane_subparsers.add_parser("tiers", help="Show enforced routing tiers and premium gating defaults")
     control_plane_subparsers.add_parser("task-families", help="Show task-family to lane mapping defaults")
+    control_plane_worker_pool = control_plane_subparsers.add_parser("worker-pool", help="Show product/stage worker-pool routing matrix")
+    control_plane_worker_pool.add_argument("product_id", nargs="?", help="Optional product id filter, e.g. famtastic-by-the-numbers")
     control_plane_subparsers.add_parser("cron-audit", help="Audit cron jobs for lane pinning, premium drift, and invalid interactive jobs")
     control_plane_subparsers.add_parser("templates", help="Show agent template registry")
     control_plane_subparsers.add_parser("memory", help="Show memory/truth surfaces")
