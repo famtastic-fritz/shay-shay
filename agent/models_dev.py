@@ -407,6 +407,21 @@ class ModelCapabilities:
     model_family: str = ""
 
 
+_STATIC_CAPABILITY_OVERRIDES: dict[tuple[str, str], ModelCapabilities] = {
+    # Fritz confirmed glm-5.2 is text-only right now — no tool calls, no
+    # built-in vision. Keep Shay's truth layer aligned even before models.dev or
+    # provider catalogs fully catch up.
+    ("zai", "glm-5.2"): ModelCapabilities(
+        supports_tools=False,
+        supports_vision=False,
+        supports_reasoning=False,
+        context_window=200000,
+        max_output_tokens=8192,
+        model_family="glm",
+    ),
+}
+
+
 def _get_provider_models(provider: str) -> Optional[Dict[str, Any]]:
     """Resolve a Shay-Shay provider ID to its models dict from models.dev.
 
@@ -458,6 +473,10 @@ def get_model_capabilities(provider: str, model: str) -> Optional[ModelCapabilit
       - limit.output  (int) → max_output_tokens
       - family     (str)   → model_family
     """
+    override = _STATIC_CAPABILITY_OVERRIDES.get((provider, model))
+    if override is not None:
+        return override
+
     models = _get_provider_models(provider)
     if models is None:
         return None
