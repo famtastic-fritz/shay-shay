@@ -1,0 +1,221 @@
+schema_version: 2026-06-24
+packet_set_id: benchmark-wave-1-scout-builder-reviewer-clerk
+status: seed-draft
+source_matrix: docs/agent-template-routing-matrix-2026-06-24.md
+purpose: First benchmark packet seed set for measuring cheapest-sufficient routing
+  and verification quality by agent template.
+packets:
+- packet_id: scout-recall-001
+  template_id: scout
+  task_family: recall
+  task_subtype: prior-session-recovery
+  prompt: Recover what Fritz and Shay decided previously about a named project and
+    separate confirmed decisions from uncertain memory.
+  input_artifacts:
+  - session_search results
+  - project docs
+  required_toolsets:
+  - session_search
+  - file
+  required_output_contract:
+  - confirmed_decisions
+  - uncertain_points
+  - supporting_sources
+  verification_method:
+  - source-backed spot check
+  - contradiction present if uncertainty exists
+  cost_sensitivity_class: high
+  default_route_class: cheap-default
+  escalation_condition: conflicting retrieved sources remain unresolved
+- packet_id: scout-research-002
+  template_id: scout
+  task_family: research
+  task_subtype: market-scan
+  prompt: Scan recent information on a tool/provider category and summarize the top
+    options with direct source support and contradictions if present.
+  input_artifacts:
+  - web results
+  required_toolsets:
+  - web
+  required_output_contract:
+  - top_options
+  - evidence_links
+  - contradiction_notes
+  verification_method:
+  - source URL audit
+  cost_sensitivity_class: high
+  default_route_class: cheap-default
+  escalation_condition: multi-source contradiction requires synthesis
+- packet_id: builder-bug-fix-001
+  template_id: builder
+  task_family: implementation
+  task_subtype: bug-fix
+  prompt: Reproduce a failing behavior, patch the root cause, and verify the fix with
+    the smallest credible test surface.
+  input_artifacts:
+  - failing file path
+  - failing test or reproduction notes
+  required_toolsets:
+  - terminal
+  - file
+  required_output_contract:
+  - root_cause
+  - changed_files
+  - verification_proof
+  verification_method:
+  - compile_or_test_pass
+  - diff_review
+  cost_sensitivity_class: medium
+  default_route_class: mid-default
+  escalation_condition: repeated failed repair or architecture ambiguity
+- packet_id: builder-cli-wire-002
+  template_id: builder
+  task_family: implementation
+  task_subtype: cli-wiring
+  prompt: Add a new CLI surface that exposes an already-defined artifact or runtime
+    truth surface, then prove the command path works.
+  input_artifacts:
+  - command spec
+  - target function/path
+  required_toolsets:
+  - terminal
+  - file
+  required_output_contract:
+  - route_added
+  - touched_files
+  - runnable_proof
+  verification_method:
+  - command_execution
+  - code_readback
+  cost_sensitivity_class: medium
+  default_route_class: mid-default
+  escalation_condition: command surface conflicts with existing parser structure
+- packet_id: reviewer-diff-gate-001
+  template_id: reviewer
+  task_family: review
+  task_subtype: artifact-grounded-diff-review
+  prompt: Review a proposed implementation against the stated goal and return approve
+    or revise with line/file-grounded objections.
+  input_artifacts:
+  - git diff
+  - goal brief
+  - test proof
+  required_toolsets:
+  - file
+  - terminal
+  required_output_contract:
+  - verdict
+  - grounded_objections
+  - acceptance_reasons
+  verification_method:
+  - file_line_citation_check
+  - claim_reproduction_check
+  cost_sensitivity_class: low
+  default_route_class: premium-default
+  escalation_condition: multiple contradictory artifacts or high-stakes change
+- packet_id: reviewer-ledger-gate-002
+  template_id: reviewer
+  task_family: review
+  task_subtype: swarm-ledger-acceptance
+  prompt: Verify that a swarm run followed controller-path requirements and did not
+    fake review, ledger, or packet metadata.
+  input_artifacts:
+  - swarm plan
+  - worker ledgers
+  - final summary
+  required_toolsets:
+  - file
+  required_output_contract:
+  - verdict
+  - missing_proofs
+  - grounded_findings
+  verification_method:
+  - ledger_path_check
+  - metadata_presence_check
+  cost_sensitivity_class: low
+  default_route_class: premium-default
+  escalation_condition: artifact inconsistency across multiple worker outputs
+- packet_id: clerk-attention-001
+  template_id: clerk
+  task_family: status
+  task_subtype: attention-board
+  prompt: Show what needs Fritz's attention right now using todos, running processes,
+    crons, and recent active sessions, with exception-oriented ranking.
+  input_artifacts:
+  - todo list
+  - process list
+  - cron list
+  - recent sessions
+  required_toolsets:
+  - todo
+  - terminal
+  - session_search
+  required_output_contract:
+  - attention_items
+  - reason_each_needs_attention
+  - what_can_wait
+  verification_method:
+  - truth_surface_match
+  cost_sensitivity_class: high
+  default_route_class: cheap-default
+  escalation_condition: conflicting urgency signals require adjudication
+- packet_id: clerk-queue-002
+  template_id: clerk
+  task_family: monitoring
+  task_subtype: queue-summary
+  prompt: Summarize queue/worker state and surface only anomalies, blockers, or items
+    that need intervention.
+  input_artifacts:
+  - worker queue
+  - active processes
+  required_toolsets:
+  - terminal
+  - file
+  required_output_contract:
+  - anomalies
+  - blockers
+  - no_action_items_omitted
+  verification_method:
+  - anomaly_grounding_check
+  cost_sensitivity_class: high
+  default_route_class: cheap-default
+  escalation_condition: queue state is contradictory or incomplete
+- packet_id: watcher-anomaly-001
+  template_id: watcher
+  task_family: monitoring
+  task_subtype: anomaly-watch
+  prompt: Watch API spend, queue failures, and stuck work. Stay quiet unless there
+    is a real anomaly worth escalating.
+  input_artifacts:
+  - cron history
+  - process ledger
+  - recent queue status
+  required_toolsets:
+  - cronjob
+  - terminal
+  - session_search
+  required_output_contract: exception-only monitoring summary with escalation threshold
+  verification_method: route template match + benchmark artifact write
+  cost_sensitivity_class: cheap-first
+  default_route_class: cheap-default
+  escalation_condition: multiple anomaly signals or unresolved operational drift
+- packet_id: browser-userflow-001
+  template_id: browser-operator
+  task_family: browser-ui
+  task_subtype: user-flow-breakpoint
+  prompt: Use Playwright/browser automation to go through the actual user flow and
+    report exactly where it breaks.
+  input_artifacts:
+  - running app url
+  - test credentials if provided
+  - expected user flow brief
+  required_toolsets:
+  - browser
+  - terminal
+  required_output_contract: user-flow verdict with failing step and proof artifact
+    path
+  verification_method: route template match + benchmark artifact write
+  cost_sensitivity_class: capability-first
+  default_route_class: mid-default
+  escalation_condition: browser tooling blocked or flow ambiguity prevents decisive
+    verdict

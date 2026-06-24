@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import re
 from typing import Any, Mapping
 
 from agent.process_intelligence import list_run_records, normalized_validation_results
@@ -389,7 +390,7 @@ _TEMPLATE_SEEDS = [
         "template_id": "implementation-worker",
         "role_name": "Implementation Worker",
         "agent_id": "worker-supervisor",
-        "task_families": ["code implementation", "schema wiring", "CLI additions"],
+        "task_families": ["code implementation", "schema wiring", "CLI additions", "implementation", "deploy"],
         "preferred_routes": ["openai-codex-gpt-5.4", "openai-gpt-5.4-mini"],
         "budget_profile": "mid",
         "latency_profile": "balanced",
@@ -399,7 +400,7 @@ _TEMPLATE_SEEDS = [
         "template_id": "review-judge",
         "role_name": "Review Judge",
         "agent_id": "run-reviewer",
-        "task_families": ["adversarial review", "route challenge", "proof audit"],
+        "task_families": ["adversarial review", "route challenge", "proof audit", "review"],
         "preferred_routes": ["google-gemini-2.5-pro", "openai-codex-gpt-5.4"],
         "budget_profile": "premium-review",
         "latency_profile": "quality-first",
@@ -409,11 +410,31 @@ _TEMPLATE_SEEDS = [
         "template_id": "memory-curator",
         "role_name": "Memory Curator",
         "agent_id": "episodic-recorder",
-        "task_families": ["memory/truth unification", "resume surfaces", "evidence packaging"],
+        "task_families": ["memory/truth unification", "resume surfaces", "evidence packaging", "recall", "resume"],
         "preferred_routes": ["openai-gpt-5.4-mini", "ollama-qwen3-14b"],
         "budget_profile": "cheap-first",
         "latency_profile": "balanced",
         "output_contract": "truth/memory surface update with observation vs interpretation preserved",
+    },
+    {
+        "template_id": "attention-watcher",
+        "role_name": "Attention Watcher",
+        "agent_id": "work-router",
+        "task_families": ["monitoring", "status", "attention", "watching"],
+        "preferred_routes": ["openai-gpt-5.4-mini", "groq-llama-3.3-70b"],
+        "budget_profile": "cheap-first",
+        "latency_profile": "fast",
+        "output_contract": "exception-oriented attention summary + escalation threshold",
+    },
+    {
+        "template_id": "browser-operator",
+        "role_name": "Browser Operator",
+        "agent_id": "worker-supervisor",
+        "task_families": ["browser-ui", "playwright", "user-flow verification"],
+        "preferred_routes": ["openai-codex-gpt-5.4", "openai-gpt-5.4-mini"],
+        "budget_profile": "capability-first",
+        "latency_profile": "balanced",
+        "output_contract": "user-flow verdict + breakpoints + proof artifacts",
     },
 ]
 
@@ -511,6 +532,108 @@ def get_memory_truth_surfaces() -> list[dict[str, Any]]:
     ]
 
 
+PHRASE_GROUPS: dict[str, tuple[str, ...]] = {
+    "swarm": (
+        "break this into packets",
+        "assign the right lanes",
+        "run it with review",
+        "swarm",
+        "packets",
+        "lanes",
+        "captain",
+        "orchestrate",
+        "continue the next lane",
+    ),
+    "watcher": (
+        "watch api spend",
+        "only tell me when",
+        "watch for failures",
+        "watch this lane",
+        "monitor this",
+        "keep an eye on",
+        "alert me if",
+    ),
+    "attention": (
+        "what needs my attention",
+        "show me the board",
+        "show me the queues",
+        "things that are stuck",
+        "queue",
+        "stuck",
+        "attention",
+        "board",
+        "what is waiting on me",
+    ),
+    "recall": (
+        "what did fritz and shay already decide",
+        "before today",
+        "recall",
+        "what did we decide",
+        "pick back up where we left off",
+        "resume",
+    ),
+    "review": (
+        "tear this implementation apart",
+        "adversarial review",
+        "only approve it if the proof is real",
+        "audit",
+        "review",
+        "adversarial",
+    ),
+    "implementation": (
+        "fix the broken",
+        "patch the root cause",
+        "verify the fix",
+        "reproduce a failing behavior",
+        "build this app",
+        "ship the first working version",
+        "get this build ready to deploy",
+        "implement",
+        "refactor",
+        "build",
+        "code",
+        "cli",
+        "schema",
+        "bug",
+        "fix",
+        "deploy",
+    ),
+    "browser": (
+        "playwright",
+        "browser",
+        "ui",
+        "user flow",
+        "click through",
+        "form submission",
+        "end-to-end",
+        "e2e",
+    ),
+    "provider": (
+        "provider",
+        "model",
+        "registry",
+        "route",
+    ),
+    "memory": (
+        "memory",
+        "truth",
+        "ledger",
+        "telemetry",
+    ),
+}
+
+
+def _matches_any(lowered: str, group_name: str) -> bool:
+    for phrase in PHRASE_GROUPS[group_name]:
+        if " " in phrase or "-" in phrase:
+            if phrase in lowered:
+                return True
+        else:
+            if re.search(rf"\b{re.escape(phrase)}\b", lowered):
+                return True
+    return False
+
+
 def build_route_scorecards(limit: int = 200) -> list[dict[str, Any]]:
     scorecards: dict[str, dict[str, Any]] = {}
     for record in list_run_records(limit=limit):
@@ -579,22 +702,42 @@ def explain_route(task: str) -> dict[str, Any]:
     routes = {row["route_id"]: row for row in get_provider_model_registry()}
     scorecards = build_route_scorecards()
 
-    if any(word in lowered for word in ("provider", "model", "registry", "route")):
-        chosen_template = "provider-intel-researcher"
-        chosen_route = "google-gemini-2.5-pro"
-        task_family = "provider research"
-    elif any(word in lowered for word in ("review", "audit", "prove", "adversarial")):
-        chosen_template = "review-judge"
-        chosen_route = "google-gemini-2.5-pro"
-        task_family = "review"
-    elif any(word in lowered for word in ("memory", "truth", "ledger", "telemetry")):
+    if _matches_any(lowered, "swarm"):
+        chosen_template = "orchestrator-captain"
+        chosen_route = "openai-codex-gpt-5.4"
+        task_family = "orchestration"
+    elif _matches_any(lowered, "watcher"):
+        chosen_template = "attention-watcher"
+        chosen_route = "openai-gpt-5.4-mini"
+        task_family = "monitoring"
+    elif _matches_any(lowered, "attention"):
+        chosen_template = "attention-watcher"
+        chosen_route = "openai-gpt-5.4-mini"
+        task_family = "attention"
+    elif _matches_any(lowered, "recall"):
         chosen_template = "memory-curator"
         chosen_route = "openai-gpt-5.4-mini"
         task_family = "memory/truth"
-    elif any(word in lowered for word in ("implement", "refactor", "build", "code", "cli", "schema")):
+    elif _matches_any(lowered, "review"):
+        chosen_template = "review-judge"
+        chosen_route = "google-gemini-2.5-pro"
+        task_family = "review"
+    elif _matches_any(lowered, "browser"):
+        chosen_template = "browser-operator"
+        chosen_route = "openai-codex-gpt-5.4"
+        task_family = "browser-ui"
+    elif _matches_any(lowered, "implementation"):
         chosen_template = "implementation-worker"
         chosen_route = "openai-codex-gpt-5.4"
         task_family = "implementation"
+    elif _matches_any(lowered, "provider"):
+        chosen_template = "provider-intel-researcher"
+        chosen_route = "google-gemini-2.5-pro"
+        task_family = "provider research"
+    elif _matches_any(lowered, "memory"):
+        chosen_template = "memory-curator"
+        chosen_route = "openai-gpt-5.4-mini"
+        task_family = "memory/truth"
     else:
         chosen_template = "orchestrator-captain"
         chosen_route = "openai-codex-gpt-5.4"

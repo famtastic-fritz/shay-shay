@@ -1,0 +1,209 @@
+schema_name: route-scorecard
+version: 2026-06-24
+status: draft-for-implementation
+purpose: >-
+  Record measured routing outcomes by template, task family, provider/model route,
+  and verification result so Shay can move from doctrine-level routing to
+  evidence-backed assignment.
+
+record_keys:
+  - scorecard_id
+  - template_id
+  - task_family
+  - task_subtype
+  - provider
+  - model
+  - runtime_surface
+  - route_class
+  - run_count
+  - success_rate
+  - verification_pass_rate
+  - reviewer_approval_rate
+  - correction_rate
+  - median_latency_ms
+  - median_estimated_cost
+  - median_token_in
+  - median_token_out
+  - last_good_run
+  - last_bad_run
+  - failure_modes
+  - upgrade_triggers
+  - downgrade_bans
+  - benchmark_packet_ids
+  - notes
+
+field_definitions:
+  scorecard_id:
+    type: string
+    example: builder-bug-fix-openrouter-sonnet-mid
+  template_id:
+    type: string
+    allowed_examples:
+      - scout
+      - builder
+      - critic
+      - reviewer
+      - clerk
+      - watcher
+      - browser-operator
+      - captain-router
+  task_family:
+    type: string
+    examples:
+      - implementation
+      - review
+      - monitoring
+      - browser-ui
+      - recall
+  task_subtype:
+    type: string
+    examples:
+      - bug-fix
+      - diff-review
+      - queue-summary
+  provider:
+    type: string
+    examples:
+      - openrouter
+      - anthropic
+      - openai
+      - custom:local
+  model:
+    type: string
+    examples:
+      - anthropic/claude-sonnet-4
+      - openai/gpt-5
+      - xai/grok-4-fast
+  runtime_surface:
+    type: string
+    examples:
+      - delegate_task
+      - browser
+      - computer_use
+      - terminal
+      - cronjob
+  route_class:
+    type: string
+    allowed_values:
+      - cheap-default
+      - mid-default
+      - premium-default
+      - capability-first
+      - escalation
+  run_count:
+    type: integer
+    minimum: 0
+  success_rate:
+    type: float
+    minimum: 0.0
+    maximum: 1.0
+  verification_pass_rate:
+    type: float
+    minimum: 0.0
+    maximum: 1.0
+  reviewer_approval_rate:
+    type: float
+    minimum: 0.0
+    maximum: 1.0
+  correction_rate:
+    type: float
+    minimum: 0.0
+    maximum: 1.0
+  median_latency_ms:
+    type: integer
+    minimum: 0
+  median_estimated_cost:
+    type: number
+    minimum: 0
+  median_token_in:
+    type: integer
+    minimum: 0
+  median_token_out:
+    type: integer
+    minimum: 0
+  last_good_run:
+    type: string
+    format: iso-datetime-or-run-id
+  last_bad_run:
+    type: string
+    format: iso-datetime-or-run-id
+  failure_modes:
+    type: list[string]
+    examples:
+      - timeout
+      - hallucinated-review
+      - schema-miss
+      - over-cost-route
+      - tool-failure
+  upgrade_triggers:
+    type: list[string]
+    examples:
+      - repeated-verification-failure
+      - contradictory-artifacts
+      - ambiguity-collapse
+  downgrade_bans:
+    type: list[string]
+    examples:
+      - never-use-cheap-for-artifact-grounded-review
+  benchmark_packet_ids:
+    type: list[string]
+    example:
+      - builder-bug-fix-001
+      - builder-cli-wire-002
+  notes:
+    type: string
+
+aggregation_rules:
+  - keep separate scorecards per template_id + task_family + provider + model + route_class
+  - do not blend browser capability-first runs into pure text-route scorecards
+  - do not promote a route to default until run_count and verification_pass_rate are both credible
+  - store failure modes as counts in future implementation, but accept flat lists in the first draft
+
+promotion_rules:
+  provisional_default_candidate:
+    minimum_run_count: 10
+    minimum_verification_pass_rate: 0.85
+    maximum_correction_rate: 0.20
+  strong_default_candidate:
+    minimum_run_count: 25
+    minimum_verification_pass_rate: 0.90
+    maximum_correction_rate: 0.10
+  forced_escalation_candidate:
+    conditions:
+      - reviewer_approval_rate below 0.75
+      - repeated failure on high-stakes tasks
+      - cost acceptable but verification weak
+
+example_record:
+  scorecard_id: builder-bug-fix-openrouter-sonnet-mid
+  template_id: builder
+  task_family: implementation
+  task_subtype: bug-fix
+  provider: openrouter
+  model: anthropic/claude-sonnet-4
+  runtime_surface: delegate_task
+  route_class: mid-default
+  run_count: 12
+  success_rate: 0.83
+  verification_pass_rate: 0.92
+  reviewer_approval_rate: 0.83
+  correction_rate: 0.17
+  median_latency_ms: 54000
+  median_estimated_cost: 0.91
+  median_token_in: 7200
+  median_token_out: 2800
+  last_good_run: 2026-06-24T14:00:00Z
+  last_bad_run: 2026-06-23T22:11:00Z
+  failure_modes:
+    - timeout
+    - schema-miss
+  upgrade_triggers:
+    - repeated-verification-failure
+  downgrade_bans:
+    - never-force-serious-code-work-into-cheap-only-route
+  benchmark_packet_ids:
+    - builder-bug-fix-001
+    - builder-feature-patch-003
+  notes: >-
+    Good default candidate for builder-class implementation when grounded review
+    stays in a separate reviewer lane.

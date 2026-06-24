@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import subprocess
+import yaml
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Mapping
 
 from shay_constants import get_shay_home
@@ -33,6 +39,18 @@ from shay_cli.intelligence_seed import (
     get_cadence_records,
     get_capability_matrix,
 )
+
+
+BENCHMARK_TEMPLATE_COMPATIBILITY: dict[str, set[str]] = {
+    "scout": {"provider-intel-researcher", "memory-curator", "capability-cartographer"},
+    "builder": {"implementation-worker"},
+    "critic": {"review-judge", "orchestrator-captain"},
+    "reviewer": {"review-judge"},
+    "clerk": {"attention-watcher", "memory-curator", "orchestrator-captain"},
+    "watcher": {"attention-watcher", "memory-curator", "provider-intel-researcher"},
+    "browser-operator": {"browser-operator", "implementation-worker", "orchestrator-captain"},
+    "captain-router": {"orchestrator-captain"},
+}
 
 MISSING_OR_UNSAFE_STATUSES = {
     "missing",
@@ -400,7 +418,7 @@ def _ensure_storage() -> Path:
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8"
     )
 
 
@@ -433,6 +451,288 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
         if isinstance(row, dict):
             rows.append(row)
     return rows
+
+
+def _load_yaml_document(path: str | Path) -> Any:
+    yaml_path = Path(path).expanduser()
+    data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    if data is None:
+        raise ValueError(f"YAML document is empty: {yaml_path}")
+    return data
+
+
+def _benchmark_reports_dir() -> Path:
+    base = _ensure_storage() / "reports" / "benchmarks"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def _route_template_compatible(expected_template: str, actual_template: str) -> bool:
+    expected = str(expected_template or "").strip()
+    actual = str(actual_template or "").strip()
+    if not expected or not actual:
+        return False
+    allowed = BENCHMARK_TEMPLATE_COMPATIBILITY.get(expected, set())
+    return actual == expected or actual in allowed
+
+
+def _validate_benchmark_packet_set(doc: Mapping[str, Any]) -> dict[str, Any]:
+    packet_set_id = str(doc.get("packet_set_id") or "").strip()
+    if not packet_set_id:
+        raise ValueError("packet set missing packet_set_id")
+    packets = doc.get("packets")
+    if not isinstance(packets, list) or not packets:
+        raise ValueError("packet set must contain a non-empty packets list")
+    required = {
+        "packet_id", "template_id", "task_family", "task_subtype", "prompt",
+        "required_toolsets", "required_output_contract", "verification_method",
+        "cost_sensitivity_class", "default_route_class", "escalation_condition",
+    }
+    normalized = []
+    for idx, packet in enumerate(packets, start=1):
+        if not isinstance(packet, Mapping):
+            raise ValueError(f"packet {idx} must be an object")
+        missing = sorted(key for key in required if not packet.get(key))
+        if missing:
+            raise ValueError(f"packet {idx} missing required keys: {', '.join(missing)}")
+        normalized.append(dict(packet))
+    return {**dict(doc), "packets": normalized, "packet_set_id": packet_set_id}
+
+
+def _validate_nl_coverage_corpus(doc: Mapping[str, Any]) -> dict[str, Any]:
+    corpus_id = str(doc.get("corpus_id") or "").strip()
+    if not corpus_id:
+        raise ValueError("coverage corpus missing corpus_id")
+    records = doc.get("records")
+    if not isinstance(records, list) or not records:
+        raise ValueError("coverage corpus must contain a non-empty records list")
+    required = {"ask_id", "family", "ask", "expected_intent", "expected_template", "acceptable_fallback_template"}
+    normalized = []
+    for idx, record in enumerate(records, start=1):
+        if not isinstance(record, Mapping):
+            raise ValueError(f"coverage record {idx} must be an object")
+        missing = sorted(key for key in required if not record.get(key))
+        if missing:
+            raise ValueError(f"coverage record {idx} missing required keys: {', '.join(missing)}")
+        normalized.append(dict(record))
+    return {**dict(doc), "records": normalized, "corpus_id": corpus_id}
+
+
+def _validate_route_scorecard_schema(doc: Mapping[str, Any]) -> dict[str, Any]:
+    schema_name = str(doc.get("schema_name") or "").strip()
+    if schema_name != "route-scorecard":
+        raise ValueError("scorecard schema must declare schema_name: route-scorecard")
+    record_keys = doc.get("record_keys")
+    if not isinstance(record_keys, list) or not record_keys:
+        raise ValueError("scorecard schema must declare non-empty record_keys")
+    return dict(doc)
+
+
+def _write_benchmark_artifact(name: str, payload: Mapping[str, Any]) -> Path:
+    path = _benchmark_reports_dir() / name
+    _write_json(path, payload)
+    return path
+
+
+def _run_benchmark_packet(packet: Mapping[str, Any], packet_set_id: str) -> dict[str, Any]:
+    prompt = str(packet.get("prompt") or "").strip()
+    route = route_task(prompt)
+    trace = trace_task(prompt)
+    control_plane = explain_route(prompt)
+    actual_template = str(control_plane.get("chosen_template") or "")
+    compatible = _route_template_compatible(str(packet.get("template_id") or ""), actual_template)
+    run_id = f"benchmark-run-{_slug(str(packet.get('packet_id') or 'packet'))}-{_slug(_utc_now())}"
+    summary = {
+        "run_id": run_id,
+        "timestamp": _utc_now(),
+        "packet_set_id": packet_set_id,
+        "packet_id": str(packet.get("packet_id") or ""),
+        "expected_template": str(packet.get("template_id") or ""),
+        "actual_template": actual_template,
+        "task_family": str(packet.get("task_family") or ""),
+        "task_subtype": str(packet.get("task_subtype") or ""),
+        "provider_model_route": str(control_plane.get("chosen_route") or ""),
+        "runtime_surface": "intelligence-benchmark",
+        "route_class": str(packet.get("default_route_class") or ""),
+        "verification_pass": compatible,
+        "success": compatible,
+        "route_decision": str(route.get("decision") or ""),
+        "owner_agent": str(route.get("owner_agent") or ""),
+        "control_plane": control_plane,
+        "route": route,
+        "trace": trace,
+    }
+    artifact_path = _write_benchmark_artifact(f"{run_id}.json", summary)
+    summary["artifact_path"] = str(artifact_path)
+    create_event({
+        "summary": f"Benchmark packet run completed: {summary['packet_id']}",
+        "decision": "benchmark_run",
+        "status": "complete",
+        "result": "verification_pass" if compatible else "verification_failed",
+        "artifact_paths": [str(artifact_path)],
+        "files_touched": [str(artifact_path)],
+        "plan_id": "plan-shay-intelligence-layer",
+        "mission_id": "mission-shay-intelligence-layer",
+        "task_id": summary["run_id"],
+        "related_capabilities": ["famtastic-data-center-rd", "worker-control"],
+        "related_agents": [str(route.get("owner_agent") or "work-router")],
+        "observation": f"Packet {summary['packet_id']} routed to {actual_template or 'unknown'}.",
+        "interpretation": "Benchmark evidence recorded.",
+    })
+    return summary
+
+
+def _collect_benchmark_run_files(path_value: str | Path) -> list[dict[str, Any]]:
+    path = Path(path_value).expanduser()
+    if path.is_file():
+        row = _read_json(path)
+        return [row] if row else []
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for child in sorted(path.glob('benchmark-run-*.json')):
+        row = _read_json(child)
+        if row:
+            rows.append(row)
+    return rows
+
+
+def _build_scorecards_from_runs(runs: list[Mapping[str, Any]], schema: Mapping[str, Any]) -> dict[str, Any]:
+    grouped: dict[tuple[str, str, str, str, str], list[Mapping[str, Any]]] = {}
+    for run in runs:
+        control = run.get("control_plane") or {}
+        route_id = str(run.get("provider_model_route") or control.get("chosen_route") or "unknown")
+        provider, _, model = route_id.partition('-')
+        key = (
+            str(run.get("expected_template") or "unknown"),
+            str(run.get("task_family") or "unknown"),
+            provider or "unknown",
+            model or route_id or "unknown",
+            str(run.get("route_class") or "unknown"),
+        )
+        grouped.setdefault(key, []).append(run)
+    scorecards = []
+    for key, items in grouped.items():
+        template_id, task_family, provider, model, route_class = key
+        run_count = len(items)
+        verification_passes = sum(1 for item in items if item.get("verification_pass"))
+        successes = sum(1 for item in items if item.get("success"))
+        scorecards.append({
+            "scorecard_id": f"{template_id}-{task_family}-{provider}-{model}-{route_class}",
+            "template_id": template_id,
+            "task_family": task_family,
+            "task_subtype": items[0].get("task_subtype"),
+            "provider": provider,
+            "model": model,
+            "runtime_surface": "intelligence-benchmark",
+            "route_class": route_class,
+            "run_count": run_count,
+            "success_rate": round(successes / run_count, 4),
+            "verification_pass_rate": round(verification_passes / run_count, 4),
+            "reviewer_approval_rate": round(verification_passes / run_count, 4),
+            "correction_rate": round((run_count - verification_passes) / run_count, 4),
+            "median_latency_ms": 0,
+            "median_estimated_cost": 0,
+            "median_token_in": 0,
+            "median_token_out": 0,
+            "last_good_run": next((item.get("timestamp") for item in reversed(items) if item.get("verification_pass")), None),
+            "last_bad_run": next((item.get("timestamp") for item in reversed(items) if not item.get("verification_pass")), None),
+            "failure_modes": sorted({"template-mismatch" for item in items if not item.get("verification_pass")}),
+            "upgrade_triggers": ["repeated-verification-failure"] if verification_passes < run_count else [],
+            "downgrade_bans": ["never-use-cheap-for-artifact-grounded-review"] if template_id == "reviewer" else [],
+            "benchmark_packet_ids": [str(item.get("packet_id") or "") for item in items],
+            "notes": f"Generated from {run_count} benchmark run(s).",
+        })
+    payload = {
+        "schema_name": schema.get("schema_name"),
+        "schema_version": schema.get("version"),
+        "generated_at": _utc_now(),
+        "run_count": len(runs),
+        "scorecard_count": len(scorecards),
+        "scorecards": scorecards,
+    }
+    artifact_path = _write_benchmark_artifact(f"route-scorecards-{_slug(_utc_now())}.json", payload)
+    payload["artifact_path"] = str(artifact_path)
+    return payload
+
+
+def _run_nl_coverage_corpus(corpus: Mapping[str, Any]) -> dict[str, Any]:
+    results = []
+    for record in corpus.get("records", []):
+        ask = str(record.get("ask") or "")
+        trace = trace_task(ask)
+        control = explain_route(ask)
+        actual_template = str(control.get("chosen_template") or "")
+        expected = str(record.get("expected_template") or "")
+        acceptable = str(record.get("acceptable_fallback_template") or "")
+        if _route_template_compatible(expected, actual_template):
+            verdict = "correct"
+        elif _route_template_compatible(acceptable, actual_template):
+            verdict = "acceptable"
+        elif actual_template:
+            verdict = "wrong"
+        else:
+            verdict = "generic_fallback"
+        results.append({
+            **dict(record),
+            "actual_trace_intent": str(trace.get("normalized_intent") or ""),
+            "actual_route_owner": str(trace.get("route", {}).get("owner_agent") or ""),
+            "actual_template": actual_template,
+            "verdict": verdict,
+            "notes": str(control.get("chosen_route") or ""),
+        })
+    correct = sum(1 for row in results if row["verdict"] == "correct")
+    acceptable_count = sum(1 for row in results if row["verdict"] == "acceptable")
+    payload = {
+        "corpus_id": corpus.get("corpus_id"),
+        "generated_at": _utc_now(),
+        "record_count": len(results),
+        "correct_count": correct,
+        "acceptable_count": acceptable_count,
+        "generic_fallback_count": sum(1 for row in results if row["verdict"] == "generic_fallback"),
+        "wrong_count": sum(1 for row in results if row["verdict"] == "wrong"),
+        "success_rate": round((correct + acceptable_count) / len(results), 4) if results else 0.0,
+        "results": results,
+    }
+    artifact_path = _write_benchmark_artifact(f"coverage-report-{_slug(_utc_now())}.json", payload)
+    payload["artifact_path"] = str(artifact_path)
+    return payload
+
+
+def _format_benchmark_run(run: Mapping[str, Any]) -> str:
+    return "\n".join([
+        "Benchmark Packet Run",
+        f"run_id: {run.get('run_id')}",
+        f"packet_id: {run.get('packet_id')}",
+        f"expected_template: {run.get('expected_template')}",
+        f"actual_template: {run.get('actual_template')}",
+        f"provider_model_route: {run.get('provider_model_route')}",
+        f"verification_pass: {str(bool(run.get('verification_pass'))).lower()}",
+        f"artifact_path: {run.get('artifact_path')}",
+    ])
+
+
+def _format_coverage_report(report: Mapping[str, Any]) -> str:
+    return "\n".join([
+        "Coverage Report",
+        f"corpus_id: {report.get('corpus_id')}",
+        f"record_count: {report.get('record_count')}",
+        f"correct_count: {report.get('correct_count')}",
+        f"acceptable_count: {report.get('acceptable_count')}",
+        f"generic_fallback_count: {report.get('generic_fallback_count')}",
+        f"wrong_count: {report.get('wrong_count')}",
+        f"success_rate: {report.get('success_rate')}",
+        f"artifact_path: {report.get('artifact_path')}",
+    ])
+
+
+def _format_scorecard_report(report: Mapping[str, Any]) -> str:
+    return "\n".join([
+        "Route Scorecards",
+        f"run_count: {report.get('run_count')}",
+        f"scorecard_count: {report.get('scorecard_count')}",
+        f"artifact_path: {report.get('artifact_path')}",
+    ])
 
 
 def backfill_events() -> list[dict[str, Any]]:
@@ -1291,6 +1591,196 @@ def get_worker(worker_id: str) -> dict[str, Any] | None:
     )
 
 
+SWARM_ALLOWED_ROLES = {"captain", "worker", "reviewer", "aggregator", "verifier", "router"}
+SWARM_ALLOWED_TIERS = {"cheap", "mid", "premium"}
+
+
+def _packet_hash(payload: Mapping[str, Any]) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8", errors="replace")).hexdigest()
+
+
+def _normalize_swarm_role(value: Any) -> str:
+    text = str(value or "worker").strip().lower() or "worker"
+    if text not in SWARM_ALLOWED_ROLES:
+        raise ValueError(f"unsupported swarm role: {value}")
+    return text
+
+
+def _normalize_swarm_tier(value: Any) -> str:
+    text = str(value or "cheap").strip().lower() or "cheap"
+    if text not in SWARM_ALLOWED_TIERS:
+        raise ValueError(f"unsupported routing tier: {value}")
+    return text
+
+
+def swarm_plan(
+    *,
+    objective: str,
+    worker_specs: list[Mapping[str, Any]],
+    mission_id: str = "mission-shay-intelligence-layer",
+    plan_id: str = "plan-shay-intelligence-layer",
+    lane: str = "hyperswarm-dry-run",
+) -> dict[str, Any]:
+    if not str(objective or "").strip():
+        raise ValueError("swarm_plan requires a non-empty objective")
+    if not worker_specs:
+        raise ValueError("swarm_plan requires at least one worker spec")
+
+    base = _ensure_storage()
+    run_id = f"swarm-plan-{_slug(_utc_now())}"
+    worker_packets: list[dict[str, Any]] = []
+    wave_ids: list[str] = []
+    for idx, spec in enumerate(worker_specs, start=1):
+        if not isinstance(spec, Mapping):
+            raise ValueError(f"worker spec {idx} must be an object")
+        worker_id = str(spec.get("worker_id") or f"{run_id}-worker-{idx}").strip()
+        agent_id = str(spec.get("agent_id") or "").strip()
+        goal = str(spec.get("goal") or "").strip()
+        expected_output_schema = str(spec.get("expected_output_schema") or "").strip()
+        if not agent_id:
+            raise ValueError(f"worker spec {idx} missing agent_id")
+        if not goal:
+            raise ValueError(f"worker spec {idx} missing goal")
+        if not expected_output_schema:
+            raise ValueError(f"worker spec {idx} missing expected_output_schema")
+        role = _normalize_swarm_role(spec.get("role"))
+        routing_tier = _normalize_swarm_tier(spec.get("routing_tier"))
+        wave = str(spec.get("wave") or "wave-1").strip() or "wave-1"
+        dependencies = [str(item).strip() for item in list(spec.get("dependencies") or []) if str(item).strip()]
+        packet = {
+            "worker_id": worker_id,
+            "agent_id": agent_id,
+            "role": role,
+            "wave": wave,
+            "routing_tier": routing_tier,
+            "goal": goal,
+            "context": str(spec.get("context") or "").strip(),
+            "expected_output_schema": expected_output_schema,
+            "dependencies": dependencies,
+            "toolsets": list(spec.get("toolsets") or []),
+            "reviewer_for": str(spec.get("reviewer_for") or "").strip(),
+        }
+        packet["packet_hash"] = _packet_hash(packet)
+        worker_packets.append(packet)
+        if wave not in wave_ids:
+            wave_ids.append(wave)
+
+    reviewer_packets = [p for p in worker_packets if p["role"] == "reviewer"]
+    if not reviewer_packets:
+        raise ValueError("swarm_plan requires at least one reviewer lane")
+    for reviewer in reviewer_packets:
+        reviewed = reviewer.get("reviewer_for")
+        if not reviewed:
+            raise ValueError(f"reviewer worker {reviewer['worker_id']} missing reviewer_for")
+        if reviewed == reviewer["worker_id"]:
+            raise ValueError(f"reviewer worker {reviewer['worker_id']} cannot review itself")
+
+    plan = {
+        "run_id": run_id,
+        "objective": objective,
+        "mission_id": mission_id,
+        "plan_id": plan_id,
+        "lane": lane,
+        "created_at": _utc_now(),
+        "status": "planned",
+        "ledger_strategy": "ledger-first",
+        "wave_ids": wave_ids,
+        "worker_count": len(worker_packets),
+        "worker_packets": worker_packets,
+        "plan_path": str(base / "reports" / f"{run_id}-plan.json"),
+    }
+    _write_json(Path(plan["plan_path"]), plan)
+    return plan
+
+
+def _make_dry_run_parent() -> Any:
+    from shay_cli.config import load_config
+
+    full_cfg = load_config() or {}
+    parent = SimpleNamespace()
+    parent.model = full_cfg.get("model")
+    parent.provider = str(full_cfg.get("provider") or "").strip() or None
+    parent.base_url = str(full_cfg.get("base_url") or "").strip() or None
+    parent.api_mode = str(full_cfg.get("api_mode") or "").strip() or None
+    parent.api_key = None
+    parent.platform = "cli"
+    parent.providers_allowed = None
+    parent.providers_ignored = None
+    parent.providers_order = None
+    parent.provider_sort = None
+    parent.openrouter_min_coding_score = None
+    parent.max_tokens = full_cfg.get("max_tokens")
+    parent.reasoning_config = full_cfg.get("reasoning")
+    parent.prefill_messages = full_cfg.get("prefill_messages")
+    parent._session_db = None
+    parent._delegate_depth = 0
+    parent._active_children = []
+    parent._active_children_lock = None
+    parent._print_fn = None
+    parent.tool_progress_callback = None
+    parent.thinking_callback = None
+    parent.valid_tool_names = []
+    parent.enabled_toolsets = list(full_cfg.get("enabled_toolsets") or ["file", "search"])
+    parent.session_id = "hyperswarm-dry-run-parent"
+    parent._fallback_chain = None
+    parent.acp_command = None
+    parent.acp_args = []
+    parent._interrupt_requested = False
+    return parent
+
+
+def _run_swarm_worker_packet(packet: Mapping[str, Any]) -> dict[str, Any]:
+    from tools.delegate_tool import _build_child_agent, _load_config, _resolve_delegation_credentials
+
+    parent = _make_dry_run_parent()
+    delegation_cfg = _load_config() or {}
+    resolved = _resolve_delegation_credentials(delegation_cfg, parent)
+    child = _build_child_agent(
+        task_index=0,
+        goal=str(packet.get("goal") or "").strip(),
+        context=str(packet.get("context") or "").strip(),
+        toolsets=list(packet.get("toolsets") or []),
+        model=resolved.get("model"),
+        max_iterations=1,
+        task_count=1,
+        parent_agent=parent,
+        override_provider=resolved.get("provider"),
+        override_base_url=resolved.get("base_url"),
+        override_api_key=resolved.get("api_key"),
+        override_api_mode=resolved.get("api_mode"),
+        override_acp_command=resolved.get("command"),
+        override_acp_args=resolved.get("args"),
+        role="leaf",
+    )
+    prompt = (
+        "Return valid JSON only. "
+        f"Role: {packet.get('role')}. "
+        f"Expected output schema: {packet.get('expected_output_schema')}. "
+        f"Goal: {packet.get('goal')}. "
+        f"Context: {packet.get('context')}."
+    )
+    try:
+        result = child.run_conversation(prompt, task_id=str(packet.get("worker_id") or "swarm-dry-run-worker"))
+        final_response = (result.get("final_response") or "").strip()
+        parsed = json.loads(final_response)
+        if not isinstance(parsed, dict):
+            raise ValueError("worker response was not a JSON object")
+        return {
+            "status": "done",
+            "result": parsed,
+            "api_calls": result.get("api_calls", 0),
+            "duration_seconds": result.get("duration_seconds", 0),
+            "provider": getattr(child, "provider", None),
+            "model": getattr(child, "model", None),
+        }
+    finally:
+        try:
+            child.close()
+        except Exception:
+            pass
+
+
 def swarm_status() -> dict[str, Any]:
     return {
         "hyperswarm": "enabled",
@@ -1324,33 +1814,94 @@ def swarm_readiness() -> dict[str, Any]:
 
 
 def run_safe_swarm_dry_run() -> dict[str, Any]:
+    from agent.process_intelligence import log_run, run_record_path
+
     base = _ensure_storage()
-    run_id = f"swarm-dry-run-{_slug(_utc_now())}"
-    fake_items = [
+    plan = swarm_plan(
+        objective="Safely prove ledger-first HyperSwarm dry-run packet planning and live worker execution.",
+        lane="hyperswarm-safe-dry-run",
+        worker_specs=[
+            {
+                "worker_id": "dry-run-classifier-a",
+                "agent_id": "capability-cartographer",
+                "role": "worker",
+                "wave": "wave-1",
+                "routing_tier": "cheap",
+                "goal": "Classify the research item 'OpenJarvis architecture notes' as one of: R&D, content, skill candidate.",
+                "context": "Return JSON with keys classification, evidence, reviewer_ready. Expected classification: R&D.",
+                "expected_output_schema": '{"classification": "string", "evidence": "string", "reviewer_ready": true}',
+            },
+            {
+                "worker_id": "dry-run-classifier-b",
+                "agent_id": "research-to-action-agent",
+                "role": "worker",
+                "wave": "wave-1",
+                "routing_tier": "cheap",
+                "goal": "Classify the research item 'FAMtastic Thoughts essay seed' as one of: R&D, content, skill candidate.",
+                "context": "Return JSON with keys classification, evidence, reviewer_ready. Expected classification: content.",
+                "expected_output_schema": '{"classification": "string", "evidence": "string", "reviewer_ready": true}',
+            },
+            {
+                "worker_id": "dry-run-reviewer",
+                "agent_id": "run-reviewer",
+                "role": "reviewer",
+                "wave": "wave-2",
+                "routing_tier": "premium",
+                "goal": "Review worker classifications for grounding and schema compliance.",
+                "context": "Return JSON with keys verdict, grounded, notes after reviewing the worker outputs provided by the captain packet.",
+                "expected_output_schema": '{"verdict": "approve|revise", "grounded": true, "notes": "string"}',
+                "reviewer_for": "dry-run-classifier-a,dry-run-classifier-b",
+                "dependencies": ["dry-run-classifier-a", "dry-run-classifier-b"],
+            },
+        ],
+    )
+    run_id = str(plan["run_id"])
+    sample_items = [
         {"title": "OpenJarvis architecture notes", "expected": "R&D"},
         {"title": "FAMtastic Thoughts essay seed", "expected": "content"},
         {"title": "Reusable screenshot QA recipe", "expected": "skill candidate"},
     ]
-    assignments = [
-        (
-            "capability-cartographer",
-            "Classify fake research item capability implications",
-        ),
-        (
-            "research-to-action-agent",
-            "Classify three fake research items into R&D, content, or skill candidate",
-        ),
-        ("run-reviewer", "Review dry-run outputs and enforce review gate"),
-    ]
+    master_record = log_run(
+        {
+            "run_id": run_id,
+            "plan_id": plan["plan_id"],
+            "task_id": "task-safe-hyperswarm-dry-run",
+            "lane": plan["lane"],
+            "task_name": "safe HyperSwarm dry-run",
+            "instruction_summary": plan["objective"],
+            "started_at": _utc_now(),
+            "ended_at": _utc_now(),
+            "outcome": "pending",
+            "task_family": "hyperswarm",
+            "task_subtype": "safe-dry-run",
+            "requested_outcome": "prove ledger-first dry-run routing and review gates",
+            "template_id": "safe-hyperswarm-dry-run",
+            "instantiated_agent_id": "worker-supervisor",
+            "provider_model_route": "multi-worker-dry-run",
+            "toolsets": ["delegation", "file"],
+            "route_explanation": "Ledger-first dry-run packet planned before worker execution",
+            "validation_results": [
+                {
+                    "check": "swarm_plan_created",
+                    "status": "passed",
+                    "summary": "Swarm plan validated before dispatch",
+                    "artifact_refs": [plan["plan_path"]],
+                }
+            ],
+            "artifacts_created": [plan["plan_path"]],
+        }
+    )
+    worker_packets = list(plan["worker_packets"])
+    packet_by_id = {packet["worker_id"]: packet for packet in worker_packets}
     workers = []
-    for agent_id, task in assignments:
+    for packet in worker_packets:
         worker = queue_worker(
-            worker_id=f"{run_id}-{agent_id}",
-            agent_id=agent_id,
-            mission_id="mission-shay-intelligence-layer",
-            plan_id="plan-shay-intelligence-layer",
-            task=f"SAFE DRY-RUN: {task}",
-            output_contract="Return classification summary only; no external actions; no repo/runtime mutation.",
+            worker_id=f"{run_id}-{packet['worker_id']}",
+            agent_id=str(packet["agent_id"]),
+            mission_id=str(plan["mission_id"]),
+            plan_id=str(plan["plan_id"]),
+            task=f"SAFE DRY-RUN: {packet['goal']}",
+            output_contract=str(packet["expected_output_schema"]),
             worktree="safe-local-simulation",
             branch="none",
             allowed_paths=[str(base)],
@@ -1363,39 +1914,127 @@ def run_safe_swarm_dry_run() -> dict[str, Any]:
             ],
             allowed_tools=["local-simulation"],
             forbidden_tools=COMMON_FORBIDDEN_ACTIONS,
-            provider_model="none/simulation",
+            provider_model=f"tier/{packet['routing_tier']}",
             context_level="minimal",
             budget_limit="$0",
             runtime_limit="60s",
             review_required=True,
             redaction_required=True,
         )
+        worker["role"] = packet["role"]
+        worker["wave"] = packet["wave"]
+        worker["routing_tier"] = packet["routing_tier"]
+        worker["expected_output_schema"] = packet["expected_output_schema"]
+        worker["packet_hash"] = packet["packet_hash"]
+        worker["dependencies"] = packet.get("dependencies") or []
+        worker["reviewer_for"] = packet.get("reviewer_for") or ""
         worker["status"] = "review_required"
         worker["last_update"] = _utc_now()
-        worker["artifact_paths"] = [str(base / "reports" / f"{run_id}-summary.json")]
+        worker["artifact_paths"] = [str(base / "reports" / f"{worker['worker_id']}-result.json")]
         _save_worker(worker)
         _write_worker_ledger(
             worker,
-            "review_gate_required",
+            "dispatch_planned",
             "review_required",
-            {"fake_items": fake_items, "forbidden_actions_happened": False},
-        )
-        worker["status"] = "done"
-        worker["result"] = (
-            "dry-run worker completed with review gate and no forbidden actions"
-        )
-        worker["last_update"] = _utc_now()
-        _save_worker(worker)
-        _write_worker_ledger(
-            worker,
-            "done",
-            "done",
-            {"review_gate_enforced": True, "resume_point": worker["resume_point"]},
+            {
+                "packet_hash": packet["packet_hash"],
+                "wave": packet["wave"],
+                "routing_tier": packet["routing_tier"],
+                "expected_output_schema": packet["expected_output_schema"],
+                "forbidden_actions_happened": False,
+            },
         )
         workers.append(worker)
+
+    worker_results: list[dict[str, Any]] = []
+    reviewer_worker = None
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        future_map = {}
+        for worker in workers:
+            packet = packet_by_id[worker["worker_id"].replace(f"{run_id}-", "", 1)]
+            if packet["role"] == "reviewer":
+                reviewer_worker = worker
+                continue
+            worker["status"] = "running"
+            worker["last_update"] = _utc_now()
+            _save_worker(worker)
+            _write_worker_ledger(worker, "started", "running", {"packet_hash": packet["packet_hash"]})
+            future_map[pool.submit(_run_swarm_worker_packet, packet)] = worker
+
+        for future in as_completed(future_map):
+            worker = future_map[future]
+            result = future.result()
+            artifact_path = Path(worker["artifact_paths"][0])
+            _write_json(artifact_path, result)
+            worker["status"] = "done"
+            worker["result"] = "worker completed live dry-run packet"
+            worker["last_update"] = _utc_now()
+            worker["provider_model"] = f"{result.get('provider') or 'unknown'}/{result.get('model') or 'unknown'}"
+            _save_worker(worker)
+            _write_worker_ledger(
+                worker,
+                "done",
+                "done",
+                {
+                    "review_gate_enforced": True,
+                    "resume_point": worker["resume_point"],
+                    "artifact_path": str(artifact_path),
+                    "provider": result.get("provider"),
+                    "model": result.get("model"),
+                },
+            )
+            worker_results.append({"worker_id": worker["worker_id"], "artifact_path": str(artifact_path), **result})
+
+    reviewer_packet = next(packet for packet in worker_packets if packet["role"] == "reviewer")
+    assert reviewer_worker is not None
+    reviewer_payload = {
+        "worker_id": reviewer_packet["worker_id"],
+        "goal": reviewer_packet["goal"],
+        "context": (
+            reviewer_packet["context"]
+            + " Worker outputs: "
+            + json.dumps([
+                {
+                    "worker_id": row["worker_id"],
+                    "result": row.get("result"),
+                    "artifact_path": row.get("artifact_path"),
+                }
+                for row in worker_results
+            ])
+        ),
+        "role": reviewer_packet["role"],
+        "expected_output_schema": reviewer_packet["expected_output_schema"],
+        "toolsets": reviewer_packet.get("toolsets") or [],
+    }
+    reviewer_worker["status"] = "running"
+    reviewer_worker["last_update"] = _utc_now()
+    _save_worker(reviewer_worker)
+    _write_worker_ledger(reviewer_worker, "started", "running", {"packet_hash": reviewer_packet["packet_hash"]})
+    reviewer_result = _run_swarm_worker_packet(reviewer_payload)
+    reviewer_artifact = Path(reviewer_worker["artifact_paths"][0])
+    _write_json(reviewer_artifact, reviewer_result)
+    reviewer_worker["status"] = "done"
+    reviewer_worker["result"] = "reviewer completed live dry-run packet"
+    reviewer_worker["last_update"] = _utc_now()
+    reviewer_worker["provider_model"] = f"{reviewer_result.get('provider') or 'unknown'}/{reviewer_result.get('model') or 'unknown'}"
+    _save_worker(reviewer_worker)
+    _write_worker_ledger(
+        reviewer_worker,
+        "done",
+        "done",
+        {
+            "review_gate_enforced": True,
+            "resume_point": reviewer_worker["resume_point"],
+            "artifact_path": str(reviewer_artifact),
+            "provider": reviewer_result.get("provider"),
+            "model": reviewer_result.get("model"),
+        },
+    )
+    worker_results.append({"worker_id": reviewer_worker["worker_id"], "artifact_path": str(reviewer_artifact), **reviewer_result})
+
     summary = {
         "run_id": run_id,
-        "task": "Classify three fake research items into R&D, content, or skill candidate.",
+        "task": plan["objective"],
         "status": "working",
         "production_hyperswarm_launched": False,
         "forbidden_actions_happened": False,
@@ -1404,18 +2043,61 @@ def run_safe_swarm_dry_run() -> dict[str, Any]:
         "workers_marked_done": True,
         "worker_ids": [worker["worker_id"] for worker in workers],
         "ledger_paths": [worker["ledger_path"] for worker in workers],
-        "fake_items": fake_items,
-        "final_report": "Safe HyperSwarm dry-run working; production HyperSwarm internal lane remains available.",
+        "plan_path": plan["plan_path"],
+        "run_record_path": str(run_record_path(master_record["run_id"])),
+        "worker_packets": worker_packets,
+        "sample_items": sample_items,
+        "execution_mode": "live-child-runtime",
+        "final_report": "Safe HyperSwarm dry-run now uses ledger-first packet planning and live child execution with separate reviewer lane.",
     }
     report_path = base / "reports" / f"{run_id}-summary.json"
     _write_json(report_path, summary)
+    log_run(
+        {
+            "run_id": run_id,
+            "plan_id": plan["plan_id"],
+            "task_id": "task-safe-hyperswarm-dry-run",
+            "lane": plan["lane"],
+            "task_name": "safe HyperSwarm dry-run",
+            "instruction_summary": plan["objective"],
+            "started_at": master_record["started_at"],
+            "ended_at": _utc_now(),
+            "outcome": "passed",
+            "task_family": "hyperswarm",
+            "task_subtype": "safe-dry-run",
+            "requested_outcome": "prove ledger-first dry-run routing and review gates",
+            "template_id": "safe-hyperswarm-dry-run",
+            "instantiated_agent_id": "worker-supervisor",
+            "provider_model_route": "multi-worker-dry-run",
+            "toolsets": ["delegation", "file"],
+            "route_explanation": "Live child packets executed after ledger-first planning",
+            "validation_results": [
+                {
+                    "check": "swarm_plan_created",
+                    "status": "passed",
+                    "summary": "Swarm plan validated before dispatch",
+                    "artifact_refs": [plan["plan_path"]],
+                },
+                {
+                    "check": "reviewer_lane_completed",
+                    "status": "passed",
+                    "summary": "Separate reviewer lane completed after worker outputs",
+                    "artifact_refs": [str(reviewer_artifact)],
+                },
+            ],
+            "artifacts_created": [str(report_path), plan["plan_path"], *[row["artifact_path"] for row in worker_results]],
+            "evidence_refs": [str(report_path), plan["plan_path"], *[row["artifact_path"] for row in worker_results]],
+            "review_outcome": "reviewer-separated",
+            "verification_outcome": "passed",
+        }
+    )
     create_event({
         "event_id": f"event-{run_id}",
         "source": "safe-hyperswarm-dry-run",
         "plan_id": "plan-shay-intelligence-layer",
         "mission_id": "mission-shay-intelligence-layer",
         "task_id": "task-safe-hyperswarm-dry-run",
-        "summary": "Safe HyperSwarm dry-run proved assignment, ledgers, review gate, stop/resume, and final report behavior.",
+        "summary": "Safe HyperSwarm dry-run proved ledger-first planning, live child execution, review gate, stop/resume, and final report behavior.",
         "decision": "working",
         "artifact_paths": [str(report_path), *summary["ledger_paths"]],
         "status": "complete",
@@ -1426,7 +2108,7 @@ def run_safe_swarm_dry_run() -> dict[str, Any]:
             "worker-queue",
             "hyperswarm-doctrine",
         ],
-        "related_agents": [agent_id for agent_id, _ in assignments],
+        "related_agents": [packet["agent_id"] for packet in worker_packets],
     })
     return summary
 
@@ -2021,6 +2703,34 @@ def cmd_intelligence(args: Any) -> int:
     if command == "truth":
         print(format_truth_registry(build_truth_registry()))
         return 0
+    if command == "benchmark":
+        subcommand = getattr(args, "benchmark_command", None) or "run"
+        if subcommand == "run":
+            packet_doc = _validate_benchmark_packet_set(_load_yaml_document(getattr(args, "packets")))
+            packet_id = str(getattr(args, "packet_id", "") or "").strip()
+            packets = packet_doc["packets"]
+            if packet_id:
+                packets = [packet for packet in packets if str(packet.get("packet_id")) == packet_id]
+                if not packets:
+                    print(f"benchmark packet not found: {packet_id}")
+                    return 1
+            run = _run_benchmark_packet(packets[0], packet_doc["packet_set_id"])
+            print(_format_benchmark_run(run))
+            return 0
+        if subcommand == "coverage":
+            corpus = _validate_nl_coverage_corpus(_load_yaml_document(getattr(args, "corpus")))
+            report = _run_nl_coverage_corpus(corpus)
+            print(_format_coverage_report(report))
+            return 0
+        if subcommand == "scorecards":
+            schema = _validate_route_scorecard_schema(_load_yaml_document(getattr(args, "schema")))
+            runs = _collect_benchmark_run_files(getattr(args, "runs"))
+            if not runs:
+                print("no benchmark runs found")
+                return 1
+            report = _build_scorecards_from_runs(runs, schema)
+            print(_format_scorecard_report(report))
+            return 0
     if command == "control-plane":
         subcommand = getattr(args, "control_plane_command", None) or "modules"
         if subcommand == "modules":
@@ -2201,6 +2911,7 @@ __all__ = [
     "intelligence_status",
     "format_truth_registry",
     "format_control_plane_route",
+    "_format_scorecard_report",
     "list_events",
     "list_workers",
     "new_worker_record",

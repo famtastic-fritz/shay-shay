@@ -1,0 +1,135 @@
+schema_version: 2026-06-24
+corpus_id: nl-ask-coverage-wave-1
+status: seed-draft
+purpose: First seeded natural-language ask corpus for measuring whether Shay routes
+  common asks into the right swarm/agent/template lane instead of generic fallback.
+records:
+- ask_id: build-001
+  family: build
+  ask: Build this app from the brief and ship the first working version.
+  expected_intent: build_app
+  expected_template: builder
+  acceptable_fallback_template: captain-router
+- ask_id: build-002
+  family: build
+  ask: Fix the broken CLI path and prove it works.
+  expected_intent: build_app
+  expected_template: builder
+  acceptable_fallback_template: critic
+- ask_id: review-001
+  family: review
+  ask: Tear this implementation apart and tell me what is actually wrong with it.
+  expected_intent: review_plan
+  expected_template: reviewer
+  acceptable_fallback_template: critic
+- ask_id: review-002
+  family: review
+  ask: Do an adversarial review on this diff and only approve it if the proof is real.
+  expected_intent: review_plan
+  expected_template: reviewer
+  acceptable_fallback_template: critic
+- ask_id: resume-001
+  family: resume
+  ask: Pick back up where we left off on the routing work and continue the next lane.
+  expected_intent: resume_project
+  expected_template: captain-router
+  acceptable_fallback_template: clerk
+- ask_id: deploy-001
+  family: deploy
+  ask: Get this build ready to deploy and surface any blockers first.
+  expected_intent: deploy_release
+  expected_template: builder
+  acceptable_fallback_template: captain-router
+- ask_id: research-001
+  family: research
+  ask: Research the best options for model routing and summarize the tradeoffs.
+  expected_intent: research_topic
+  expected_template: scout
+  acceptable_fallback_template: critic
+- ask_id: research-002
+  family: research
+  ask: Scan the current provider landscape and find the cheapest lane that still does
+    the job.
+  expected_intent: research_topic
+  expected_template: scout
+  acceptable_fallback_template: captain-router
+- ask_id: recall-001
+  family: recall
+  ask: What did Fritz and Shay already decide about this project before today?
+  expected_intent: recall_memory
+  expected_template: scout
+  acceptable_fallback_template: clerk
+- ask_id: monitoring-001
+  family: monitoring
+  ask: What needs my attention right now?
+  expected_intent: monitor_attention
+  expected_template: clerk
+  acceptable_fallback_template: watcher
+- ask_id: monitoring-002
+  family: monitoring
+  ask: Watch API spend and only tell me when something actually looks wrong.
+  expected_intent: monitor_attention
+  expected_template: watcher
+  acceptable_fallback_template: clerk
+- ask_id: browser-001
+  family: browser-ui
+  ask: Test the actual user flow in the browser and tell me where it breaks.
+  expected_intent: browser_verify
+  expected_template: browser-operator
+  acceptable_fallback_template: builder
+- ask_id: browser-002
+  family: browser-ui
+  ask: Use Playwright to go through the UI the same way a user would.
+  expected_intent: browser_verify
+  expected_template: browser-operator
+  acceptable_fallback_template: builder
+- ask_id: admin-001
+  family: admin-attention
+  ask: Show me the board, the queues, and the things that are stuck.
+  expected_intent: monitor_attention
+  expected_template: clerk
+  acceptable_fallback_template: captain-router
+- ask_id: swarm-001
+  family: swarm-captain
+  ask: Break this into packets, assign the right lanes, and run it with review.
+  expected_intent: build_app
+  expected_template: captain-router
+  acceptable_fallback_template: builder
+- ask_id: monitoring-003
+  family: monitoring
+  ask: Keep an eye on API burn and only interrupt me if spend spikes or a lane gets
+    stuck.
+  expected_intent: monitor_attention
+  expected_template: watcher
+  acceptable_fallback_template: clerk
+- ask_id: monitoring-004
+  family: monitoring
+  ask: Watch this lane quietly and escalate only if the failure pattern repeats.
+  expected_intent: monitor_attention
+  expected_template: watcher
+  acceptable_fallback_template: clerk
+- ask_id: browser-003
+  family: browser-ui
+  ask: Click through the signup flow like a real user and tell me the first place
+    it breaks.
+  expected_intent: browser_verify
+  expected_template: browser-operator
+  acceptable_fallback_template: builder
+- ask_id: browser-004
+  family: browser-ui
+  ask: Run an end-to-end browser pass on the checkout form and surface the failing
+    step.
+  expected_intent: browser_verify
+  expected_template: browser-operator
+  acceptable_fallback_template: builder
+evaluation_fields:
+- actual_trace_intent
+- actual_route_owner
+- actual_template
+- verdict
+- notes
+verdict_vocabulary:
+- correct
+- acceptable
+- generic_fallback
+- wrong

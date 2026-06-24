@@ -7,8 +7,8 @@ import pytest
 
 from shay_cli.intelligence_cmd import (
     SAFETY_GATES,
-    WORKER_REQUIRED_FIELDS,
     REALITY_CLASSES,
+    WORKER_REQUIRED_FIELDS,
     build_gap_records,
     build_mission_graph,
     build_truth_registry,
@@ -23,6 +23,7 @@ from shay_cli.intelligence_cmd import (
     review_item,
     route_task,
     run_safe_swarm_dry_run,
+    swarm_plan,
     swarm_readiness,
     trace_task,
 )
@@ -184,6 +185,17 @@ def test_route_tracks_context_compression_as_partial():
 
 def test_safe_hyperswarm_dry_run_works(tmp_path, monkeypatch):
     monkeypatch.setenv("SHAY_INTELLIGENCE_HOME", str(tmp_path))
+    monkeypatch.setattr(
+        "shay_cli.intelligence_cmd._run_swarm_worker_packet",
+        lambda packet: {
+            "status": "done",
+            "result": {"worker_id": packet.get("worker_id"), "ok": True},
+            "api_calls": 1,
+            "duration_seconds": 0,
+            "provider": "test-provider",
+            "model": "test-model",
+        },
+    )
     summary = run_safe_swarm_dry_run()
     assert summary["status"] == "working"
     assert summary["production_hyperswarm_launched"] is False
@@ -192,8 +204,54 @@ def test_safe_hyperswarm_dry_run_works(tmp_path, monkeypatch):
     assert summary["stop_resume_fields_present"] is True
     assert summary["workers_marked_done"] is True
     assert len(summary["worker_ids"]) == 3
+    assert summary["execution_mode"] == "live-child-runtime"
+    assert summary["plan_path"].endswith("-plan.json")
     for ledger in summary["ledger_paths"]:
         assert "ledgers" in ledger
+
+
+def test_swarm_plan_requires_reviewer_and_packet_metadata(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHAY_INTELLIGENCE_HOME", str(tmp_path))
+    with pytest.raises(ValueError, match="reviewer lane"):
+        swarm_plan(
+            objective="test objective",
+            worker_specs=[
+                {
+                    "agent_id": "capability-cartographer",
+                    "role": "worker",
+                    "goal": "Classify one item",
+                    "expected_output_schema": '{"classification": "string"}',
+                }
+            ],
+        )
+
+    plan = swarm_plan(
+        objective="test objective",
+        worker_specs=[
+            {
+                "worker_id": "worker-a",
+                "agent_id": "capability-cartographer",
+                "role": "worker",
+                "routing_tier": "cheap",
+                "goal": "Classify one item",
+                "expected_output_schema": '{"classification": "string"}',
+            },
+            {
+                "worker_id": "review-a",
+                "agent_id": "run-reviewer",
+                "role": "reviewer",
+                "routing_tier": "premium",
+                "goal": "Review one item",
+                "expected_output_schema": '{"verdict": "approve|revise"}',
+                "reviewer_for": "worker-a",
+                "dependencies": ["worker-a"],
+            },
+        ],
+    )
+    assert plan["ledger_strategy"] == "ledger-first"
+    assert plan["worker_count"] == 2
+    assert all(packet.get("packet_hash") for packet in plan["worker_packets"])
+    assert any(packet["role"] == "reviewer" for packet in plan["worker_packets"])
 
 
 def test_create_event_normalizes_observation_interpretation_pattern_fields(

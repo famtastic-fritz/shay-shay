@@ -9521,6 +9521,18 @@ def main():
         "explain", help="Explain a routed task with template/route evidence"
     )
     control_plane_explain.add_argument("task", nargs="+", help="Task to explain")
+    benchmark_parser = intelligence_subparsers.add_parser(
+        "benchmark", help="Run routing benchmark packets, coverage corpora, and scorecard reduction"
+    )
+    benchmark_subparsers = benchmark_parser.add_subparsers(dest="benchmark_command")
+    benchmark_run = benchmark_subparsers.add_parser("run", help="Run one benchmark packet and save artifact")
+    benchmark_run.add_argument("--packets", required=True, help="Path to benchmark packet YAML")
+    benchmark_run.add_argument("--packet-id", help="Specific packet_id to run")
+    benchmark_coverage = benchmark_subparsers.add_parser("coverage", help="Run NL ask coverage corpus and save report")
+    benchmark_coverage.add_argument("--corpus", required=True, help="Path to NL coverage corpus YAML")
+    benchmark_scorecards = benchmark_subparsers.add_parser("scorecards", help="Reduce benchmark runs into scorecards")
+    benchmark_scorecards.add_argument("--runs", required=True, help="Path to benchmark run artifact or directory")
+    benchmark_scorecards.add_argument("--schema", required=True, help="Path to route scorecard schema YAML")
     intelligence_subparsers.add_parser("agents", help="Show agent registry / worker roster")
     intelligence_subparsers.add_parser("events", help="Show recent/backfilled episodic records")
     intelligence_subparsers.add_parser("missions", help="Show FAMtastic mission graph")
