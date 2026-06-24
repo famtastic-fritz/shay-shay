@@ -1,0 +1,311 @@
+{
+  "generated_on": "2026-06-24",
+  "purpose": "Grounded capability claims for dynamic worker-pool routing.",
+  "method": {
+    "source_layers": [
+      "local shay capability overrides",
+      "models.dev normalized catalog",
+      "provider docs (general capability surfaces)"
+    ],
+    "warning": "Claims can conflict across layers; local override wins for live Shay routing until proven otherwise."
+  },
+  "models": [
+    {
+      "provider": "zai",
+      "model": "glm-5.2",
+      "billing_type": "metered",
+      "claim_status": "conflict-local-override-vs-catalog",
+      "confidence": "low-until-live-probed",
+      "supports_tools": false,
+      "supports_vision": false,
+      "supports_reasoning": false,
+      "context_window": 200000,
+      "max_output_tokens": 8192,
+      "family": "glm",
+      "sources": [
+        "https://docs.z.ai/api-reference/llm/chat-completion",
+        "https://docs.z.ai/guides/llm/glm-4.5",
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": [
+        "Local Shay override marks glm-5.2 as text-only/no-tools/no-vision, while models.dev currently advertises tool_call=true and reasoning=true."
+      ]
+    },
+    {
+      "provider": "zai",
+      "model": "glm-5.1",
+      "billing_type": "metered",
+      "claim_status": "catalog-backed",
+      "confidence": "medium-needs-live-probe",
+      "supports_tools": true,
+      "supports_vision": false,
+      "supports_reasoning": true,
+      "context_window": 200000,
+      "max_output_tokens": 131072,
+      "family": "glm",
+      "sources": [
+        "https://docs.z.ai/api-reference/llm/chat-completion",
+        "https://docs.z.ai/guides/llm/glm-4.5",
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": [
+        "models.dev advertises tool_call=true, but Fritz suspects these may behave as text-only in practice; requires live provider probe before using for dynamic routing truth."
+      ]
+    },
+    {
+      "provider": "zai",
+      "model": "glm-5",
+      "billing_type": "metered",
+      "claim_status": "catalog-backed",
+      "confidence": "medium-needs-live-probe",
+      "supports_tools": true,
+      "supports_vision": false,
+      "supports_reasoning": true,
+      "context_window": 204800,
+      "max_output_tokens": 131072,
+      "family": "glm",
+      "sources": [
+        "https://docs.z.ai/api-reference/llm/chat-completion",
+        "https://docs.z.ai/guides/llm/glm-4.5",
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": [
+        "models.dev advertises tool_call=true, but Fritz suspects these may behave as text-only in practice; requires live provider probe before using for dynamic routing truth."
+      ]
+    },
+    {
+      "provider": "zai",
+      "model": "glm-5v-turbo",
+      "billing_type": "metered",
+      "claim_status": "catalog-backed",
+      "confidence": "medium",
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "context_window": 200000,
+      "max_output_tokens": 131072,
+      "family": "glm",
+      "sources": [
+        "https://docs.z.ai/api-reference/llm/chat-completion",
+        "https://docs.z.ai/guides/llm/glm-4.5",
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": []
+    },
+    {
+      "provider": "zai",
+      "model": "glm-4.7",
+      "billing_type": "metered",
+      "claim_status": "catalog-backed",
+      "confidence": "medium-needs-live-probe",
+      "supports_tools": true,
+      "supports_vision": false,
+      "supports_reasoning": true,
+      "context_window": 204800,
+      "max_output_tokens": 131072,
+      "family": "glm",
+      "sources": [
+        "https://docs.z.ai/api-reference/llm/chat-completion",
+        "https://docs.z.ai/guides/llm/glm-4.5",
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": [
+        "models.dev advertises tool_call=true, but Fritz suspects these may behave as text-only in practice; requires live provider probe before using for dynamic routing truth."
+      ]
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.1-pro-preview",
+      "billing_type": "metered/free-tier",
+      "claim_status": "catalog-backed",
+      "confidence": "medium",
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "context_window": 1048576,
+      "max_output_tokens": 65536,
+      "family": "gemini-pro",
+      "sources": [
+        "https://ai.google.dev/gemini-api/docs/models",
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": []
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3-pro-preview",
+      "billing_type": "metered/free-tier",
+      "claim_status": "catalog-backed",
+      "confidence": "medium",
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "context_window": 1048576,
+      "max_output_tokens": 65536,
+      "family": "gemini-pro",
+      "sources": [
+        "https://ai.google.dev/gemini-api/docs/models",
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": []
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3-flash-preview",
+      "billing_type": "metered/free-tier",
+      "claim_status": "catalog-backed",
+      "confidence": "medium",
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "context_window": 1048576,
+      "max_output_tokens": 65536,
+      "family": "gemini-flash",
+      "sources": [
+        "https://ai.google.dev/gemini-api/docs/models",
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": []
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-lite-preview",
+      "billing_type": "metered/free-tier",
+      "claim_status": "catalog-backed",
+      "confidence": "medium",
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "context_window": 1048576,
+      "max_output_tokens": 65536,
+      "family": "gemini-flash-lite",
+      "sources": [
+        "https://ai.google.dev/gemini-api/docs/models",
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": []
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "billing_type": "metered",
+      "claim_status": "catalog-backed",
+      "confidence": "medium",
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "context_window": 200000,
+      "max_output_tokens": 64000,
+      "family": "claude-haiku",
+      "sources": [
+        "https://docs.anthropic.com/en/docs/about-claude/models/overview",
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": []
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "billing_type": "metered",
+      "claim_status": "catalog-backed",
+      "confidence": "medium",
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "context_window": 1000000,
+      "max_output_tokens": 64000,
+      "family": "claude-sonnet",
+      "sources": [
+        "https://docs.anthropic.com/en/docs/about-claude/models/overview",
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": []
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-4-7",
+      "billing_type": "metered",
+      "claim_status": "catalog-backed",
+      "confidence": "medium",
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "context_window": 1000000,
+      "max_output_tokens": 128000,
+      "family": "claude-opus",
+      "sources": [
+        "https://docs.anthropic.com/en/docs/about-claude/models/overview",
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": []
+    },
+    {
+      "provider": "openai-codex",
+      "model": "gpt-5.5",
+      "billing_type": "subscription",
+      "claim_status": "catalog-backed",
+      "confidence": "medium",
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "context_window": 1050000,
+      "max_output_tokens": 128000,
+      "family": "gpt",
+      "sources": [
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": []
+    },
+    {
+      "provider": "openai-codex",
+      "model": "gpt-5.4",
+      "billing_type": "subscription",
+      "claim_status": "catalog-backed",
+      "confidence": "medium",
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "context_window": 1050000,
+      "max_output_tokens": 128000,
+      "family": "gpt",
+      "sources": [
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": []
+    },
+    {
+      "provider": "openai-codex",
+      "model": "gpt-5.3-codex",
+      "billing_type": "subscription",
+      "claim_status": "catalog-backed",
+      "confidence": "medium",
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "context_window": 400000,
+      "max_output_tokens": 128000,
+      "family": "gpt-codex",
+      "sources": [
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": []
+    },
+    {
+      "provider": "openai-codex",
+      "model": "gpt-5.2-codex",
+      "billing_type": "subscription",
+      "claim_status": "catalog-backed",
+      "confidence": "medium",
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "context_window": 400000,
+      "max_output_tokens": 128000,
+      "family": "gpt-codex",
+      "sources": [
+        "https://models.dev/api.json"
+      ],
+      "conflict_notes": []
+    }
+  ]
+}
