@@ -656,21 +656,46 @@ def test_control_plane_explain_returns_evidence():
 def test_trace_task_build_app_maps_to_swarm_lane():
     trace = trace_task("build this app")
     assert trace["normalized_intent"] == "build_app"
+    assert trace["brain_agent"] == "work-router"
+    assert trace["execution_agent"] == "worker-supervisor"
     assert trace["route"]["decision"] == "route_live"
+    assert trace["route"]["brain_agent"] == "work-router"
+    assert trace["route"]["execution_agent"] == "worker-supervisor"
     assert trace["capability_preflight"]["status"] == "pass"
     assert any("shay intelligence swarm dry-run" in command for command in trace["commands"])
     assert trace["swarm_status"]["status"] == "working"
 
 
+def test_trace_task_build_spec_paraphrase_maps_to_swarm_lane():
+    trace = trace_task("build a new app from this spec")
+    assert trace["normalized_intent"] == "build_app"
+    assert trace["brain_agent"] == "work-router"
+    assert trace["execution_agent"] == "worker-supervisor"
+    assert trace["route"]["decision"] == "route_live"
+    assert any("shay intelligence swarm dry-run" in command for command in trace["commands"])
+
+
 def test_trace_task_attention_ask_stays_non_swarm_and_lists_attention_commands():
     trace = trace_task("show me what needs my attention")
     assert trace["normalized_intent"] == "show_attention"
+    assert trace["brain_agent"] == "work-router"
+    assert trace["execution_agent"] == "attention-watcher"
     assert trace["matched_rule"] == "Show what needs Fritz attention"
     assert trace["commands"][0] == "shay intelligence brief today"
     assert "swarm_status" not in trace
     rendered = format_trace(trace)
     assert "Ask Trace" in rendered
     assert "matched rule: Show what needs Fritz attention" in rendered
+    assert "brain agent: work-router" in rendered
+    assert "execution agent: attention-watcher" in rendered
+
+
+def test_trace_task_attention_paraphrase_maps_to_attention_rule():
+    trace = trace_task("show what needs Fritz attention")
+    assert trace["normalized_intent"] == "show_attention"
+    assert trace["matched_rule"] == "Show what needs Fritz attention"
+    assert trace["execution_agent"] == "attention-watcher"
+    assert trace["commands"][0] == "shay intelligence brief today"
 
 
 def test_trace_task_github_to_obsidian_maps_to_ingest_rule():
@@ -689,6 +714,26 @@ def test_trace_task_context_compression_maps_to_gap_rule():
     assert any("shay intelligence brief compression" == command for command in trace["commands"])
     assert trace["route"]["decision"] == "track_gap"
     assert "gap-context-compression-memory-continuity" in trace["route"]["gap_backlog_items"]
+
+
+def test_trace_task_reviewer_paraphrase_maps_to_reviewer_lane():
+    trace = trace_task("review this implementation and judge quality")
+    assert trace["normalized_intent"] == "run_reviewer_pass"
+    assert trace["brain_agent"] == "work-router"
+    assert trace["execution_agent"] == "run-reviewer"
+    assert trace["route"]["decision"] == "route_live"
+    assert any("shay intelligence workers review" == command for command in trace["commands"])
+    assert trace["swarm_status"]["status"] == "working"
+
+
+def test_trace_task_resume_paraphrase_maps_to_resume_lane():
+    trace = trace_task("resume this lane")
+    assert trace["normalized_intent"] == "resume_lane"
+    assert trace["brain_agent"] == "work-router"
+    assert trace["execution_agent"] == "worker-supervisor"
+    assert trace["route"]["decision"] == "route_live"
+    assert any("shay intelligence brief workers" == command for command in trace["commands"])
+    assert trace["swarm_status"]["status"] == "working"
 
 
 def test_trace_cli_command_formats_without_crashing(capsys):

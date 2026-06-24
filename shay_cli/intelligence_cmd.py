@@ -233,9 +233,21 @@ ASK_TRACE_RULES = [
     {
         "intent": "build_app",
         "label": "Build app via HyperSwarm",
-        "match_any": ["build this app", "build app", "ship this app", "create this app"],
+        "match_any": [
+            "build this app",
+            "build app",
+            "ship this app",
+            "create this app",
+            "build a new app",
+            "build a new app from this spec",
+            "new app from this spec",
+            "build from this spec",
+            "turn this spec into an app",
+        ],
         "route_task_template": "launch HyperSwarm build lane for: {task}",
         "explain_task_template": "implement app build lane for: {task}",
+        "brain_agent": "work-router",
+        "execution_agent": "worker-supervisor",
         "commands": [
             "shay capabilities preflight \"{route_task}\"",
             "shay intelligence route \"{route_task}\"",
@@ -256,9 +268,22 @@ ASK_TRACE_RULES = [
     {
         "intent": "show_attention",
         "label": "Show what needs Fritz attention",
-        "match_any": ["needs my attention", "what needs my attention", "what's blocked", "what is blocked", "show blockers"],
+        "match_any": [
+            "needs my attention",
+            "what needs my attention",
+            "what's blocked",
+            "what is blocked",
+            "show blockers",
+            "show what needs fritz attention",
+            "what needs fritz attention",
+            "what is waiting on me",
+            "what's waiting on me",
+            "what is waiting for me",
+        ],
         "route_task_template": "review attention blockers for: {task}",
         "explain_task_template": "rank blocked work and attention surfaces for: {task}",
+        "brain_agent": "work-router",
+        "execution_agent": "attention-watcher",
         "commands": [
             "shay intelligence brief today",
             "shay intelligence missions",
@@ -315,9 +340,20 @@ ASK_TRACE_RULES = [
     {
         "intent": "run_reviewer_pass",
         "label": "Run reviewer-only pass",
-        "match_any": ["run reviewer pass", "reviewer pass only", "review this lane", "review only"],
+        "match_any": [
+            "run reviewer pass",
+            "reviewer pass only",
+            "review this lane",
+            "review only",
+            "review this implementation",
+            "judge quality",
+            "review and judge quality",
+            "tear this implementation apart",
+        ],
         "route_task_template": "launch HyperSwarm reviewer lane for: {task}",
         "explain_task_template": "review implementation artifacts for: {task}",
+        "brain_agent": "work-router",
+        "execution_agent": "run-reviewer",
         "commands": [
             "shay capabilities preflight \"{route_task}\"",
             "shay intelligence route \"{route_task}\"",
@@ -336,9 +372,21 @@ ASK_TRACE_RULES = [
     {
         "intent": "resume_lane",
         "label": "Resume previous lane",
-        "match_any": ["resume the lane", "resume last run", "continue this plan", "resume this run"],
+        "match_any": [
+            "resume the lane",
+            "resume last run",
+            "continue this plan",
+            "resume this run",
+            "resume this lane",
+            "continue this lane",
+            "pick back up where we left off",
+            "resume this work",
+            "continue this run",
+        ],
         "route_task_template": "resume HyperSwarm lane for: {task}",
         "explain_task_template": "resume worker lane and recover proof for: {task}",
+        "brain_agent": "work-router",
+        "execution_agent": "worker-supervisor",
         "commands": [
             "shay intelligence workers queue",
             "shay intelligence route \"{route_task}\"",
@@ -376,16 +424,27 @@ def _render_trace_template(template: str, *, task: str, route_task: str, explain
     return template.format(task=task, route_task=route_task, explain_task=explain_task)
 
 
+def _matches_phrase(lowered: str, phrase: str) -> bool:
+    needle = str(phrase or "").strip().lower()
+    if not needle:
+        return False
+    if " " in needle or "-" in needle:
+        return needle in lowered
+    return re.search(rf"\b{re.escape(needle)}\b", lowered) is not None
+
+
 def _match_trace_rule(task: str) -> dict[str, Any]:
     lowered = str(task or "").strip().lower()
     for rule in ASK_TRACE_RULES:
-        if any(needle in lowered for needle in rule.get("match_any", [])):
+        if any(_matches_phrase(lowered, needle) for needle in rule.get("match_any", [])):
             return dict(rule)
     return {
         "intent": "generic_orchestration_ask",
         "label": "Generic orchestration ask",
         "route_task_template": "{task}",
         "explain_task_template": "{task}",
+        "brain_agent": "work-router",
+        "execution_agent": "dynamic-route",
         "commands": [
             "shay capabilities preflight \"{route_task}\"",
             "shay intelligence route \"{route_task}\"",
@@ -2121,6 +2180,8 @@ def route_task(task: str) -> dict[str, Any]:
         "task": text,
         "needed_capabilities": [],
         "owner_agent": "work-router",
+        "brain_agent": "work-router",
+        "execution_agent": "work-router",
         "route_provider_tool_skill": "CLI/report + manual review",
         "unsafe": False,
         "missing": [],
@@ -2150,8 +2211,10 @@ def route_task(task: str) -> dict[str, Any]:
         add_cap("worker-control")
         add_cap("worker-queue")
         route.update({
-            "owner_agent": "worker-supervisor",
-            "route_provider_tool_skill": "production HyperSwarm execution lane with review gates, ledgers, and stop/resume control",
+            "owner_agent": "work-router",
+            "brain_agent": "work-router",
+            "execution_agent": "worker-supervisor",
+            "route_provider_tool_skill": "captain routes HyperSwarm execution lane with review gates, ledgers, and stop/resume control",
             "unsafe": False,
             "requires_fritz_approval": False,
             "context_level": "high",
@@ -2273,6 +2336,8 @@ def trace_task(task: str) -> dict[str, Any]:
         "task": text,
         "normalized_intent": rule["intent"],
         "matched_rule": rule["label"],
+        "brain_agent": rule.get("brain_agent") or route.get("brain_agent") or route.get("owner_agent"),
+        "execution_agent": rule.get("execution_agent") or route.get("execution_agent") or control_plane.get("template_record", {}).get("source_agent_id") or route.get("owner_agent"),
         "route_task": route_task_text,
         "explain_task": explain_task_text,
         "commands": commands,
@@ -2282,7 +2347,10 @@ def trace_task(task: str) -> dict[str, Any]:
         "control_plane": control_plane,
         "capability_closeout": capability_closeout,
     }
-    if any("swarm" in command for command in commands):
+    if any("swarm" in command for command in commands) or (
+        route.get("decision") == "route_live"
+        and trace.get("execution_agent") in {"worker-supervisor", "run-reviewer"}
+    ):
         trace["swarm_status"] = swarm_status()
         trace["swarm_readiness"] = swarm_readiness()
     return trace
@@ -2603,6 +2671,8 @@ def format_trace(trace: Mapping[str, Any]) -> str:
         f"task: {trace['task']}",
         f"intent: {trace['normalized_intent']}",
         f"matched rule: {trace['matched_rule']}",
+        f"brain agent: {trace['brain_agent']}",
+        f"execution agent: {trace['execution_agent']}",
         f"route task: {trace['route_task']}",
         f"explain task: {trace['explain_task']}",
         "commands to fire:",
