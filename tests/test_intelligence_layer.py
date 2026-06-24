@@ -9,6 +9,7 @@ from shay_cli.intelligence_cmd import (
     SAFETY_GATES,
     REALITY_CLASSES,
     WORKER_REQUIRED_FIELDS,
+    build_app_capability_report,
     build_gap_records,
     build_mission_graph,
     build_truth_registry,
@@ -16,6 +17,7 @@ from shay_cli.intelligence_cmd import (
     create_event,
     format_trace,
     get_event,
+    get_runtime_checkout_anchor,
     intelligence_status,
     list_events,
     new_worker_record,
@@ -579,6 +581,46 @@ def test_intelligence_matrix_command_includes_gap_owner_summary(capsys):
     assert "Open gaps by owner:" in captured.out
 
 
+def test_runtime_checkout_anchor_reports_live_checkout_state():
+    anchor = get_runtime_checkout_anchor()
+    assert anchor["subsystem_id"] == "runtime-checkout-anchor"
+    assert anchor["runtime_anchor"]["repo_root"].endswith("/shay-shay")
+    assert anchor["runtime_anchor"]["freshness"] in {
+        "fresh_main_checkout",
+        "dirty_main_checkout",
+        "non_main_checkout",
+        "stale_or_external_runtime",
+    }
+
+
+def test_truth_registry_includes_runtime_checkout_anchor():
+    rows = {row["subsystem_id"]: row for row in build_truth_registry()}
+    assert "runtime-checkout-anchor" in rows
+
+
+def test_app_capability_report_surfaces_frontend_and_auth_gap():
+    report = build_app_capability_report("build apps")
+    buckets = {row["bucket_id"]: row for row in report["buckets"]}
+    assert buckets["frontend"]["reality_class"] in {"live_verified", "documented_present"}
+    assert buckets["frontend"]["capabilities"]
+    assert buckets["auth"]["reality_class"] == "seeded_target"
+    assert "Auth" in report["top_gaps"]
+
+
+def test_intelligence_apps_command_formats_without_crashing(capsys):
+    from types import SimpleNamespace
+    from shay_cli.intelligence_cmd import cmd_intelligence
+
+    rc = cmd_intelligence(
+        SimpleNamespace(intelligence_command="apps", query=["build", "apps"])
+    )
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "App-Building Capability Readout" in captured.out
+    assert "Frontend / UI" in captured.out
+    assert "Top blocking gaps:" in captured.out
+
+
 def test_control_plane_surfaces_are_populated():
     modules = {row["module_id"]: row for row in get_control_plane_modules()}
     assert {
@@ -590,6 +632,7 @@ def test_control_plane_surfaces_are_populated():
         "routing-engine",
     } <= set(modules)
     providers = {row["route_id"]: row for row in get_provider_model_registry()}
+    assert "anthropic-claude-code-sonnet-4.6" in providers
     assert "openai-codex-gpt-5.4" in providers
     templates = {row["template_id"]: row for row in get_agent_template_registry()}
     assert "implementation-worker" in templates
@@ -608,6 +651,7 @@ def test_instantiate_worker_from_template_carries_route_contract():
     assert worker["template_id"] == "implementation-worker"
     assert worker["source_agent_id"] == "worker-supervisor"
     assert worker["preferred_routes"]
+    assert worker["preferred_routes"][0] == "anthropic-claude-code-sonnet-4.6"
     assert "verification_path" in worker
 
 
@@ -649,7 +693,7 @@ def test_route_scorecards_aggregate_routed_runs(tmp_path, monkeypatch):
 def test_control_plane_explain_returns_evidence():
     route = explain_route("implement intelligence CLI control plane")
     assert route["chosen_template"] == "implementation-worker"
-    assert route["chosen_route"] == "openai-codex-gpt-5.4"
+    assert route["chosen_route"] == "anthropic-claude-code-sonnet-4.6"
     assert route["evidence"]["selection_reason"]
 
 
@@ -661,6 +705,7 @@ def test_trace_task_build_app_maps_to_swarm_lane():
     assert trace["route"]["decision"] == "route_live"
     assert trace["route"]["brain_agent"] == "work-router"
     assert trace["route"]["execution_agent"] == "worker-supervisor"
+    assert trace["control_plane"]["chosen_route"] == "anthropic-claude-code-sonnet-4.6"
     assert trace["capability_preflight"]["status"] == "pass"
     assert any("shay intelligence swarm dry-run" in command for command in trace["commands"])
     assert trace["swarm_status"]["status"] == "working"

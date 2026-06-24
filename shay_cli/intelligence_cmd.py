@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import yaml
 
@@ -51,6 +52,85 @@ BENCHMARK_TEMPLATE_COMPATIBILITY: dict[str, set[str]] = {
     "browser-operator": {"browser-operator", "implementation-worker", "orchestrator-captain"},
     "captain-router": {"orchestrator-captain"},
 }
+
+APP_BUILDING_BUCKETS = [
+    {
+        "bucket_id": "frontend",
+        "label": "Frontend / UI",
+        "primary_capability_ids": [
+            "browser-computer-use",
+            "design-vision-review",
+            "text-to-visual-architecture",
+        ],
+        "truth_subsystem_ids": ["capability-truth-layer"],
+        "default_reality_class": "documented_present",
+        "summary": "Strongest current lane: browser-facing verification plus design/visual generation support make web UI work real, but not yet a clean reusable component factory.",
+        "next_action": "Promote repeated UI patterns into explicit component/app-system capabilities instead of leaving them as scattered design/build skills.",
+    },
+    {
+        "bucket_id": "backend",
+        "label": "Backend",
+        "primary_capability_ids": [],
+        "truth_subsystem_ids": ["delegate-route-proof"],
+        "default_reality_class": "seeded_target",
+        "summary": "No explicit backend-factory capability is represented in the matrix yet; backend work currently rides on coding/orchestration surfaces rather than a named hardened backend lane.",
+        "next_action": "Add a first-class backend capability row with proof surfaces instead of implying backend maturity through generic coding power.",
+    },
+    {
+        "bucket_id": "auth",
+        "label": "Auth",
+        "primary_capability_ids": [],
+        "truth_subsystem_ids": [],
+        "default_reality_class": "seeded_target",
+        "summary": "Auth is currently a gap: there is no explicit auth capability or proof-bearing auth route in the matrix.",
+        "next_action": "Create explicit auth capability records and proof surfaces before claiming production auth readiness.",
+    },
+    {
+        "bucket_id": "database",
+        "label": "Database",
+        "primary_capability_ids": [],
+        "truth_subsystem_ids": [],
+        "default_reality_class": "seeded_target",
+        "summary": "No dedicated database capability is normalized in the matrix yet; current DB work is implied through generic coding lanes, not tracked as a truth surface.",
+        "next_action": "Define the database lane with owned proof surfaces, not as hidden knowledge inside implementation agents.",
+    },
+    {
+        "bucket_id": "testing",
+        "label": "Testing / Verification",
+        "primary_capability_ids": ["browser-computer-use"],
+        "truth_subsystem_ids": ["delegate-route-proof"],
+        "default_reality_class": "documented_present",
+        "summary": "Testing is real at the browser-facing and route-proof layers, but the matrix still needs a dedicated app-testing capability shape instead of indirect evidence only.",
+        "next_action": "Make Playwright/browser-style testing an explicit capability row with first-class proof artifacts.",
+    },
+    {
+        "bucket_id": "deploy",
+        "label": "Deploy",
+        "primary_capability_ids": [],
+        "truth_subsystem_ids": ["delegate-route-proof", "mission-graph-registry"],
+        "default_reality_class": "curated_partial",
+        "summary": "Deploy exists as orchestrated practice, not yet as a clean proof-backed app-platform lane in the matrix.",
+        "next_action": "Represent deploy as an explicit capability with live proof, not a side effect of successful coding sessions.",
+    },
+    {
+        "bucket_id": "payments",
+        "label": "Payments",
+        "primary_capability_ids": [],
+        "truth_subsystem_ids": [],
+        "default_reality_class": "seeded_target",
+        "summary": "Payments are not normalized as a live capability; the current truth surface does not prove a production billing/subscription stack.",
+        "next_action": "Add explicit payments capability records and prove at least one live billing lane before claiming readiness.",
+    },
+    {
+        "bucket_id": "mobile",
+        "label": "Mobile",
+        "primary_capability_ids": [],
+        "truth_subsystem_ids": [],
+        "default_reality_class": "seeded_target",
+        "summary": "Mobile is future-state right now: there is no explicit mobile app factory or component-studio-backed mobile lane in the matrix.",
+        "next_action": "Stand up Component Studio/mobile capability records when repeated app needs justify the lane.",
+    },
+]
 
 MISSING_OR_UNSAFE_STATUSES = {
     "missing",
@@ -916,6 +996,179 @@ def get_event(event_id: str) -> dict[str, Any] | None:
     return None
 
 
+def _run_git(root: Path, *args: str) -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "-C", str(root), *args],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return None
+
+
+def get_runtime_checkout_anchor() -> dict[str, Any]:
+    root = Path(__file__).resolve().parents[1]
+    branch = _run_git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    commit = _run_git(root, "rev-parse", "HEAD")
+    status_output = _run_git(root, "status", "--short") or ""
+    dirty_paths = [line.strip() for line in status_output.splitlines() if line.strip()]
+    shay_path = shutil.which("shay") or ""
+    shebang = ""
+    if shay_path:
+        try:
+            with open(shay_path, "r", encoding="utf-8") as handle:
+                shebang = handle.readline().strip()
+        except OSError:
+            shebang = ""
+    same_checkout = str(root) in shebang or str(root) in shay_path
+    if branch == "main" and same_checkout and not dirty_paths:
+        freshness = "fresh_main_checkout"
+        reality_class = "proven_live"
+        status = "working"
+    elif branch == "main" and same_checkout:
+        freshness = "dirty_main_checkout"
+        reality_class = "partial"
+        status = "working"
+    elif same_checkout:
+        freshness = "non_main_checkout"
+        reality_class = "partial"
+        status = "working"
+    else:
+        freshness = "stale_or_external_runtime"
+        reality_class = "partial"
+        status = "review_required"
+    return {
+        "subsystem_id": "runtime-checkout-anchor",
+        "name": "Runtime Checkout Anchor",
+        "status": status,
+        "reality_class": reality_class,
+        "owner_module": "shay_cli/intelligence_cmd.py",
+        "source_of_truth": "live git checkout plus active shay executable path/shebang",
+        "persistence_paths": [str(root)],
+        "proof_artifacts": [
+            "git rev-parse --abbrev-ref HEAD",
+            "git rev-parse HEAD",
+            "git status --short",
+            "which shay",
+        ],
+        "dependencies": [],
+        "open_gaps": [
+            "Dirty checkout means this session may include uncommitted behavior not yet merged into main."
+        ]
+        if dirty_paths
+        else [],
+        "notes": (
+            f"freshness={freshness}; branch={branch or 'unknown'}; "
+            f"same_checkout={'yes' if same_checkout else 'no'}; dirty_paths={len(dirty_paths)}"
+        ),
+        "runtime_anchor": {
+            "repo_root": str(root),
+            "branch": branch,
+            "commit": commit,
+            "shay_executable": shay_path,
+            "shebang": shebang,
+            "same_checkout": same_checkout,
+            "dirty_paths": dirty_paths,
+            "freshness": freshness,
+        },
+    }
+
+
+def build_app_capability_report(query: str = "build apps") -> dict[str, Any]:
+    matrix = get_capability_matrix()
+    truth_rows = build_truth_registry()
+    matrix_by_id = {row["capability_id"]: row for row in matrix}
+    truth_by_id = {row["subsystem_id"]: row for row in truth_rows}
+    buckets: list[dict[str, Any]] = []
+    for spec in APP_BUILDING_BUCKETS:
+        primary_rows = [
+            matrix_by_id[cap_id]
+            for cap_id in spec.get("primary_capability_ids", [])
+            if cap_id in matrix_by_id
+        ]
+        truth_matches = [
+            truth_by_id[subsystem_id]
+            for subsystem_id in spec.get("truth_subsystem_ids", [])
+            if subsystem_id in truth_by_id
+        ]
+        if any(row.get("live") and row.get("verified") for row in primary_rows):
+            reality_class = "live_verified"
+        elif primary_rows or truth_matches:
+            reality_class = spec["default_reality_class"]
+        else:
+            reality_class = "seeded_target"
+        buckets.append(
+            {
+                "bucket_id": spec["bucket_id"],
+                "label": spec["label"],
+                "reality_class": reality_class,
+                "summary": spec["summary"],
+                "next_action": spec["next_action"],
+                "capabilities": [
+                    {
+                        "capability_id": row["capability_id"],
+                        "name": row["name"],
+                        "status": row["status"],
+                        "live": row.get("live", False),
+                        "verified": row.get("verified", False),
+                    }
+                    for row in primary_rows
+                ],
+                "truth_surfaces": [
+                    {
+                        "subsystem_id": row["subsystem_id"],
+                        "name": row["name"],
+                        "reality_class": row["reality_class"],
+                        "status": row["status"],
+                    }
+                    for row in truth_matches
+                ],
+            }
+        )
+    gaps = [
+        bucket["label"]
+        for bucket in buckets
+        if bucket["reality_class"] in {"seeded_target", "curated_partial"}
+    ]
+    return {
+        "query": query,
+        "buckets": buckets,
+        "top_gaps": gaps,
+    }
+
+
+def format_app_capability_report(report: Mapping[str, Any]) -> str:
+    lines = ["App-Building Capability Readout", f"query: {report['query']}", ""]
+    for bucket in report["buckets"]:
+        lines.append(f"{bucket['label']}: {bucket['reality_class']}")
+        lines.append(f"- summary: {bucket['summary']}")
+        if bucket["capabilities"]:
+            lines.append("- supporting capabilities:")
+            for capability in bucket["capabilities"]:
+                lines.append(
+                    "  - "
+                    f"{capability['capability_id']} "
+                    f"status={capability['status']} live={str(capability['live']).lower()} "
+                    f"verified={str(capability['verified']).lower()}"
+                )
+        if bucket["truth_surfaces"]:
+            lines.append("- supporting truth surfaces:")
+            for surface in bucket["truth_surfaces"]:
+                lines.append(
+                    "  - "
+                    f"{surface['subsystem_id']} "
+                    f"status={surface['status']} reality_class={surface['reality_class']}"
+                )
+        lines.append(f"- next action: {bucket['next_action']}")
+        lines.append("")
+    if report["top_gaps"]:
+        lines.append("Top blocking gaps:")
+        for label in report["top_gaps"]:
+            lines.append(f"- {label}")
+    return "\n".join(lines).rstrip()
+
+
 def build_truth_registry() -> list[dict[str, Any]]:
     from agent.process_intelligence import process_intelligence_home
 
@@ -1085,6 +1338,7 @@ def build_truth_registry() -> list[dict[str, Any]]:
             ],
             "notes": "Critical proof surface for separating declared routing from observed routing.",
         },
+        get_runtime_checkout_anchor(),
     ]
     for row in truth_rows:
         if row["reality_class"] not in REALITY_CLASSES:
@@ -2769,6 +3023,13 @@ def cmd_intelligence(args: Any) -> int:
         print("Open gaps by owner:")
         for owner, count in sorted(_group_gaps_by_owner(build_gap_records()).items()):
             print(f"- {owner}: {count}")
+        return 0
+    if command == "apps":
+        query = getattr(args, "query", "")
+        if isinstance(query, list):
+            query = " ".join(str(item) for item in query)
+        query = str(query or "build apps").strip() or "build apps"
+        print(format_app_capability_report(build_app_capability_report(query)))
         return 0
     if command == "truth":
         print(format_truth_registry(build_truth_registry()))

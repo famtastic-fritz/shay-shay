@@ -165,6 +165,32 @@ def get_control_plane_modules() -> list[dict[str, Any]]:
 
 PROVIDER_MODEL_REGISTRY: list[ProviderModelRecord] = [
     ProviderModelRecord(
+        route_id="anthropic-claude-code-sonnet-4.6",
+        provider_id="anthropic",
+        provider_label="Claude Code",
+        model_id="claude-sonnet-4.6",
+        release_tier="frontier",
+        production_state="production-ready",
+        context_length=200000,
+        supports_reasoning=True,
+        supports_tools=True,
+        supports_web=True,
+        supports_code=True,
+        supports_browser=False,
+        auth_surface="Claude Code OAuth",
+        ecosystem_unlocks=["Claude Code session continuity", "strong code + tool reasoning"],
+        cost_class="subscription",
+        latency_class="medium",
+        reliability_notes=[
+            "Preferred builder lane when Fritz wants Claude Code execution semantics.",
+            "Good fit for implementation-heavy work that still needs tool grounding.",
+        ],
+        recommended_task_families=["deep code work", "code implementation", "schema wiring", "deploy"],
+        disallowed_task_families=["high-volume rote extraction"],
+        source_urls=["https://shay-shay.nousresearch.com/docs/integrations/providers"],
+        last_verified="2026-06-24",
+    ),
+    ProviderModelRecord(
         route_id="openai-codex-gpt-5.4",
         provider_id="openai-codex",
         provider_label="OpenAI Codex",
@@ -391,7 +417,7 @@ _TEMPLATE_SEEDS = [
         "role_name": "Implementation Worker",
         "agent_id": "worker-supervisor",
         "task_families": ["code implementation", "schema wiring", "CLI additions", "implementation", "deploy"],
-        "preferred_routes": ["openai-codex-gpt-5.4", "openai-gpt-5.4-mini"],
+        "preferred_routes": ["anthropic-claude-code-sonnet-4.6", "openai-codex-gpt-5.4", "openai-gpt-5.4-mini"],
         "budget_profile": "mid",
         "latency_profile": "balanced",
         "output_contract": "file diff + tests + residue",
@@ -702,48 +728,58 @@ def explain_route(task: str) -> dict[str, Any]:
     routes = {row["route_id"]: row for row in get_provider_model_registry()}
     scorecards = build_route_scorecards()
 
+    def _template(template_id: str) -> dict[str, Any]:
+        return next(row for row in templates if row["template_id"] == template_id)
+
+    def _preferred_route(template_id: str) -> str:
+        template = _template(template_id)
+        preferred = list(template.get("preferred_routes") or [])
+        if not preferred:
+            raise ValueError(f"template {template_id} has no preferred routes")
+        return preferred[0]
+
     if _matches_any(lowered, "swarm"):
         chosen_template = "orchestrator-captain"
-        chosen_route = "openai-codex-gpt-5.4"
+        chosen_route = _preferred_route(chosen_template)
         task_family = "orchestration"
     elif _matches_any(lowered, "watcher"):
         chosen_template = "attention-watcher"
-        chosen_route = "openai-gpt-5.4-mini"
+        chosen_route = _preferred_route(chosen_template)
         task_family = "monitoring"
     elif _matches_any(lowered, "attention"):
         chosen_template = "attention-watcher"
-        chosen_route = "openai-gpt-5.4-mini"
+        chosen_route = _preferred_route(chosen_template)
         task_family = "attention"
     elif _matches_any(lowered, "recall"):
         chosen_template = "memory-curator"
-        chosen_route = "openai-gpt-5.4-mini"
+        chosen_route = _preferred_route(chosen_template)
         task_family = "memory/truth"
     elif _matches_any(lowered, "review"):
         chosen_template = "review-judge"
-        chosen_route = "google-gemini-2.5-pro"
+        chosen_route = _preferred_route(chosen_template)
         task_family = "review"
     elif _matches_any(lowered, "browser"):
         chosen_template = "browser-operator"
-        chosen_route = "openai-codex-gpt-5.4"
+        chosen_route = _preferred_route(chosen_template)
         task_family = "browser-ui"
     elif _matches_any(lowered, "implementation"):
         chosen_template = "implementation-worker"
-        chosen_route = "openai-codex-gpt-5.4"
+        chosen_route = _preferred_route(chosen_template)
         task_family = "implementation"
     elif _matches_any(lowered, "provider"):
         chosen_template = "provider-intel-researcher"
-        chosen_route = "google-gemini-2.5-pro"
+        chosen_route = _preferred_route(chosen_template)
         task_family = "provider research"
     elif _matches_any(lowered, "memory"):
         chosen_template = "memory-curator"
-        chosen_route = "openai-gpt-5.4-mini"
+        chosen_route = _preferred_route(chosen_template)
         task_family = "memory/truth"
     else:
         chosen_template = "orchestrator-captain"
-        chosen_route = "openai-codex-gpt-5.4"
+        chosen_route = _preferred_route(chosen_template)
         task_family = "orchestration"
 
-    template = next(row for row in templates if row["template_id"] == chosen_template)
+    template = _template(chosen_template)
     alternatives = [
         row for row in templates if row["template_id"] != chosen_template and task_family in row["task_families"]
     ]

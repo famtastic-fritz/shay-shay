@@ -9506,6 +9506,11 @@ def main():
     intelligence_subparsers = intelligence_parser.add_subparsers(dest="intelligence_command")
     intelligence_subparsers.add_parser("status", help="Show Intelligence Layer readiness")
     intelligence_subparsers.add_parser("matrix", help="Show expanded capability matrix")
+    apps_parser = intelligence_subparsers.add_parser(
+        "apps",
+        help="Show current app-building capability readout by layer",
+    )
+    apps_parser.add_argument("query", nargs="*", help="Optional outcome/query context")
     intelligence_subparsers.add_parser("truth", help="Show subsystem truth registry and reality classes")
     control_plane_parser = intelligence_subparsers.add_parser(
         "control-plane",
