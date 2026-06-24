@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
+from pathlib import Path
 import re
 from typing import Any, Mapping
 
 from agent.process_intelligence import list_run_records, normalized_validation_results
+from shay_constants import get_shay_home
 from shay_cli.intelligence_seed import agent_by_id, get_agent_registry
 
 
@@ -69,6 +72,41 @@ class AgentTemplateRecord:
         return asdict(self)
 
 
+@dataclass
+class RoutingTierRecord:
+    tier_id: str
+    label: str
+    purpose: str
+    allowed_task_classes: list[str]
+    forbidden_task_classes: list[str]
+    preferred_routes: list[str]
+    escalation_tier: str | None
+    premium_allowed: bool
+    runner_kind: str
+    notifier_role: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class TaskFamilyRoutingRecord:
+    task_family: str
+    lane_id: str
+    template_id: str | None
+    route_strategy: str
+    default_route: str | None
+    allowed_escalation_tier: str | None
+    forbidden_routes: list[str]
+    cron_eligible: bool
+    script_preferred: bool
+    premium_requires_explicit_opt_in: bool
+    notes: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 CONTROL_PLANE_SCHEMA_IDS = {
     "module_boundary": "intelligence-control-plane/module-boundary/v1",
     "provider_model_record": "intelligence-control-plane/provider-model-record/v1",
@@ -77,6 +115,8 @@ CONTROL_PLANE_SCHEMA_IDS = {
     "routing_decision_record": "intelligence-control-plane/routing-decision-record/v1",
     "telemetry_run_overlay": "intelligence-control-plane/telemetry-run-overlay/v1",
     "memory_surface_record": "intelligence-control-plane/memory-surface-record/v1",
+    "routing_tier_record": "intelligence-control-plane/routing-tier-record/v1",
+    "task_family_routing_record": "intelligence-control-plane/task-family-routing-record/v1",
 }
 
 
@@ -559,6 +599,27 @@ def get_memory_truth_surfaces() -> list[dict[str, Any]]:
 
 
 PHRASE_GROUPS: dict[str, tuple[str, ...]] = {
+    "watchdog": (
+        "watchdog",
+        "heartbeat",
+        "poll",
+        "threshold",
+        "ping",
+        "health check",
+        "sync",
+        "ingest",
+    ),
+    "interactive": (
+        "ask fritz",
+        "interview fritz",
+        "chat with fritz",
+        "capture his words",
+        "open-ended questions",
+        "ask him",
+        "ask her",
+        "ask them",
+        "structured interview",
+    ),
     "swarm": (
         "break this into packets",
         "assign the right lanes",
@@ -602,8 +663,10 @@ PHRASE_GROUPS: dict[str, tuple[str, ...]] = {
         "tear this implementation apart",
         "adversarial review",
         "only approve it if the proof is real",
+        "proof audit",
+        "route challenge",
+        "review this implementation",
         "audit",
-        "review",
         "adversarial",
     ),
     "implementation": (
@@ -658,6 +721,278 @@ def _matches_any(lowered: str, group_name: str) -> bool:
             if re.search(rf"\b{re.escape(phrase)}\b", lowered):
                 return True
     return False
+
+
+ROUTING_TIER_REGISTRY: list[RoutingTierRecord] = [
+    RoutingTierRecord(
+        tier_id="cron-lite",
+        label="Cron Lite",
+        purpose="Zero-LLM script lane for scheduled checks, sync, ingest, and alerts.",
+        allowed_task_classes=["watchdog", "sync", "polling", "ingest", "threshold alert", "heartbeat"],
+        forbidden_task_classes=["implementation", "adversarial review", "interactive interview"],
+        preferred_routes=[],
+        escalation_tier="cron-cheap",
+        premium_allowed=False,
+        runner_kind="script/no-agent",
+        notifier_role="Telegram is notifier only; the script is the runner.",
+    ),
+    RoutingTierRecord(
+        tier_id="cron-cheap",
+        label="Cron Cheap",
+        purpose="Cheapest sufficient reasoning lane for triage, curation, summaries, and low-stakes research.",
+        allowed_task_classes=["summary", "triage", "curation", "light research", "attention filtering", "memory packaging"],
+        forbidden_task_classes=["code implementation", "deep debugging", "adversarial review"],
+        preferred_routes=["ollama-qwen3-14b", "openai-gpt-5.4-mini"],
+        escalation_tier="cron-build",
+        premium_allowed=False,
+        runner_kind="agent",
+        notifier_role="Telegram is delivery only; do not treat notification as model selection.",
+    ),
+    RoutingTierRecord(
+        tier_id="cron-build",
+        label="Cron Build",
+        purpose="Medium-cost builder lane for implementation-shaped scheduled work that still needs tools and grounded reasoning.",
+        allowed_task_classes=["implementation", "repo evaluation", "structured diagnosis", "deploy prep"],
+        forbidden_task_classes=["high-volume polling", "adversarial review as default"],
+        preferred_routes=["anthropic-claude-code-sonnet-4.6", "openai-gpt-5.4-mini"],
+        escalation_tier="premium-review",
+        premium_allowed=False,
+        runner_kind="agent",
+        notifier_role="Delivery surface stays separate from the builder lane.",
+    ),
+    RoutingTierRecord(
+        tier_id="premium-review",
+        label="Premium Review",
+        purpose="Explicit reviewer/breaker lane for adversarial review, high-ambiguity judgment, and architecture challenge.",
+        allowed_task_classes=["adversarial review", "proof audit", "route challenge", "major architecture judgment"],
+        forbidden_task_classes=["default cron runtime", "fallback route", "broad swarm default"],
+        preferred_routes=["google-gemini-2.5-pro", "openai-codex-gpt-5.4"],
+        escalation_tier=None,
+        premium_allowed=True,
+        runner_kind="agent",
+        notifier_role="Telegram may receive the verdict, but never defines premium eligibility.",
+    ),
+]
+
+
+TASK_FAMILY_ROUTING_REGISTRY: list[TaskFamilyRoutingRecord] = [
+    TaskFamilyRoutingRecord(
+        task_family="watchdog",
+        lane_id="cron-lite",
+        template_id=None,
+        route_strategy="script-first",
+        default_route=None,
+        allowed_escalation_tier="cron-cheap",
+        forbidden_routes=["openai-codex-gpt-5.4", "google-gemini-2.5-pro"],
+        cron_eligible=True,
+        script_preferred=True,
+        premium_requires_explicit_opt_in=True,
+        notes=["If bash/python can do it, do not wake a premium model.", "Use empty stdout as silent no-op for healthy checks."],
+    ),
+    TaskFamilyRoutingRecord(
+        task_family="ingest",
+        lane_id="cron-lite",
+        template_id=None,
+        route_strategy="script-first",
+        default_route=None,
+        allowed_escalation_tier="cron-cheap",
+        forbidden_routes=["openai-codex-gpt-5.4", "google-gemini-2.5-pro"],
+        cron_eligible=True,
+        script_preferred=True,
+        premium_requires_explicit_opt_in=True,
+        notes=["Ingestion jobs should be deterministic and resumable."],
+    ),
+    TaskFamilyRoutingRecord(
+        task_family="attention",
+        lane_id="cron-cheap",
+        template_id="attention-watcher",
+        route_strategy="cheap-reasoning",
+        default_route="ollama-qwen3-14b",
+        allowed_escalation_tier="cron-build",
+        forbidden_routes=["openai-codex-gpt-5.4"],
+        cron_eligible=True,
+        script_preferred=False,
+        premium_requires_explicit_opt_in=True,
+        notes=["Attention boards should surface exceptions, not premium chatter."],
+    ),
+    TaskFamilyRoutingRecord(
+        task_family="memory/truth",
+        lane_id="cron-cheap",
+        template_id="memory-curator",
+        route_strategy="cheap-reasoning",
+        default_route="ollama-qwen3-14b",
+        allowed_escalation_tier="cron-build",
+        forbidden_routes=["openai-codex-gpt-5.4"],
+        cron_eligible=True,
+        script_preferred=False,
+        premium_requires_explicit_opt_in=True,
+        notes=["Memory packaging is cheaper than implementation and should stay there."],
+    ),
+    TaskFamilyRoutingRecord(
+        task_family="provider research",
+        lane_id="cron-cheap",
+        template_id="provider-intel-researcher",
+        route_strategy="cheap-reasoning",
+        default_route="google-gemini-2.5-pro",
+        allowed_escalation_tier="premium-review",
+        forbidden_routes=[],
+        cron_eligible=True,
+        script_preferred=False,
+        premium_requires_explicit_opt_in=False,
+        notes=["Provider/model comparison may use Gemini when context breadth matters."],
+    ),
+    TaskFamilyRoutingRecord(
+        task_family="implementation",
+        lane_id="cron-build",
+        template_id="implementation-worker",
+        route_strategy="builder-lane",
+        default_route="anthropic-claude-code-sonnet-4.6",
+        allowed_escalation_tier="premium-review",
+        forbidden_routes=[],
+        cron_eligible=True,
+        script_preferred=False,
+        premium_requires_explicit_opt_in=False,
+        notes=["Builder work defaults to Claude Code Sonnet, not Codex."],
+    ),
+    TaskFamilyRoutingRecord(
+        task_family="browser-ui",
+        lane_id="cron-build",
+        template_id="browser-operator",
+        route_strategy="capability-first",
+        default_route="openai-gpt-5.4-mini",
+        allowed_escalation_tier="premium-review",
+        forbidden_routes=[],
+        cron_eligible=True,
+        script_preferred=False,
+        premium_requires_explicit_opt_in=False,
+        notes=["Browser work pays for capability only when direct API surfaces do not exist."],
+    ),
+    TaskFamilyRoutingRecord(
+        task_family="review",
+        lane_id="premium-review",
+        template_id="review-judge",
+        route_strategy="premium-explicit-only",
+        default_route="google-gemini-2.5-pro",
+        allowed_escalation_tier=None,
+        forbidden_routes=[],
+        cron_eligible=True,
+        script_preferred=False,
+        premium_requires_explicit_opt_in=True,
+        notes=["Review lane is premium by design and must never be inherited."],
+    ),
+    TaskFamilyRoutingRecord(
+        task_family="interactive interview",
+        lane_id="blocked",
+        template_id=None,
+        route_strategy="manual-only",
+        default_route=None,
+        allowed_escalation_tier=None,
+        forbidden_routes=["openai-codex-gpt-5.4", "google-gemini-2.5-pro", "anthropic-claude-code-sonnet-4.6", "openai-gpt-5.4-mini", "ollama-qwen3-14b"],
+        cron_eligible=False,
+        script_preferred=False,
+        premium_requires_explicit_opt_in=True,
+        notes=["Human-dependent interviews should not be cron jobs."],
+    ),
+]
+
+
+def get_routing_tier_registry() -> list[dict[str, Any]]:
+    return [record.to_dict() for record in ROUTING_TIER_REGISTRY]
+
+
+def get_task_family_routing_matrix() -> list[dict[str, Any]]:
+    return [record.to_dict() for record in TASK_FAMILY_ROUTING_REGISTRY]
+
+
+def classify_task_family(task: str, *, no_agent: bool = False, script: str | None = None) -> str:
+    lowered = str(task or "").strip().lower()
+    if no_agent or script:
+        if _matches_any(lowered, "interactive"):
+            return "interactive interview"
+        return "watchdog" if _matches_any(lowered, "watchdog") else "ingest"
+    if _matches_any(lowered, "interactive"):
+        return "interactive interview"
+    if _matches_any(lowered, "review"):
+        return "review"
+    if _matches_any(lowered, "browser"):
+        return "browser-ui"
+    if _matches_any(lowered, "implementation"):
+        return "implementation"
+    if _matches_any(lowered, "provider"):
+        return "provider research"
+    if _matches_any(lowered, "recall") or _matches_any(lowered, "memory"):
+        return "memory/truth"
+    if _matches_any(lowered, "watcher") or _matches_any(lowered, "attention"):
+        return "attention"
+    return "attention"
+
+
+def _task_family_record(task_family: str) -> dict[str, Any]:
+    return next(row for row in get_task_family_routing_matrix() if row["task_family"] == task_family)
+
+
+def _routing_tier_record(tier_id: str) -> dict[str, Any]:
+    return next(row for row in get_routing_tier_registry() if row["tier_id"] == tier_id)
+
+
+def audit_cron_jobs() -> dict[str, Any]:
+    jobs_file = Path(get_shay_home()).expanduser() / "cron" / "jobs.json"
+    if not jobs_file.exists():
+        return {
+            "jobs_file": str(jobs_file),
+            "job_count": 0,
+            "jobs": [],
+            "summary": {"pinned_jobs": 0, "unpinned_agent_jobs": 0, "invalid_cron_jobs": 0},
+        }
+    payload = json.loads(jobs_file.read_text())
+    rows: list[dict[str, Any]] = []
+    pinned_jobs = 0
+    unpinned_agent_jobs = 0
+    invalid_cron_jobs = 0
+    for job in payload.get("jobs", []):
+        task = " ".join([str(job.get("name") or ""), str(job.get("prompt") or ""), str(job.get("script") or "")])
+        family = classify_task_family(task, no_agent=bool(job.get("no_agent")), script=str(job.get("script") or "") or None)
+        policy = _task_family_record(family)
+        lane_id = policy["lane_id"]
+        pinned = bool(job.get("provider") or job.get("model"))
+        if pinned:
+            pinned_jobs += 1
+        elif not bool(job.get("no_agent")):
+            unpinned_agent_jobs += 1
+        if not policy["cron_eligible"]:
+            invalid_cron_jobs += 1
+        rows.append(
+            {
+                "job_id": str(job.get("id") or ""),
+                "name": str(job.get("name") or ""),
+                "state": str(job.get("state") or ("paused" if not job.get("enabled") else "enabled")),
+                "no_agent": bool(job.get("no_agent")),
+                "script": str(job.get("script") or ""),
+                "pinned": pinned,
+                "provider": job.get("provider"),
+                "model": job.get("model"),
+                "task_family": family,
+                "recommended_lane": lane_id,
+                "cron_eligible": bool(policy["cron_eligible"]),
+                "premium_allowed": bool(_routing_tier_record(lane_id).get("premium_allowed")) if lane_id != "blocked" else False,
+                "risk": (
+                    "invalid-cron" if not policy["cron_eligible"] else
+                    "unpinned-agent-default-risk" if (not pinned and not bool(job.get("no_agent"))) else
+                    "script-safe" if bool(job.get("no_agent")) else
+                    "pinned-agent"
+                ),
+            }
+        )
+    return {
+        "jobs_file": str(jobs_file),
+        "job_count": len(rows),
+        "jobs": rows,
+        "summary": {
+            "pinned_jobs": pinned_jobs,
+            "unpinned_agent_jobs": unpinned_agent_jobs,
+            "invalid_cron_jobs": invalid_cron_jobs,
+        },
+    }
 
 
 def build_route_scorecards(limit: int = 200) -> list[dict[str, Any]]:
@@ -738,46 +1073,28 @@ def explain_route(task: str) -> dict[str, Any]:
             raise ValueError(f"template {template_id} has no preferred routes")
         return preferred[0]
 
+    policy: dict[str, Any] | None = None
+    tier: dict[str, Any] | None = None
     if _matches_any(lowered, "swarm"):
         chosen_template = "orchestrator-captain"
         chosen_route = _preferred_route(chosen_template)
         task_family = "orchestration"
-    elif _matches_any(lowered, "watcher"):
-        chosen_template = "attention-watcher"
-        chosen_route = _preferred_route(chosen_template)
-        task_family = "monitoring"
-    elif _matches_any(lowered, "attention"):
-        chosen_template = "attention-watcher"
-        chosen_route = _preferred_route(chosen_template)
-        task_family = "attention"
-    elif _matches_any(lowered, "recall"):
-        chosen_template = "memory-curator"
-        chosen_route = _preferred_route(chosen_template)
-        task_family = "memory/truth"
-    elif _matches_any(lowered, "review"):
-        chosen_template = "review-judge"
-        chosen_route = _preferred_route(chosen_template)
-        task_family = "review"
-    elif _matches_any(lowered, "browser"):
-        chosen_template = "browser-operator"
-        chosen_route = _preferred_route(chosen_template)
-        task_family = "browser-ui"
-    elif _matches_any(lowered, "implementation"):
-        chosen_template = "implementation-worker"
-        chosen_route = _preferred_route(chosen_template)
-        task_family = "implementation"
-    elif _matches_any(lowered, "provider"):
-        chosen_template = "provider-intel-researcher"
-        chosen_route = _preferred_route(chosen_template)
-        task_family = "provider research"
-    elif _matches_any(lowered, "memory"):
-        chosen_template = "memory-curator"
-        chosen_route = _preferred_route(chosen_template)
-        task_family = "memory/truth"
     else:
-        chosen_template = "orchestrator-captain"
-        chosen_route = _preferred_route(chosen_template)
-        task_family = "orchestration"
+        task_family = classify_task_family(text)
+        policy = _task_family_record(task_family)
+        chosen_template = str(policy.get("template_id") or "orchestrator-captain")
+        if chosen_template == "orchestrator-captain" and task_family == "interactive interview":
+            chosen_route = _preferred_route(chosen_template)
+        else:
+            template_routes = list(_template(chosen_template).get("preferred_routes") or [])
+            policy_route = str(policy.get("default_route") or "")
+            forbidden = set(policy.get("forbidden_routes") or [])
+            if policy_route and policy_route in template_routes and policy_route not in forbidden:
+                chosen_route = policy_route
+            else:
+                chosen_route = next((route for route in template_routes if route not in forbidden), _preferred_route(chosen_template))
+        if policy["lane_id"] != "blocked":
+            tier = _routing_tier_record(policy["lane_id"])
 
     template = _template(chosen_template)
     alternatives = [
@@ -795,6 +1112,8 @@ def explain_route(task: str) -> dict[str, Any]:
         "module_boundaries": get_control_plane_modules(),
         "chosen_template": chosen_template,
         "chosen_route": chosen_route,
+        "routing_tier": tier,
+        "task_family_policy": policy,
         "template_record": template,
         "provider_model_record": route_record,
         "evidence": {
@@ -803,6 +1122,12 @@ def explain_route(task: str) -> dict[str, Any]:
             "selection_reason": [
                 f"Template {chosen_template} serves {', '.join(template['task_families'])}.",
                 f"Route {chosen_route} matches recommended task families: {', '.join(route_record['recommended_task_families'])}.",
+                f"Task family {task_family} maps to lane {policy['lane_id'] if policy else 'captain-default'}.",
+                (
+                    "Premium use is explicit-only for this task family."
+                    if policy and policy.get("premium_requires_explicit_opt_in")
+                    else "This lane may escalate when the task proves it needs a stronger route."
+                ),
                 "Parent verification still required before promotion claims.",
             ],
         },
@@ -818,11 +1143,15 @@ def explain_route(task: str) -> dict[str, Any]:
 
 __all__ = [
     "CONTROL_PLANE_SCHEMA_IDS",
+    "audit_cron_jobs",
     "build_route_scorecards",
+    "classify_task_family",
     "explain_route",
     "get_agent_template_registry",
     "get_control_plane_modules",
     "get_memory_truth_surfaces",
     "get_provider_model_registry",
+    "get_routing_tier_registry",
+    "get_task_family_routing_matrix",
     "instantiate_worker_from_template",
 ]

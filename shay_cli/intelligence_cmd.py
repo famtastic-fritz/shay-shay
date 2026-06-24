@@ -17,12 +17,15 @@ from typing import Any, Mapping
 from shay_constants import get_shay_home
 from shay_cli.capabilities_cmd import build_gate_report
 from shay_cli.intelligence_control_plane import (
+    audit_cron_jobs,
     build_route_scorecards,
     explain_route,
     get_agent_template_registry,
     get_control_plane_modules,
     get_memory_truth_surfaces,
     get_provider_model_registry,
+    get_routing_tier_registry,
+    get_task_family_routing_matrix,
 )
 from shay_cli.intelligence_seed import (
     BRIEF_COMMANDS,
@@ -2978,6 +2981,51 @@ def format_research(result: Mapping[str, Any]) -> str:
     ])
 
 
+def format_routing_tiers(rows: list[Mapping[str, Any]]) -> str:
+    lines = ["Routing Tier Registry", ""]
+    for row in rows:
+        lines.append(f"- {row['tier_id']} [{row['runner_kind']}] premium_allowed={str(row['premium_allowed']).lower()} escalation={row['escalation_tier'] or 'none'}")
+        lines.append(f"  purpose: {row['purpose']}")
+        lines.append(f"  preferred_routes: {', '.join(row['preferred_routes']) if row['preferred_routes'] else 'script/no-agent'}")
+        lines.append(f"  allowed: {', '.join(row['allowed_task_classes'])}")
+        lines.append(f"  blocked: {', '.join(row['forbidden_task_classes'])}")
+    return "\n".join(lines)
+
+
+def format_task_family_matrix(rows: list[Mapping[str, Any]]) -> str:
+    lines = ["Task Family Routing Matrix", ""]
+    for row in rows:
+        lines.append(f"- {row['task_family']} -> {row['lane_id']} template={row['template_id'] or 'script/manual'} route={row['default_route'] or 'n/a'} cron_eligible={str(row['cron_eligible']).lower()}")
+        lines.append(f"  strategy: {row['route_strategy']}")
+        lines.append(f"  escalation: {row['allowed_escalation_tier'] or 'none'}")
+        if row['forbidden_routes']:
+            lines.append(f"  forbidden_routes: {', '.join(row['forbidden_routes'])}")
+        for note in row.get('notes', []):
+            lines.append(f"  note: {note}")
+    return "\n".join(lines)
+
+
+def format_cron_audit(report: Mapping[str, Any]) -> str:
+    summary = report.get('summary', {})
+    lines = [
+        "Cron Runtime Audit",
+        f"jobs_file: {report.get('jobs_file')}",
+        f"job_count: {report.get('job_count', 0)}",
+        f"pinned_jobs: {summary.get('pinned_jobs', 0)}",
+        f"unpinned_agent_jobs: {summary.get('unpinned_agent_jobs', 0)}",
+        f"invalid_cron_jobs: {summary.get('invalid_cron_jobs', 0)}",
+        "",
+        "jobs:",
+    ]
+    jobs = report.get('jobs', [])
+    if not jobs:
+        lines.append("- no cron jobs found")
+    else:
+        for row in jobs:
+            lines.append(f"- {row['job_id']} {row['name']} lane={row['recommended_lane']} family={row['task_family']} risk={row['risk']} pinned={str(row['pinned']).lower()} no_agent={str(row['no_agent']).lower()}")
+    return "\n".join(lines)
+
+
 def format_control_plane_route(route: Mapping[str, Any]) -> str:
     evidence = route.get("evidence", {})
     scorecard = evidence.get("route_scorecard")
@@ -2986,6 +3034,7 @@ def format_control_plane_route(route: Mapping[str, Any]) -> str:
         f"task_family: {route['task_family']}",
         f"template: {route['chosen_template']}",
         f"provider/model route: {route['chosen_route']}",
+        f"routing tier: {(route.get('routing_tier') or {}).get('tier_id', 'n/a')}",
         f"source agent: {route['template_record']['source_agent_id']}",
         "selection reason:",
         *(f"- {item}" for item in evidence.get("selection_reason", [])),
@@ -3082,6 +3131,15 @@ def cmd_intelligence(args: Any) -> int:
                     status_key="production_state",
                 )
             )
+            return 0
+        if subcommand == "tiers":
+            print(format_routing_tiers(get_routing_tier_registry()))
+            return 0
+        if subcommand == "task-families":
+            print(format_task_family_matrix(get_task_family_routing_matrix()))
+            return 0
+        if subcommand == "cron-audit":
+            print(format_cron_audit(audit_cron_jobs()))
             return 0
         if subcommand == "templates":
             print(

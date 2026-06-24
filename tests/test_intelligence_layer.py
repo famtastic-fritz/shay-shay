@@ -30,12 +30,16 @@ from shay_cli.intelligence_cmd import (
     trace_task,
 )
 from shay_cli.intelligence_control_plane import (
+    audit_cron_jobs,
     build_route_scorecards,
+    classify_task_family,
     explain_route,
     get_agent_template_registry,
     get_control_plane_modules,
     get_memory_truth_surfaces,
     get_provider_model_registry,
+    get_routing_tier_registry,
+    get_task_family_routing_matrix,
     instantiate_worker_from_template,
 )
 from shay_cli.intelligence_seed import (
@@ -818,3 +822,36 @@ def test_control_plane_cli_commands_format_without_crashing(tmp_path, monkeypatc
         captured = capsys.readouterr()
         assert rc == 0, (subcommand, captured.err, captured.out)
         assert captured.out.strip(), subcommand
+
+
+def test_routing_tier_registry_contains_expected_defaults():
+    tiers = {row["tier_id"]: row for row in get_routing_tier_registry()}
+    assert tiers["cron-cheap"]["preferred_routes"][0] == "ollama-qwen3-14b"
+    assert tiers["cron-build"]["preferred_routes"][0] == "anthropic-claude-code-sonnet-4.6"
+    assert tiers["premium-review"]["premium_allowed"] is True
+
+
+def test_task_family_matrix_blocks_interactive_cron_and_defaults_review_to_premium():
+    matrix = {row["task_family"]: row for row in get_task_family_routing_matrix()}
+    assert matrix["interactive interview"]["cron_eligible"] is False
+    assert matrix["review"]["lane_id"] == "premium-review"
+    assert matrix["implementation"]["default_route"] == "anthropic-claude-code-sonnet-4.6"
+
+
+def test_classify_task_family_distinguishes_watchdog_and_interactive_jobs():
+    assert classify_task_family("poll hosting health threshold", no_agent=True, script="watch.py") == "watchdog"
+    assert classify_task_family("interview Fritz about objections", no_agent=True, script="ask.py") == "interactive interview"
+
+
+def test_control_plane_explain_includes_lane_policy():
+    route = explain_route("tear this implementation apart")
+    assert route["task_family"] == "review"
+    assert route["routing_tier"]["tier_id"] == "premium-review"
+    assert route["task_family_policy"]["premium_requires_explicit_opt_in"] is True
+
+
+def test_audit_cron_jobs_handles_missing_jobs_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHAY_HOME", str(tmp_path))
+    report = audit_cron_jobs()
+    assert report["job_count"] == 0
+    assert report["summary"]["unpinned_agent_jobs"] == 0
