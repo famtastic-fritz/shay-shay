@@ -43,6 +43,7 @@ from shay_cli.intelligence_seed import (
     get_cadence_records,
     get_capability_matrix,
 )
+from shay_cli.model_probe import list_probe_registry, probe_model
 
 
 BENCHMARK_TEMPLATE_COMPATIBILITY: dict[str, set[str]] = {
@@ -3131,6 +3132,22 @@ def cmd_intelligence(args: Any) -> int:
                     status_key="production_state",
                 )
             )
+            return 0
+        if subcommand == "probe-model":
+            print(
+                json.dumps(
+                    probe_model(
+                        str(getattr(args, "provider", "") or ""),
+                        str(getattr(args, "model", "") or ""),
+                        force=bool(getattr(args, "force", False)),
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if subcommand == "probe-registry":
+            print(json.dumps(list_probe_registry(), indent=2, sort_keys=True))
             return 0
         if subcommand == "tiers":
             print(format_routing_tiers(get_routing_tier_registry()))

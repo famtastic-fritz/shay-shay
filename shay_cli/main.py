@@ -9519,6 +9519,13 @@ def main():
     control_plane_subparsers = control_plane_parser.add_subparsers(dest="control_plane_command")
     control_plane_subparsers.add_parser("modules", help="Show control-plane module boundaries")
     control_plane_subparsers.add_parser("providers", help="Show provider/model registry")
+    control_plane_probe = control_plane_subparsers.add_parser(
+        "probe-model", help="Run a live capability probe for one provider/model lane"
+    )
+    control_plane_probe.add_argument("provider", help="Provider id, e.g. zai")
+    control_plane_probe.add_argument("model", help="Model id, e.g. glm-5.2")
+    control_plane_probe.add_argument("--force", action="store_true", help="Ignore cached probe result and run the probe again")
+    control_plane_subparsers.add_parser("probe-registry", help="Show persisted live probe registry")
     control_plane_subparsers.add_parser("tiers", help="Show enforced routing tiers and premium gating defaults")
     control_plane_subparsers.add_parser("task-families", help="Show task-family to lane mapping defaults")
     control_plane_subparsers.add_parser("cron-audit", help="Audit cron jobs for lane pinning, premium drift, and invalid interactive jobs")

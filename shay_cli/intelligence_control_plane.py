@@ -9,6 +9,7 @@ from typing import Any, Mapping
 from agent.process_intelligence import list_run_records, normalized_validation_results
 from shay_constants import get_shay_home
 from shay_cli.intelligence_seed import agent_by_id, get_agent_registry
+from shay_cli.model_probe import score_routes_for_task
 
 
 @dataclass
@@ -1089,10 +1090,17 @@ def explain_route(task: str) -> dict[str, Any]:
             template_routes = list(_template(chosen_template).get("preferred_routes") or [])
             policy_route = str(policy.get("default_route") or "")
             forbidden = set(policy.get("forbidden_routes") or [])
-            if policy_route and policy_route in template_routes and policy_route not in forbidden:
-                chosen_route = policy_route
+            allowed_routes = [route for route in template_routes if route not in forbidden]
+            if policy_route and policy_route in allowed_routes:
+                allowed_routes = [policy_route, *[route for route in allowed_routes if route != policy_route]]
+            scored_allowed_routes = score_routes_for_task(
+                text,
+                [routes[route_id] for route_id in allowed_routes if route_id in routes],
+            )
+            if scored_allowed_routes:
+                chosen_route = str(scored_allowed_routes[0]["route_id"])
             else:
-                chosen_route = next((route for route in template_routes if route not in forbidden), _preferred_route(chosen_template))
+                chosen_route = next(iter(allowed_routes), _preferred_route(chosen_template))
         if policy["lane_id"] != "blocked":
             tier = _routing_tier_record(policy["lane_id"])
 
@@ -1105,6 +1113,10 @@ def explain_route(task: str) -> dict[str, Any]:
         None,
     )
     route_record = routes[chosen_route]
+    route_scores = score_routes_for_task(
+        text,
+        [routes[route_id] for route_id in template.get("preferred_routes") or [] if route_id in routes],
+    )
 
     return {
         "task": text,
@@ -1118,6 +1130,7 @@ def explain_route(task: str) -> dict[str, Any]:
         "provider_model_record": route_record,
         "evidence": {
             "route_scorecard": route_scorecard,
+            "route_scores": route_scores,
             "memory_truth_surfaces": get_memory_truth_surfaces(),
             "selection_reason": [
                 f"Template {chosen_template} serves {', '.join(template['task_families'])}.",
