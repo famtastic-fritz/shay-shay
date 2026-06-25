@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
-from pathlib import Path
 import re
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Mapping
+
 
 from agent.process_intelligence import list_run_records, normalized_validation_results
 from shay_constants import get_shay_home
@@ -455,7 +457,7 @@ _TEMPLATE_SEEDS = [
         "role_name": "Orchestrator Captain",
         "agent_id": "work-router",
         "task_families": ["orchestration", "planning", "final synthesis"],
-        "preferred_routes": ["openai-codex-gpt-5.5", "google-gemini-2.5-pro"],
+        "preferred_routes": ["google-gemini-2.5-pro"],
         "budget_profile": "premium-when-ambiguous",
         "latency_profile": "quality-first",
         "output_contract": "routing decision + explicit proof + next actions",
@@ -475,7 +477,7 @@ _TEMPLATE_SEEDS = [
         "role_name": "Capability Cartographer",
         "agent_id": "capability-cartographer",
         "task_families": ["capability backfill", "gap classification", "truth merge"],
-        "preferred_routes": ["openai-codex-gpt-5.5", "openai-gpt-5.4-mini"],
+        "preferred_routes": ["openai-gpt-5.4-mini"],
         "budget_profile": "mid",
         "latency_profile": "balanced",
         "output_contract": "capability updates + caveats + next action",
@@ -495,7 +497,7 @@ _TEMPLATE_SEEDS = [
         "role_name": "Review Judge",
         "agent_id": "run-reviewer",
         "task_families": ["adversarial review", "route challenge", "proof audit", "review"],
-        "preferred_routes": ["google-gemini-2.5-pro", "openai-codex-gpt-5.5"],
+        "preferred_routes": ["google-gemini-2.5-pro"],
         "budget_profile": "premium-review",
         "latency_profile": "quality-first",
         "output_contract": "verdict + cited proof + failures/rejects",
@@ -525,7 +527,7 @@ _TEMPLATE_SEEDS = [
         "role_name": "Browser Operator",
         "agent_id": "worker-supervisor",
         "task_families": ["browser-ui", "playwright", "user-flow verification"],
-        "preferred_routes": ["openai-codex-gpt-5.5", "openai-gpt-5.4-mini"],
+        "preferred_routes": ["openai-gpt-5.4-mini"],
         "budget_profile": "capability-first",
         "latency_profile": "balanced",
         "output_contract": "user-flow verdict + breakpoints + proof artifacts",
@@ -794,7 +796,7 @@ ROUTING_TIER_REGISTRY: list[RoutingTierRecord] = [
         purpose="Explicit reviewer/breaker lane for adversarial review, high-ambiguity judgment, and architecture challenge.",
         allowed_task_classes=["adversarial review", "proof audit", "route challenge", "major architecture judgment"],
         forbidden_task_classes=["default cron runtime", "fallback route", "broad swarm default"],
-        preferred_routes=["google-gemini-2.5-pro", "openai-codex-gpt-5.5"],
+        preferred_routes=["google-gemini-2.5-pro"],
         escalation_tier=None,
         premium_allowed=True,
         runner_kind="agent",
@@ -1063,10 +1065,19 @@ def _brain_chain_for_task_family(
 def build_universal_route_truth() -> dict[str, Any]:
     providers = get_provider_model_registry()
     task_families = get_task_family_routing_matrix()
+    generated_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    source_files = [
+        str((Path(__file__).resolve())),
+        str((Path(__file__).resolve().parent / "intelligence_cmd.py")),
+        str((Path(__file__).resolve().parent / "main.py")),
+    ]
     return {
         "schema_id": "intelligence-control-plane/universal-route-truth/v1",
         "source_repo": "famtastic-fritz/shay-shay",
         "source_surface": "shay intelligence control-plane export",
+        "generated_at": generated_at,
+        "source_files": source_files,
+        "refresh_command": "uv run python -m shay_cli.main intelligence control-plane export",
         "routes": providers,
         "tiers": get_routing_tier_registry(),
         "task_families": task_families,

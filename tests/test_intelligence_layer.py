@@ -882,9 +882,11 @@ def test_build_universal_route_truth_exposes_agent_os_bridge_preferences():
     payload = build_universal_route_truth()
     bridge = payload["bridges"]["shay_agent_os"]
     assert payload["schema_id"] == "intelligence-control-plane/universal-route-truth/v1"
+    assert payload["generated_at"].endswith("Z")
+    assert payload["refresh_command"] == "uv run python -m shay_cli.main intelligence control-plane export"
     assert bridge["default_brain_chain"] == ["claude", "openrouter", "gemini", "ollama"]
     assert bridge["task_family_brain_preferences"]["implementation"][0] == "claude"
-    assert "review" in bridge["task_family_brain_preferences"]
+    assert bridge["task_family_brain_preferences"]["review"] == ["gemini", "claude", "openrouter", "ollama"]
 
 
 def test_write_universal_route_truth_writes_json_file(tmp_path):
