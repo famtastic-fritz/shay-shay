@@ -139,6 +139,12 @@ CONTROL_PLANE_SCHEMA_IDS = {
     "product_worker_pool_record": "intelligence-control-plane/product-worker-pool-record/v1",
 }
 
+_UNIVERSAL_ROUTE_SYNC_ACTIVE = False
+
+
+def _universal_route_export_path() -> Path:
+    return get_shay_home() / "control-plane" / "universal-intelligence-route.json"
+
 
 def get_control_plane_modules() -> list[dict[str, Any]]:
     modules = [
@@ -438,7 +444,9 @@ PROVIDER_MODEL_REGISTRY: list[ProviderModelRecord] = [
 
 
 def get_provider_model_registry() -> list[dict[str, Any]]:
-    return [record.to_dict() for record in PROVIDER_MODEL_REGISTRY]
+    rows = [record.to_dict() for record in PROVIDER_MODEL_REGISTRY]
+    _sync_universal_route_truth()
+    return rows
 
 
 _TEMPLATE_SEEDS = [
@@ -477,7 +485,7 @@ _TEMPLATE_SEEDS = [
         "role_name": "Implementation Worker",
         "agent_id": "worker-supervisor",
         "task_families": ["code implementation", "schema wiring", "CLI additions", "implementation", "deploy"],
-        "preferred_routes": ["anthropic-claude-code-sonnet-4.6", "openai-codex-gpt-5.4", "openai-gpt-5.4-mini"],
+        "preferred_routes": ["anthropic-claude-code-sonnet-4.6", "openai-gpt-5.4-mini"],
         "budget_profile": "mid",
         "latency_profile": "balanced",
         "output_contract": "file diff + tests + residue",
@@ -868,11 +876,11 @@ TASK_FAMILY_ROUTING_REGISTRY: list[TaskFamilyRoutingRecord] = [
         route_strategy="builder-lane",
         default_route="anthropic-claude-code-sonnet-4.6",
         allowed_escalation_tier="premium-review",
-        forbidden_routes=[],
+        forbidden_routes=["openai-codex-gpt-5.4"],
         cron_eligible=True,
         script_preferred=False,
         premium_requires_explicit_opt_in=False,
-        notes=["Builder work defaults to Claude Code Sonnet, not Codex."],
+        notes=["Builder work defaults to Claude Code Sonnet, not Codex.", "Codex is intentionally blocked from the default builder lane to prevent subscription drain."],
     ),
     TaskFamilyRoutingRecord(
         task_family="browser-ui",
@@ -917,11 +925,15 @@ TASK_FAMILY_ROUTING_REGISTRY: list[TaskFamilyRoutingRecord] = [
 
 
 def get_routing_tier_registry() -> list[dict[str, Any]]:
-    return [record.to_dict() for record in ROUTING_TIER_REGISTRY]
+    rows = [record.to_dict() for record in ROUTING_TIER_REGISTRY]
+    _sync_universal_route_truth()
+    return rows
 
 
 def get_task_family_routing_matrix() -> list[dict[str, Any]]:
-    return [record.to_dict() for record in TASK_FAMILY_ROUTING_REGISTRY]
+    rows = [record.to_dict() for record in TASK_FAMILY_ROUTING_REGISTRY]
+    _sync_universal_route_truth()
+    return rows
 
 
 PRODUCT_WORKER_POOL_REGISTRY: list[ProductWorkerPoolRecord] = [
@@ -932,8 +944,8 @@ PRODUCT_WORKER_POOL_REGISTRY: list[ProductWorkerPoolRecord] = [
         objective="Ship the first real numerology app with transparent chart math, durable premium unlock architecture, and browser-proofed happy path.",
         template_id="implementation-worker",
         primary_routes=["glm-5.1", "ollama-qwen3-14b", "openai-gpt-5.4-mini"],
-        escalation_routes=["anthropic-claude-code-sonnet-4.6", "openai-codex-gpt-5.4"],
-        forbidden_routes=["glm-5.2"],
+        escalation_routes=["anthropic-claude-code-sonnet-4.6", "google-gemini-2.5-pro"],
+        forbidden_routes=["glm-5.2", "openai-codex-gpt-5.4"],
         required_capabilities=["tools", "code", "browser-proof"],
         proof_surfaces=[
             "apps/famtastic-by-the-numbers/tests/smoke.mjs",
@@ -990,10 +1002,106 @@ PRODUCT_WORKER_POOL_REGISTRY: list[ProductWorkerPoolRecord] = [
 
 def get_product_worker_pool_registry(product_id: str | None = None) -> list[dict[str, Any]]:
     rows = [record.to_dict() for record in PRODUCT_WORKER_POOL_REGISTRY]
+    _sync_universal_route_truth()
     if not product_id:
         return rows
     wanted = str(product_id).strip().lower()
     return [row for row in rows if str(row["product_id"]).strip().lower() == wanted]
+
+
+def _sync_universal_route_truth() -> None:
+    global _UNIVERSAL_ROUTE_SYNC_ACTIVE
+    if _UNIVERSAL_ROUTE_SYNC_ACTIVE:
+        return
+    _UNIVERSAL_ROUTE_SYNC_ACTIVE = True
+    try:
+        write_universal_route_truth()
+    finally:
+        _UNIVERSAL_ROUTE_SYNC_ACTIVE = False
+
+
+def _brain_chain_for_task_family(
+    row: Mapping[str, Any],
+    providers: list[Mapping[str, Any]],
+) -> list[str]:
+    route_index = {provider["route_id"]: provider for provider in providers}
+    ordered_routes: list[str] = []
+    default_route = row.get("default_route")
+    if isinstance(default_route, str) and default_route:
+        ordered_routes.append(default_route)
+    tier_id = row.get("lane_id")
+    if isinstance(tier_id, str):
+        try:
+            tier = _routing_tier_record(tier_id)
+            for route_id in tier.get("preferred_routes") or []:
+                if route_id not in ordered_routes:
+                    ordered_routes.append(route_id)
+        except StopIteration:
+            pass
+    forbidden = set(row.get("forbidden_routes") or [])
+    alias_by_provider = {
+        "anthropic": "claude",
+        "openrouter": "openrouter",
+        "google": "gemini",
+        "google-openai": "gemini",
+        "ollama": "ollama",
+    }
+    brain_aliases: list[str] = []
+    for route_id in ordered_routes:
+        if route_id in forbidden:
+            continue
+        provider_id = str(route_index.get(route_id, {}).get("provider_id") or "")
+        alias = alias_by_provider.get(provider_id)
+        if alias and alias not in brain_aliases:
+            brain_aliases.append(alias)
+    for fallback in ["claude", "openrouter", "gemini", "ollama"]:
+        if fallback not in brain_aliases:
+            brain_aliases.append(fallback)
+    return brain_aliases
+
+
+def build_universal_route_truth() -> dict[str, Any]:
+    providers = get_provider_model_registry()
+    task_families = get_task_family_routing_matrix()
+    return {
+        "schema_id": "intelligence-control-plane/universal-route-truth/v1",
+        "source_repo": "famtastic-fritz/shay-shay",
+        "source_surface": "shay intelligence control-plane export",
+        "routes": providers,
+        "tiers": get_routing_tier_registry(),
+        "task_families": task_families,
+        "worker_pool": get_product_worker_pool_registry(),
+        "bridges": {
+            "shay_agent_os": {
+                "brain_alias_to_route_ids": {
+                    "claude": ["anthropic-claude-code-sonnet-4.6"],
+                    "openrouter": ["openrouter-claude-sonnet-4.6"],
+                    "gemini": ["google-gemini-2.5-flash", "google-gemini-2.5-pro"],
+                    "ollama": ["ollama-qwen3-14b", "ollama-hermes3"],
+                },
+                "default_brain_chain": ["claude", "openrouter", "gemini", "ollama"],
+                "task_family_brain_preferences": {
+                    row["task_family"]: _brain_chain_for_task_family(row, providers)
+                    for row in task_families
+                },
+            }
+        },
+    }
+
+
+def write_universal_route_truth(path: str | Path | None = None) -> Path:
+    target = Path(path).expanduser() if path else _universal_route_export_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = build_universal_route_truth()
+    target.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return target
+
+
+def read_universal_route_truth(path: str | Path | None = None) -> dict[str, Any]:
+    target = Path(path).expanduser() if path else _universal_route_export_path()
+    if not target.exists():
+        write_universal_route_truth(target)
+    return json.loads(target.read_text(encoding="utf-8"))
 
 
 def classify_task_family(task: str, *, no_agent: bool = False, script: str | None = None) -> str:
@@ -1249,6 +1357,7 @@ __all__ = [
     "CONTROL_PLANE_SCHEMA_IDS",
     "audit_cron_jobs",
     "build_route_scorecards",
+    "build_universal_route_truth",
     "classify_task_family",
     "explain_route",
     "get_agent_template_registry",
@@ -1259,4 +1368,6 @@ __all__ = [
     "get_routing_tier_registry",
     "get_task_family_routing_matrix",
     "instantiate_worker_from_template",
+    "read_universal_route_truth",
+    "write_universal_route_truth",
 ]

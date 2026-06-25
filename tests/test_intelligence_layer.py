@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 
@@ -32,6 +33,7 @@ from shay_cli.intelligence_cmd import (
 from shay_cli.intelligence_control_plane import (
     audit_cron_jobs,
     build_route_scorecards,
+    build_universal_route_truth,
     classify_task_family,
     explain_route,
     get_agent_template_registry,
@@ -42,6 +44,7 @@ from shay_cli.intelligence_control_plane import (
     get_routing_tier_registry,
     get_task_family_routing_matrix,
     instantiate_worker_from_template,
+    write_universal_route_truth,
 )
 from shay_cli.intelligence_seed import (
     BRIEF_COMMANDS,
@@ -805,22 +808,27 @@ def test_control_plane_cli_commands_format_without_crashing(tmp_path, monkeypatc
     from types import SimpleNamespace
     from shay_cli.intelligence_cmd import cmd_intelligence
 
-    monkeypatch.setenv("SHAY_INTELLIGENCE_HOME", str(tmp_path))
+    monkeypatch.setenv("SHAY_HOME", str(tmp_path))
+    export_path = tmp_path / "control-plane" / "universal.json"
     commands = [
-        ("modules", None),
-        ("providers", None),
-        ("templates", None),
-        ("memory", None),
-        ("scorecards", None),
-        ("worker-pool", None),
-        ("explain", ["implement", "routing", "evidence"]),
+        ("modules", None, None),
+        ("providers", None, None),
+        ("templates", None, None),
+        ("memory", None, None),
+        ("scorecards", None, None),
+        ("worker-pool", None, None),
+        ("export", None, str(export_path)),
+        ("show-universal", None, str(export_path)),
+        ("explain", ["implement", "routing", "evidence"], None),
     ]
-    for subcommand, task in commands:
+    for subcommand, task, path in commands:
         rc = cmd_intelligence(
             SimpleNamespace(
                 intelligence_command="control-plane",
                 control_plane_command=subcommand,
                 task=task,
+                path=path,
+                product_id=None,
             )
         )
         captured = capsys.readouterr()
@@ -840,6 +848,7 @@ def test_task_family_matrix_blocks_interactive_cron_and_defaults_review_to_premi
     assert matrix["interactive interview"]["cron_eligible"] is False
     assert matrix["review"]["lane_id"] == "premium-review"
     assert matrix["implementation"]["default_route"] == "anthropic-claude-code-sonnet-4.6"
+    assert "openai-codex-gpt-5.4" in matrix["implementation"]["forbidden_routes"]
 
 
 def test_product_worker_pool_registry_covers_by_the_numbers_v1_v3():
@@ -849,6 +858,8 @@ def test_product_worker_pool_registry_covers_by_the_numbers_v1_v3():
     assert by_stage["v1"]["template_id"] == "implementation-worker"
     assert "glm-5.1" in by_stage["v1"]["primary_routes"]
     assert "glm-5.2" in by_stage["v1"]["forbidden_routes"]
+    assert "openai-codex-gpt-5.4" in by_stage["v1"]["forbidden_routes"]
+    assert "google-gemini-2.5-pro" in by_stage["v1"]["escalation_routes"]
     assert by_stage["v2"]["template_id"] == "local-bulk-drafter"
     assert "glm-5.2" in by_stage["v2"]["primary_routes"]
     assert by_stage["v3"]["template_id"] == "provider-intel-researcher"
@@ -864,6 +875,35 @@ def test_control_plane_explain_includes_lane_policy():
     assert route["task_family"] == "review"
     assert route["routing_tier"]["tier_id"] == "premium-review"
     assert route["task_family_policy"]["premium_requires_explicit_opt_in"] is True
+
+
+def test_build_universal_route_truth_exposes_agent_os_bridge_preferences():
+    payload = build_universal_route_truth()
+    bridge = payload["bridges"]["shay_agent_os"]
+    assert payload["schema_id"] == "intelligence-control-plane/universal-route-truth/v1"
+    assert bridge["default_brain_chain"] == ["claude", "openrouter", "gemini", "ollama"]
+    assert bridge["task_family_brain_preferences"]["implementation"][0] == "claude"
+    assert "review" in bridge["task_family_brain_preferences"]
+
+
+def test_write_universal_route_truth_writes_json_file(tmp_path):
+    target = write_universal_route_truth(tmp_path / "route-truth.json")
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    assert target.exists()
+    assert payload["schema_id"] == "intelligence-control-plane/universal-route-truth/v1"
+    assert payload["bridges"]["shay_agent_os"]["brain_alias_to_route_ids"]["claude"]
+    assert payload["routes"]
+
+
+def test_route_getters_auto_refresh_universal_truth_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHAY_HOME", str(tmp_path))
+    get_task_family_routing_matrix()
+    target = tmp_path / "control-plane" / "universal-intelligence-route.json"
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    assert target.exists()
+    assert payload["task_families"]
+    implementation = next(row for row in payload["task_families"] if row["task_family"] == "implementation")
+    assert "openai-codex-gpt-5.4" in implementation["forbidden_routes"]
 
 
 def test_audit_cron_jobs_handles_missing_jobs_file(monkeypatch, tmp_path):

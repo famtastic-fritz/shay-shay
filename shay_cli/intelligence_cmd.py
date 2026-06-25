@@ -27,6 +27,8 @@ from shay_cli.intelligence_control_plane import (
     get_provider_model_registry,
     get_routing_tier_registry,
     get_task_family_routing_matrix,
+    read_universal_route_truth,
+    write_universal_route_truth,
 )
 from shay_cli.intelligence_seed import (
     BRIEF_COMMANDS,
@@ -3179,6 +3181,13 @@ def cmd_intelligence(args: Any) -> int:
         if subcommand == "worker-pool":
             product_id = getattr(args, "product_id", None)
             print(format_product_worker_pool(get_product_worker_pool_registry(product_id)))
+            return 0
+        if subcommand == "export":
+            target = write_universal_route_truth(getattr(args, "path", None))
+            print(str(target))
+            return 0
+        if subcommand == "show-universal":
+            print(json.dumps(read_universal_route_truth(getattr(args, "path", None)), indent=2, sort_keys=True))
             return 0
         if subcommand == "cron-audit":
             print(format_cron_audit(audit_cron_jobs()))
