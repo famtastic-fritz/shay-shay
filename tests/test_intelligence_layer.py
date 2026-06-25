@@ -641,7 +641,7 @@ def test_control_plane_surfaces_are_populated():
     } <= set(modules)
     providers = {row["route_id"]: row for row in get_provider_model_registry()}
     assert "anthropic-claude-code-sonnet-4.6" in providers
-    assert "openai-codex-gpt-5.4" in providers
+    assert "openai-codex-gpt-5.5" in providers
     templates = {row["template_id"]: row for row in get_agent_template_registry()}
     assert "implementation-worker" in templates
     surfaces = {row["surface_id"]: row for row in get_memory_truth_surfaces()}
@@ -673,7 +673,7 @@ def test_route_scorecards_aggregate_routed_runs(tmp_path, monkeypatch):
             "task_name": "Explain route selection",
             "task_family": "implementation",
             "template_id": "implementation-worker",
-            "provider_model_route": "openai-codex-gpt-5.4",
+            "provider_model_route": "openai-codex-gpt-5.5",
             "outcome": "success",
             "duration_seconds": 12,
             "validation_results": [
@@ -691,7 +691,7 @@ def test_route_scorecards_aggregate_routed_runs(tmp_path, monkeypatch):
         row
         for row in cards
         if row["template_id"] == "implementation-worker"
-        and row["route_id"] == "openai-codex-gpt-5.4"
+        and row["route_id"] == "openai-codex-gpt-5.5"
     )
     assert card["run_count"] >= 1
     assert card["success_rate"] >= 1.0
@@ -848,6 +848,7 @@ def test_task_family_matrix_blocks_interactive_cron_and_defaults_review_to_premi
     assert matrix["interactive interview"]["cron_eligible"] is False
     assert matrix["review"]["lane_id"] == "premium-review"
     assert matrix["implementation"]["default_route"] == "anthropic-claude-code-sonnet-4.6"
+    assert "openai-codex-gpt-5.5" in matrix["implementation"]["forbidden_routes"]
     assert "openai-codex-gpt-5.4" in matrix["implementation"]["forbidden_routes"]
 
 
@@ -856,8 +857,8 @@ def test_product_worker_pool_registry_covers_by_the_numbers_v1_v3():
     by_stage = {row["stage_id"]: row for row in rows}
     assert {"v1", "v2", "v3"} <= set(by_stage)
     assert by_stage["v1"]["template_id"] == "implementation-worker"
-    assert "glm-5.1" in by_stage["v1"]["primary_routes"]
-    assert "glm-5.2" in by_stage["v1"]["forbidden_routes"]
+    assert "glm-5.2" in by_stage["v1"]["primary_routes"]
+    assert "openai-codex-gpt-5.5" in by_stage["v1"]["forbidden_routes"]
     assert "openai-codex-gpt-5.4" in by_stage["v1"]["forbidden_routes"]
     assert "google-gemini-2.5-pro" in by_stage["v1"]["escalation_routes"]
     assert by_stage["v2"]["template_id"] == "local-bulk-drafter"
@@ -903,6 +904,7 @@ def test_route_getters_auto_refresh_universal_truth_file(tmp_path, monkeypatch):
     assert target.exists()
     assert payload["task_families"]
     implementation = next(row for row in payload["task_families"] if row["task_family"] == "implementation")
+    assert "openai-codex-gpt-5.5" in implementation["forbidden_routes"]
     assert "openai-codex-gpt-5.4" in implementation["forbidden_routes"]
 
 
