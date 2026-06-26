@@ -2050,27 +2050,118 @@ def _make_dry_run_parent() -> Any:
     return parent
 
 
+def _route_id_to_child_agent_config(route_id: str) -> dict[str, str | None]:
+    route_id = str(route_id or "").strip()
+    if not route_id:
+        route_id = "glm-5.2"
+
+    if route_id.startswith("ollama-"):
+        return {
+            "route_id": route_id,
+            "provider": "ollama",
+            "model": route_id.removeprefix("ollama-"),
+            "base_url": "http://localhost:11434/v1",
+        }
+    if route_id.startswith("openai-"):
+        return {
+            "route_id": route_id,
+            "provider": "openai",
+            "model": route_id.removeprefix("openai-"),
+            "base_url": "https://api.openai.com/v1",
+        }
+    if route_id.startswith("groq-"):
+        return {
+            "route_id": route_id,
+            "provider": "groq",
+            "model": route_id.removeprefix("groq-"),
+            "base_url": "https://api.groq.com/openai/v1",
+        }
+    if route_id.startswith("cerebras-"):
+        return {
+            "route_id": route_id,
+            "provider": "cerebras",
+            "model": route_id.removeprefix("cerebras-"),
+            "base_url": "https://api.cerebras.ai/v1",
+        }
+    if route_id.startswith("glm-"):
+        return {
+            "route_id": route_id,
+            "provider": "glm",
+            "model": route_id,
+            "base_url": "https://api.z.ai/api/coding/paas/v4",
+        }
+
+    provider, _, model = route_id.partition("-")
+    return {
+        "route_id": route_id,
+        "provider": provider or None,
+        "model": model or route_id,
+        "base_url": None,
+    }
+
+
+def _map_tier_to_worker_route(tier: str | None, packet: Mapping[str, Any]) -> dict[str, str | None]:
+    tier = str(tier or "cheap").strip().lower() or "cheap"
+    packet_product_id = str(packet.get("product_id") or "").strip()
+    packet_stage_id = str(packet.get("stage_id") or "").strip()
+    packet_template_id = str(packet.get("template_id") or "implementation-worker").strip()
+
+    selected_pool: Mapping[str, Any] | None = None
+    for pool in get_product_worker_pool_registry():
+        if packet_product_id and pool.get("product_id") != packet_product_id:
+            continue
+        if packet_stage_id and pool.get("stage_id") != packet_stage_id:
+            continue
+        if packet_template_id and pool.get("template_id") != packet_template_id:
+            continue
+        selected_pool = pool
+        break
+
+    if selected_pool is None:
+        for pool in get_product_worker_pool_registry("famtastic-by-the-numbers"):
+            if pool.get("stage_id") == "v1" and pool.get("template_id") == "implementation-worker":
+                selected_pool = pool
+                break
+
+    primary_routes = list((selected_pool or {}).get("primary_routes") or [])
+    forbidden_routes = set((selected_pool or {}).get("forbidden_routes") or [])
+    if not primary_routes:
+        primary_routes = ["glm-5.2", "glm-5.1", "ollama-qwen3-14b", "openai-gpt-5.4-mini"]
+
+    route_by_tier = {
+        "cheap": primary_routes[0] if len(primary_routes) > 0 else "glm-5.2",
+        "standard": primary_routes[1] if len(primary_routes) > 1 else "glm-5.1",
+        "premium": primary_routes[2] if len(primary_routes) > 2 else "ollama-qwen3-14b",
+    }
+    route_id = route_by_tier.get(tier, route_by_tier["cheap"])
+    if route_id in forbidden_routes:
+        raise ValueError(f"worker route {route_id!r} is forbidden for selected worker pool")
+
+    return _route_id_to_child_agent_config(route_id)
+
+
 def _run_swarm_worker_packet(packet: Mapping[str, Any]) -> dict[str, Any]:
     from tools.delegate_tool import _build_child_agent, _load_config, _resolve_delegation_credentials
 
     parent = _make_dry_run_parent()
     delegation_cfg = _load_config() or {}
     resolved = _resolve_delegation_credentials(delegation_cfg, parent)
+    worker_route = _map_tier_to_worker_route(packet.get("routing_tier"), packet)
     child = _build_child_agent(
         task_index=0,
         goal=str(packet.get("goal") or "").strip(),
         context=str(packet.get("context") or "").strip(),
         toolsets=list(packet.get("toolsets") or []),
-        model=resolved.get("model"),
+        model=worker_route.get("model"),
         max_iterations=1,
         task_count=1,
         parent_agent=parent,
-        override_provider=resolved.get("provider"),
-        override_base_url=resolved.get("base_url"),
+        override_provider=worker_route.get("provider"),
+        override_base_url=worker_route.get("base_url"),
         override_api_key=resolved.get("api_key"),
         override_api_mode=resolved.get("api_mode"),
-        override_acp_command=resolved.get("command"),
-        override_acp_args=resolved.get("args"),
+        override_acp_command=None,
+        override_acp_args=[],
         role="leaf",
     )
     prompt = (

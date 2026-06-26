@@ -26,6 +26,8 @@ from shay_cli.intelligence_cmd import (
     review_item,
     route_task,
     run_safe_swarm_dry_run,
+    _map_tier_to_worker_route,
+    _run_swarm_worker_packet,
     swarm_plan,
     swarm_readiness,
     trace_task,
@@ -218,6 +220,102 @@ def test_safe_hyperswarm_dry_run_works(tmp_path, monkeypatch):
     assert summary["plan_path"].endswith("-plan.json")
     for ledger in summary["ledger_paths"]:
         assert "ledgers" in ledger
+
+
+def test_swarm_worker_route_mapping_uses_worker_pool_not_parent_model():
+    cheap = _map_tier_to_worker_route(
+        "cheap",
+        {
+            "product_id": "famtastic-by-the-numbers",
+            "stage_id": "v1",
+            "template_id": "implementation-worker",
+        },
+    )
+    standard = _map_tier_to_worker_route(
+        "standard",
+        {
+            "product_id": "famtastic-by-the-numbers",
+            "stage_id": "v1",
+            "template_id": "implementation-worker",
+        },
+    )
+    premium = _map_tier_to_worker_route(
+        "premium",
+        {
+            "product_id": "famtastic-by-the-numbers",
+            "stage_id": "v1",
+            "template_id": "implementation-worker",
+        },
+    )
+
+    assert cheap == {
+        "route_id": "glm-5.2",
+        "provider": "glm",
+        "model": "glm-5.2",
+        "base_url": "https://api.z.ai/api/coding/paas/v4",
+    }
+    assert standard["route_id"] == "glm-5.1"
+    assert standard["provider"] == "glm"
+    assert standard["model"] == "glm-5.1"
+    assert premium["route_id"] == "ollama-qwen3-14b"
+    assert premium["provider"] == "ollama"
+    assert premium["model"] == "qwen3-14b"
+
+
+def test_run_swarm_worker_packet_builds_child_from_worker_route(monkeypatch):
+    captured = {}
+
+    class DummyChild:
+        provider = "glm"
+        model = "glm-5.2"
+
+        def run_conversation(self, prompt, task_id):
+            return {
+                "final_response": '{"classification": "ok", "evidence": "stub"}',
+                "api_calls": 1,
+                "duration_seconds": 0,
+            }
+
+        def close(self):
+            captured["closed"] = True
+
+    def fake_build_child_agent(**kwargs):
+        captured.update(kwargs)
+        return DummyChild()
+
+    monkeypatch.setattr("tools.delegate_tool._load_config", lambda: {"model": "gpt-5.5", "provider": "openai-codex"})
+    monkeypatch.setattr(
+        "tools.delegate_tool._resolve_delegation_credentials",
+        lambda _cfg, _parent: {
+            "model": "gpt-5.5",
+            "provider": "openai-codex",
+            "base_url": "https://codex.example.invalid",
+            "api_key": "test-key",
+            "api_mode": None,
+        },
+    )
+    monkeypatch.setattr("tools.delegate_tool._build_child_agent", fake_build_child_agent)
+
+    result = _run_swarm_worker_packet(
+        {
+            "worker_id": "worker-a",
+            "routing_tier": "cheap",
+            "goal": "Classify one item",
+            "context": "Return JSON.",
+            "expected_output_schema": '{"classification": "string"}',
+            "product_id": "famtastic-by-the-numbers",
+            "stage_id": "v1",
+            "template_id": "implementation-worker",
+        }
+    )
+
+    assert result["status"] == "done"
+    assert captured["model"] == "glm-5.2"
+    assert captured["override_provider"] == "glm"
+    assert captured["override_base_url"] == "https://api.z.ai/api/coding/paas/v4"
+    assert captured["override_acp_command"] is None
+    assert captured["override_acp_args"] == []
+    assert captured["closed"] is True
 
 
 def test_swarm_plan_requires_reviewer_and_packet_metadata(tmp_path, monkeypatch):
