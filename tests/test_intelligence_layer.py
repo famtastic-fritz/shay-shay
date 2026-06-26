@@ -27,6 +27,7 @@ from shay_cli.intelligence_cmd import (
     route_task,
     run_safe_swarm_dry_run,
     _map_tier_to_worker_route,
+    _parse_swarm_worker_json_response,
     _run_swarm_worker_packet,
     swarm_plan,
     swarm_readiness,
@@ -248,12 +249,10 @@ def test_swarm_worker_route_mapping_uses_worker_pool_not_parent_model():
         },
     )
 
-    assert cheap == {
-        "route_id": "glm-5.2",
-        "provider": "glm",
-        "model": "glm-5.2",
-        "base_url": "https://api.z.ai/api/coding/paas/v4",
-    }
+    assert cheap["route_id"] == "glm-5.2"
+    assert cheap["provider"] == "glm"
+    assert cheap["model"] == "glm-5.2"
+    assert cheap["base_url"] == "https://api.z.ai/api/coding/paas/v4"
     assert standard["route_id"] == "glm-5.1"
     assert standard["provider"] == "glm"
     assert standard["model"] == "glm-5.1"
@@ -284,6 +283,7 @@ def test_run_swarm_worker_packet_builds_child_from_worker_route(monkeypatch):
         return DummyChild()
 
     monkeypatch.setattr("tools.delegate_tool._load_config", lambda: {"model": "gpt-5.5", "provider": "openai-codex"})
+    monkeypatch.setattr("shay_cli.config.get_env_value", lambda name: "worker-key" if name == "GLM_API_KEY" else "")
     monkeypatch.setattr(
         "tools.delegate_tool._resolve_delegation_credentials",
         lambda _cfg, _parent: {
@@ -313,9 +313,15 @@ def test_run_swarm_worker_packet_builds_child_from_worker_route(monkeypatch):
     assert captured["model"] == "glm-5.2"
     assert captured["override_provider"] == "glm"
     assert captured["override_base_url"] == "https://api.z.ai/api/coding/paas/v4"
+    assert captured["override_api_key"] == "worker-key"
     assert captured["override_acp_command"] is None
     assert captured["override_acp_args"] == []
     assert captured["closed"] is True
+
+
+def test_parse_swarm_worker_json_response_ignores_trailing_summary_text():
+    parsed = _parse_swarm_worker_json_response('{"classification": "ok"}\n\nSummary: extra text')
+    assert parsed == {"classification": "ok"}
 
 
 def test_swarm_plan_requires_reviewer_and_packet_metadata(tmp_path, monkeypatch):

@@ -2050,6 +2050,16 @@ def _make_dry_run_parent() -> Any:
     return parent
 
 
+def _get_env_secret(*names: str) -> str | None:
+    from shay_cli.config import get_env_value
+
+    for name in names:
+        value = str(get_env_value(name) or "").strip()
+        if value:
+            return value
+    return None
+
+
 def _route_id_to_child_agent_config(route_id: str) -> dict[str, str | None]:
     route_id = str(route_id or "").strip()
     if not route_id:
@@ -2089,6 +2099,7 @@ def _route_id_to_child_agent_config(route_id: str) -> dict[str, str | None]:
             "provider": "glm",
             "model": route_id,
             "base_url": "https://api.z.ai/api/coding/paas/v4",
+            "api_key": _get_env_secret("GLM_API_KEY", "ZAI_API_KEY", "Z_AI_API_KEY"),
         }
 
     provider, _, model = route_id.partition("-")
@@ -2097,6 +2108,7 @@ def _route_id_to_child_agent_config(route_id: str) -> dict[str, str | None]:
         "provider": provider or None,
         "model": model or route_id,
         "base_url": None,
+        "api_key": None,
     }
 
 
@@ -2140,6 +2152,28 @@ def _map_tier_to_worker_route(tier: str | None, packet: Mapping[str, Any]) -> di
     return _route_id_to_child_agent_config(route_id)
 
 
+def _parse_swarm_worker_json_response(final_response: str) -> dict[str, Any]:
+    text = str(final_response or "").strip()
+    if not text:
+        raise ValueError("worker response was empty")
+
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text).strip()
+
+    decoder = json.JSONDecoder()
+    try:
+        parsed, _end = decoder.raw_decode(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        if start < 0:
+            raise
+        parsed, _end = decoder.raw_decode(text[start:])
+    if not isinstance(parsed, dict):
+        raise ValueError("worker response was not a JSON object")
+    return parsed
+
+
 def _run_swarm_worker_packet(packet: Mapping[str, Any]) -> dict[str, Any]:
     from tools.delegate_tool import _build_child_agent, _load_config, _resolve_delegation_credentials
 
@@ -2158,7 +2192,7 @@ def _run_swarm_worker_packet(packet: Mapping[str, Any]) -> dict[str, Any]:
         parent_agent=parent,
         override_provider=worker_route.get("provider"),
         override_base_url=worker_route.get("base_url"),
-        override_api_key=resolved.get("api_key"),
+        override_api_key=worker_route.get("api_key") or resolved.get("api_key"),
         override_api_mode=resolved.get("api_mode"),
         override_acp_command=None,
         override_acp_args=[],
@@ -2174,9 +2208,7 @@ def _run_swarm_worker_packet(packet: Mapping[str, Any]) -> dict[str, Any]:
     try:
         result = child.run_conversation(prompt, task_id=str(packet.get("worker_id") or "swarm-dry-run-worker"))
         final_response = (result.get("final_response") or "").strip()
-        parsed = json.loads(final_response)
-        if not isinstance(parsed, dict):
-            raise ValueError("worker response was not a JSON object")
+        parsed = _parse_swarm_worker_json_response(final_response)
         return {
             "status": "done",
             "result": parsed,
