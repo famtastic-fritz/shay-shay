@@ -124,6 +124,27 @@ def default_intelligence_sources(home: Path | None = None) -> List[PrefetchSourc
             process_intel / "control-plane-runtime-plan.md",
             "hourly control-plane plan and status",
         ),
+        PrefetchSource(
+            "reflection synthesis",
+            obsidian / "Shay-Memory" / "reflections" / "reflection-synthesis.json",
+            "generated L2/L3 reflection candidates",
+        ),
+        PrefetchSource(
+            "pointer promotion candidates",
+            obsidian / "Shay-Memory" / "reflections" / "pointer-candidates.json",
+            "review-gated memory pointer candidates",
+        ),
+        PrefetchSource(
+            "capability reconciliation proposals",
+            obsidian / "Shay-Memory" / "reflections" / "capability-proposals.json",
+            "review-gated capability matrix update proposals",
+        ),
+        PrefetchSource(
+            "session ambient context",
+            obsidian / "Shay-Memory" / "reflections" / "session-context.json",
+            "recent-session context candidates for prefetch",
+            preferred_tool="session_search",
+        ),
     ]
 
 
