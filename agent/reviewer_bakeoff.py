@@ -15,7 +15,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Any, Callable, Sequence
 
 
 CRITICAL_GATES = (
@@ -32,7 +32,15 @@ FABRICATION_PATTERNS = (
     "i need the plan",
     "i don't have access",
     "cannot access the artifact",
+    "live_provider_error",
 )
+
+REVIEWER_SYSTEM_PROMPT = """You are a grounded adversarial reviewer for Shay-Shay HyperSwarm lanes.
+Review only the artifact provided in the user packet. Do not ask for the artifact;
+it is already present. Return severity-ranked issues with citations to the packet,
+artifact name, line, section, or quoted snippet. Each issue must include a concrete
+fix. If a seeded flaw exists, find it. If nothing is wrong, say so with citations.
+"""
 
 
 @dataclass
@@ -336,6 +344,122 @@ def simulated_output(candidate: ReviewerCandidate, packet: BenchmarkPacket) -> s
     )
 
 
+
+
+def build_reviewer_messages(packet: BenchmarkPacket) -> list[dict[str, str]]:
+    """Build the live model prompt for one reviewer benchmark packet."""
+    rubric = "\n".join(f"- {item}" for item in packet.rubric)
+    expected_hint = ", ".join(packet.expected_issue_markers) or "none"
+    return [
+        {"role": "system", "content": REVIEWER_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"Packet ID: {packet.packet_id}\n"
+                f"Task family: {packet.task_family}\n"
+                f"Artifact name: {packet.artifact_name}\n"
+                f"Minimum citations required by scorer: {packet.min_citations}\n"
+                f"Rubric:\n{rubric}\n\n"
+                "Artifact content begins below. Cite this artifact by name and line/section/snippet.\n"
+                "--- ARTIFACT START ---\n"
+                f"{packet.artifact_content}\n"
+                "--- ARTIFACT END ---\n\n"
+                "Return only the review. Use this shape for each issue:\n"
+                "- severity: blocker|high|medium|low; source: `<artifact>` line/section/snippet; "
+                "issue: ...; fix: ...\n"
+                f"Scorer seeded issue marker hints for benchmark validation: {expected_hint}\n"
+            ),
+        },
+    ]
+
+
+def extract_response_text(response: Any) -> str:
+    """Extract assistant text from a Shay auxiliary LLM response."""
+    try:
+        from agent.auxiliary_client import extract_content_or_reasoning
+
+        return extract_content_or_reasoning(response)
+    except Exception:
+        pass
+    try:
+        return (response.choices[0].message.content or "").strip()
+    except Exception:
+        return str(response or "").strip()
+
+
+def call_live_reviewer(
+    candidate: ReviewerCandidate,
+    packet: BenchmarkPacket,
+    *,
+    timeout: float = 90.0,
+    max_tokens: int = 900,
+    llm_call: Callable[..., Any] | None = None,
+) -> str:
+    """Invoke one live reviewer candidate against one packet and return text."""
+    if llm_call is None:
+        from agent.auxiliary_client import call_llm as llm_call
+
+    response = llm_call(
+        task="reviewer_bakeoff",
+        provider=candidate.provider,
+        model=candidate.model,
+        messages=build_reviewer_messages(packet),
+        temperature=0,
+        max_tokens=max_tokens,
+        timeout=timeout,
+    )
+    return extract_response_text(response)
+
+
+def run_live_bakeoff(
+    run_id: str,
+    packets: Sequence[BenchmarkPacket],
+    scorecard_path: Path,
+    candidates: Sequence[ReviewerCandidate],
+    *,
+    timeout: float = 90.0,
+    max_tokens: int = 900,
+    llm_call: Callable[..., Any] | None = None,
+    output_dir: Path | None = None,
+) -> list[ReviewerScore]:
+    """Run benchmark packets through real provider calls and score outputs.
+
+    Raw reviewer outputs are saved beside the scorecard by default so every
+    promotion/demotion decision has inspectable evidence.
+    """
+    scores: list[ReviewerScore] = []
+    raw_dir = output_dir or scorecard_path.parent / "reviewer-outputs" / run_id
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    for candidate in candidates:
+        safe_model = re.sub(r"[^A-Za-z0-9_.-]+", "_", candidate.model)
+        safe_provider = re.sub(r"[^A-Za-z0-9_.-]+", "_", candidate.provider)
+        for packet in packets:
+            lane_id = f"{candidate.key}:{packet.packet_id}"
+            try:
+                output = call_live_reviewer(
+                    candidate,
+                    packet,
+                    timeout=timeout,
+                    max_tokens=max_tokens,
+                    llm_call=llm_call,
+                )
+            except Exception as exc:
+                output = f"LIVE_PROVIDER_ERROR for {candidate.key}: {type(exc).__name__}: {exc}"
+            raw_path = raw_dir / f"{safe_provider}__{safe_model}__{packet.packet_id}.md"
+            raw_path.write_text(output + "\n", encoding="utf-8")
+            score = score_output(
+                run_id=run_id,
+                lane_id=lane_id,
+                candidate=candidate,
+                packet=packet,
+                output=output,
+                artifact_path=str(raw_path),
+            )
+            append_score(scorecard_path, score)
+            scores.append(score)
+    return scores
+
+
 def run_simulated_bakeoff(run_id: str, packets: Sequence[BenchmarkPacket], scorecard_path: Path) -> list[ReviewerScore]:
     candidates = [
         ReviewerCandidate(provider="custom", model="gemma4:latest", budget_class="cheap", tool_capable=False),
@@ -356,6 +480,18 @@ def run_simulated_bakeoff(run_id: str, packets: Sequence[BenchmarkPacket], score
     return scores
 
 
+def parse_candidate(raw: str) -> ReviewerCandidate:
+    """Parse provider/model[,budget[,tool_capable]] CLI candidate syntax."""
+    parts = [part.strip() for part in raw.split(",")]
+    head = parts[0]
+    if "/" not in head:
+        raise ValueError(f"Candidate must be provider/model, got: {raw}")
+    provider, model = head.split("/", 1)
+    budget = parts[1] if len(parts) > 1 and parts[1] else "not_logged"
+    tool_capable = (parts[2].lower() in {"1", "true", "yes", "tool", "tools"}) if len(parts) > 2 else False
+    return ReviewerCandidate(provider=provider, model=model, budget_class=budget, tool_capable=tool_capable)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run or reduce reviewer route bake-off scorecards.")
     parser.add_argument("--packets", type=Path, default=Path("docs/benchmarks/reviewer-bakeoff-packets.json"))
@@ -364,6 +500,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--run-id", default=f"reviewer-bakeoff-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}")
     parser.add_argument("--write-default-packets", action="store_true")
     parser.add_argument("--simulate", action="store_true")
+    parser.add_argument("--live", action="store_true", help="Run packets through live provider/model candidates.")
+    parser.add_argument(
+        "--candidate",
+        action="append",
+        default=[],
+        help="Reviewer candidate as provider/model[,budget[,tool_capable]]. Repeatable.",
+    )
+    parser.add_argument("--timeout", type=float, default=90.0)
+    parser.add_argument("--max-tokens", type=int, default=900)
     parser.add_argument("--reduce", action="store_true")
     args = parser.parse_args(argv)
 
@@ -372,7 +517,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     packets = load_packets(args.packets)
     if args.simulate:
         run_simulated_bakeoff(args.run_id, packets, args.scorecard)
-    if args.reduce or args.simulate:
+    if args.live:
+        candidates = [parse_candidate(raw) for raw in args.candidate]
+        if not candidates:
+            raise SystemExit("--live requires at least one --candidate provider/model")
+        run_live_bakeoff(
+            args.run_id,
+            packets,
+            args.scorecard,
+            candidates,
+            timeout=args.timeout,
+            max_tokens=args.max_tokens,
+        )
+    if args.reduce or args.simulate or args.live:
         summary = reduce_scores(load_scores(args.scorecard))
         args.summary.parent.mkdir(parents=True, exist_ok=True)
         args.summary.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

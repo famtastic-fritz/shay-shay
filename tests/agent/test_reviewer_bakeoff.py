@@ -1,12 +1,16 @@
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from agent.reviewer_bakeoff import (
     BenchmarkPacket,
     ReviewerCandidate,
+    build_reviewer_messages,
     load_scores,
+    parse_candidate,
     reduce_scores,
+    run_live_bakeoff,
     run_simulated_bakeoff,
     score_output,
     write_default_packets,
@@ -79,6 +83,105 @@ def test_simulated_bakeoff_writes_scorecard_and_reducer_recommends_routes(tmp_pa
     assert summary["models"]["custom/gemma4:latest"]["recommendation"] == "demote_from_review; clerk_only_until_probe_passes"
     assert summary["models"]["custom/glm-5.1"]["recommendation"] == "promote_for_passed_task_families"
     assert summary["models"]["custom/glm-5.1"]["pass_rate"] == 1.0
+
+
+def test_build_reviewer_messages_embeds_artifact_and_grounding_shape():
+    packet = BenchmarkPacket(
+        packet_id="p3",
+        task_family="doc_consistency",
+        artifact_name="docs.md",
+        artifact_content="Gemma is default. Gemma is not approved.",
+        rubric=["find contradiction"],
+        expected_issue_markers=["contradiction"],
+    )
+
+    messages = build_reviewer_messages(packet)
+    prompt = messages[1]["content"]
+
+    assert messages[0]["role"] == "system"
+    assert "docs.md" in prompt
+    assert "Gemma is default" in prompt
+    assert "severity: blocker|high|medium|low" in prompt
+    assert "contradiction" in prompt
+
+
+def test_live_bakeoff_invokes_llm_and_writes_raw_outputs(tmp_path: Path):
+    packet = BenchmarkPacket(
+        packet_id="p4",
+        task_family="telemetry_schema",
+        artifact_name="lanes.jsonl",
+        artifact_content="end_time before start_time",
+        rubric=["check timestamp"],
+        expected_issue_markers=["timestamp"],
+        min_citations=1,
+    )
+    candidate = ReviewerCandidate(provider="custom", model="glm-5.1", budget_class="cheap", tool_capable=True)
+    calls = []
+
+    def fake_llm_call(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=(
+                            "Reviewed artifact `lanes.jsonl` for packet p4.\n"
+                            "- severity: high; source: `lanes.jsonl` line 1; issue: timestamp order is invalid; "
+                            "fix: validate end_time after start_time."
+                        )
+                    )
+                )
+            ]
+        )
+
+    scorecard = tmp_path / "scorecard.jsonl"
+    scores = run_live_bakeoff(
+        "live-proof",
+        [packet],
+        scorecard,
+        [candidate],
+        llm_call=fake_llm_call,
+        output_dir=tmp_path / "raw",
+    )
+
+    assert calls[0]["provider"] == "custom"
+    assert calls[0]["model"] == "glm-5.1"
+    assert calls[0]["task"] == "reviewer_bakeoff"
+    assert scores[0].status == "pass"
+    assert scores[0].artifact_path
+    assert Path(scores[0].artifact_path).exists()
+    assert "lanes.jsonl" in Path(scores[0].artifact_path).read_text()
+    assert load_scores(scorecard)[0].status == "pass"
+
+
+def test_live_bakeoff_provider_error_is_scored_quality_failed(tmp_path: Path):
+    packet = BenchmarkPacket(
+        packet_id="p5",
+        task_family="plan_review",
+        artifact_name="plan.md",
+        artifact_content="rollback missing",
+        rubric=["check rollback"],
+        expected_issue_markers=["rollback"],
+    )
+    candidate = ReviewerCandidate(provider="custom", model="broken")
+
+    def boom(**kwargs):
+        raise RuntimeError("provider unavailable")
+
+    scores = run_live_bakeoff("live-error", [packet], tmp_path / "scorecard.jsonl", [candidate], llm_call=boom)
+
+    assert scores[0].status == "quality_failed"
+    assert scores[0].fabricated_claims is True
+    assert "adversarial_review" in scores[0].demoted_for_roles
+
+
+def test_parse_candidate_accepts_budget_and_tool_flag():
+    candidate = parse_candidate("custom/glm-5.1,cheap,true")
+
+    assert candidate.provider == "custom"
+    assert candidate.model == "glm-5.1"
+    assert candidate.budget_class == "cheap"
+    assert candidate.tool_capable is True
 
 
 def test_swarm_telemetry_flags_invalid_timestamp_order(tmp_path: Path):
