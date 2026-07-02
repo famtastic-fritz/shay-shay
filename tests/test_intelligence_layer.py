@@ -696,7 +696,8 @@ def test_intelligence_matrix_command_includes_gap_owner_summary(capsys):
 def test_runtime_checkout_anchor_reports_live_checkout_state():
     anchor = get_runtime_checkout_anchor()
     assert anchor["subsystem_id"] == "runtime-checkout-anchor"
-    assert anchor["runtime_anchor"]["repo_root"].endswith("/shay-shay")
+    repo_root = anchor["runtime_anchor"]["repo_root"]
+    assert repo_root.endswith("/shay-shay") or repo_root.endswith("/shay-intelligence-loop")
     assert anchor["runtime_anchor"]["freshness"] in {
         "fresh_main_checkout",
         "dirty_main_checkout",

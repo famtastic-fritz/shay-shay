@@ -12012,10 +12012,30 @@ class AIAgent:
         # Use original_user_message (clean input) — user_message may contain
         # injected skill content that bloats / breaks provider queries.
         _ext_prefetch_cache = ""
+        _query = original_user_message if isinstance(original_user_message, str) else ""
         if self._memory_manager:
             try:
-                _query = original_user_message if isinstance(original_user_message, str) else ""
                 _ext_prefetch_cache = self._memory_manager.prefetch_all(_query) or ""
+            except Exception:
+                pass
+
+        # Shay intelligence-loop prefetch: MEMORY.md / USER.md stay tiny, but
+        # dereferenceable pointers and live control/reflection artifacts are
+        # loaded into the current API call before the model has to guess which
+        # lookup tool to use. Read-only and ephemeral; nothing is persisted.
+        if self._memory_store:
+            try:
+                from agent.intelligence_prefetch import build_intelligence_prefetch
+
+                _shay_prefetch = build_intelligence_prefetch(
+                    _query,
+                    memory_entries=getattr(self._memory_store, "memory_entries", ()) or (),
+                    user_entries=getattr(self._memory_store, "user_entries", ()) or (),
+                )
+                if _shay_prefetch:
+                    _ext_prefetch_cache = (
+                        (_ext_prefetch_cache + "\n\n") if _ext_prefetch_cache else ""
+                    ) + _shay_prefetch
             except Exception:
                 pass
 
