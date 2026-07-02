@@ -28,6 +28,9 @@ class LaneRecord:
     start_time: str = field(default_factory=utc_now)
     end_time: str | None = None
     duration_seconds: float | None = None
+    observed_duration_seconds: float | None = None
+    logged_duration_seconds: float | None = None
+    telemetry_invalid_time: bool = False
     status: str = "started"
     files_changed: list[str] = field(default_factory=list)
     verification_command: str | None = None
@@ -35,6 +38,36 @@ class LaneRecord:
     artifact_paths: list[str] = field(default_factory=list)
     tokens: dict = field(default_factory=lambda: {"input": None, "output": None})
     notes: str = ""
+
+
+def _parse_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def normalize_lane_record(record: LaneRecord) -> LaneRecord:
+    """Validate timestamp/duration consistency before ledger writes.
+
+    If timestamps are available, preserve any manually supplied duration as
+    logged_duration_seconds and store the timestamp-derived delta separately.
+    Negative deltas are kept as proof and flagged instead of silently hidden.
+    """
+    start = _parse_time(record.start_time)
+    end = _parse_time(record.end_time)
+    if start and end:
+        observed = round((end - start).total_seconds(), 3)
+        record.observed_duration_seconds = observed
+        if record.duration_seconds is not None:
+            record.logged_duration_seconds = record.duration_seconds
+        else:
+            record.duration_seconds = observed
+        if observed < 0:
+            record.telemetry_invalid_time = True
+    return record
 
 
 class SwarmRunLedger:
@@ -49,6 +82,7 @@ class SwarmRunLedger:
         self.run_path.write_text(json.dumps({"run_id": run_id, "started_at": utc_now()}, indent=2) + "\n", encoding="utf-8")
 
     def write_lane(self, record: LaneRecord) -> None:
+        record = normalize_lane_record(record)
         with self.lanes_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(asdict(record), ensure_ascii=False) + "\n")
 

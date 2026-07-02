@@ -1,0 +1,87 @@
+{
+  "packets": [
+    {
+      "packet_id": "plan-review-001",
+      "task_family": "plan_review",
+      "artifact_name": "intelligence-autonomy-plan.md",
+      "artifact_content": "# Plan\n\n## Config\nThe loop accepts enable_generative_reflection but does not define rollback flags.\n\n## Verification\nTests will be run later. Exact commands are TBD.\n\n## Telemetry\nLanes record status and duration. Timestamp validation is not specified.\n",
+      "rubric": [
+        "Check config schema",
+        "Check rollback",
+        "Check verification",
+        "Check telemetry"
+      ],
+      "expected_issue_markers": [
+        "rollback",
+        "exact commands",
+        "timestamp"
+      ],
+      "min_citations": 2
+    },
+    {
+      "packet_id": "implementation-readiness-001",
+      "task_family": "implementation_readiness",
+      "artifact_name": "reviewer-routing-brief.md",
+      "artifact_content": "# Reviewer Routing Brief\n\nCheap reviewers may approve plans. No scorecard fields are defined. Failures should be logged somewhere. Promotion rules are manual.\n",
+      "rubric": [
+        "Check scorecard",
+        "Check promotion gates",
+        "Check failure logging"
+      ],
+      "expected_issue_markers": [
+        "scorecard",
+        "promotion",
+        "manual"
+      ],
+      "min_citations": 2
+    },
+    {
+      "packet_id": "doc-consistency-001",
+      "task_family": "doc_consistency",
+      "artifact_name": "docs-routing.md",
+      "artifact_content": "# Routing Docs\n\nGemma is the default reviewer.\n\n## Later\nGemma is not approved for adversarial review until it passes grounding probes.\n",
+      "rubric": [
+        "Find contradictions",
+        "Separate default from candidate"
+      ],
+      "expected_issue_markers": [
+        "contradiction",
+        "default",
+        "not approved"
+      ],
+      "min_citations": 2
+    },
+    {
+      "packet_id": "telemetry-schema-001",
+      "task_family": "telemetry_schema",
+      "artifact_name": "lanes.jsonl",
+      "artifact_content": "{\"lane_id\":\"review-1\",\"start_time\":\"2026-07-02T15:50:28+00:00\",\"end_time\":\"2026-07-02T15:46:00+00:00\",\"duration_seconds\":25.06}\n",
+      "rubric": [
+        "Validate timestamp ordering",
+        "Check duration consistency"
+      ],
+      "expected_issue_markers": [
+        "end_time",
+        "start_time",
+        "timestamp"
+      ],
+      "min_citations": 1
+    },
+    {
+      "packet_id": "code-diff-review-001",
+      "task_family": "code_diff_review",
+      "artifact_name": "diff.patch",
+      "artifact_content": "diff --git a/router.py b/router.py\n+def route(role):\n+    if role == 'reviewer':\n+        return 'gemma4:latest'\n+    return 'default'\n",
+      "rubric": [
+        "Check hard-coded routing",
+        "Check reviewer tier fit"
+      ],
+      "expected_issue_markers": [
+        "hard-coded",
+        "reviewer",
+        "tier"
+      ],
+      "min_citations": 1
+    }
+  ]
+}
