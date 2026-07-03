@@ -15,6 +15,7 @@ from typing import Iterable, Mapping, Sequence
 
 from agent.ambient_context import LocalArtifactConnector, ProcessSnapshotConnector, collect_ambient_context
 from agent.intelligence_governance import (
+    AuxiliaryLLMReflectionClient,
     IntelligenceLoopConfig,
     decide_pointer_promotions,
     run_generative_reflection,
@@ -234,10 +235,16 @@ def run_intelligence_loop_slices(
     cfg = config if isinstance(config, IntelligenceLoopConfig) else IntelligenceLoopConfig.from_mapping(config)
     sources = read_text_sources(source_paths)
     reflection = synthesize_reflection(sources)
+    generative_client = None
+    if cfg.generative_reflection_enabled:
+        generative_client = AuxiliaryLLMReflectionClient(
+            provider=cfg.generative_provider,
+            model=cfg.generative_model,
+        )
     generative = run_generative_reflection(
         {"sources": {k: v[:12000] for k, v in sources.items()}},
         cfg,
-        client=None,
+        client=generative_client,
     )
     if generative.get("mode") == "generative_candidate" and (generative.get("l2_claims") or generative.get("l3_patterns")):
         reflection = {

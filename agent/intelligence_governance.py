@@ -8,6 +8,7 @@ capability truth.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -119,6 +120,45 @@ def write_review_queue(path: Path, decisions: Iterable[PromotionDecision]) -> No
 
 class GenerativeClient(Protocol):
     def synthesize(self, packet: Mapping) -> Mapping: ...
+
+
+class AuxiliaryLLMReflectionClient:
+    """Aux-LLM client for governed L2/L3 reflection synthesis."""
+
+    def __init__(self, *, provider: str | None = None, model: str | None = None, timeout: float = 90.0, max_tokens: int = 1800):
+        self.provider = provider
+        self.model = model
+        self.timeout = timeout
+        self.max_tokens = max_tokens
+
+    def synthesize(self, packet: Mapping) -> Mapping:
+        from agent.auxiliary_client import call_llm
+
+        prompt = (
+            "Synthesize Shay memory/intelligence artifacts into strict JSON with keys "
+            "l2_claims and l3_patterns. Separate observations from interpretations. "
+            "Each l2_claim must include claim, confidence, sources, and tags. Each "
+            "l3_pattern must include pattern, triggers, suggested_prefetch, and confidence. "
+            "Only use cited source paths from the packet. No markdown.\n\n"
+            + json.dumps(packet, ensure_ascii=False)[:24000]
+        )
+        response = call_llm(
+            task="generative_reflection",
+            provider=self.provider,
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=self.max_tokens,
+            timeout=self.timeout,
+        )
+        content = response.choices[0].message.content
+        try:
+            return json.loads(content)
+        except Exception:
+            match = re.search(r"\{.*\}", content or "", re.DOTALL)
+            if not match:
+                raise ValueError("generative reflection returned non-JSON output")
+            return json.loads(match.group(0))
 
 
 def run_generative_reflection(packet: Mapping, config: IntelligenceLoopConfig, client: GenerativeClient | None = None) -> Mapping:

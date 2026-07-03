@@ -25,9 +25,12 @@ Usage in run_agent.py:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import inspect
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent.memory_provider import MemoryProvider
@@ -286,20 +289,48 @@ class MemoryManager:
         """Collect prefetch context from all providers.
 
         Returns merged context text labeled by provider. Empty providers
-        are skipped. Failures in one provider don't block others.
+        are skipped. Failures in one provider don't block others. Every call
+        writes a lightweight proof trace so pre-turn context loading can be
+        audited instead of assumed.
         """
         parts = []
+        trace = {
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "session_id": session_id,
+            "query_preview": (query or "")[:240],
+            "providers": [],
+            "context_bytes": 0,
+            "hit": False,
+        }
         for provider in self._providers:
+            provider_trace = {"provider": provider.name, "hit": False, "context_bytes": 0, "error": None}
             try:
                 result = provider.prefetch(query, session_id=session_id)
                 if result and result.strip():
                     parts.append(result)
+                    provider_trace["hit"] = True
+                    provider_trace["context_bytes"] = len(result.encode("utf-8", errors="ignore"))
             except Exception as e:
+                provider_trace["error"] = str(e)
                 logger.debug(
                     "Memory provider '%s' prefetch failed (non-fatal): %s",
                     provider.name, e,
                 )
-        return "\n\n".join(parts)
+            trace["providers"].append(provider_trace)
+        merged = "\n\n".join(parts)
+        trace["context_bytes"] = len(merged.encode("utf-8", errors="ignore"))
+        trace["hit"] = bool(merged.strip())
+        self._append_prefetch_trace(trace)
+        return merged
+
+    def _append_prefetch_trace(self, trace: Dict[str, Any]) -> None:
+        try:
+            path = Path.home() / ".shay/runtime/prefetch/prefetch-proof.jsonl"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(trace, ensure_ascii=False) + "\n")
+        except Exception:
+            logger.debug("Failed to append prefetch proof trace", exc_info=True)
 
     def queue_prefetch_all(self, query: str, *, session_id: str = "") -> None:
         """Queue background prefetch on all providers for the next turn."""

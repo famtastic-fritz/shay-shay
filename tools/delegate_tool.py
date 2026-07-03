@@ -2030,6 +2030,39 @@ def delegate_task(
 
     _parent_tool_names = list(_model_tools._last_resolved_tool_names)
 
+    # Enforce reviewer routing before child construction. Reviewer lanes are
+    # the first HyperSwarm route class where scorecards must change behavior:
+    # protected adversarial/final-blocker reviews cannot silently inherit an
+    # unproven default reviewer or use a demoted candidate.
+    try:
+        from agent.reviewer_routing_guard import append_route_decision, decide_reviewer_route
+    except Exception:
+        append_route_decision = None
+        decide_reviewer_route = None
+    if decide_reviewer_route is not None:
+        for i, t in enumerate(task_list):
+            effective_role = _normalize_role(t.get("role") or top_role)
+            decision = decide_reviewer_route(
+                provider=creds.get("provider"),
+                model=creds.get("model"),
+                goal=t.get("goal", ""),
+                context=t.get("context") or context or "",
+                role=effective_role,
+            )
+            if append_route_decision is not None:
+                try:
+                    append_route_decision(decision)
+                except Exception:
+                    logger.debug("Failed to append reviewer route decision", exc_info=True)
+            if decision.decision == "deny":
+                return tool_error(
+                    "Reviewer routing guard denied task "
+                    f"{i}: lane={decision.lane}, family={decision.task_family}, "
+                    f"provider={decision.provider}, model={decision.model}, "
+                    f"reason={decision.reason}. Run reviewer_bakeoff --live "
+                    "or choose a promoted reviewer for this protected lane."
+                )
+
     # Build all child agents on the main thread (thread-safe construction)
     # Wrapped in try/finally so the global is always restored even if a
     # child build raises (otherwise _last_resolved_tool_names stays corrupted).
