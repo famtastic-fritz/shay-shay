@@ -2,6 +2,7 @@
 
 from unittest.mock import patch, MagicMock
 
+from pathlib import Path
 import pytest
 
 from agent.context_compressor import ContextCompressor, SUMMARY_PREFIX
@@ -92,6 +93,48 @@ class TestCompress:
         # (head=assistant, tail=user in this fixture).  Verify the
         # original content is present in either case.
         assert msgs[-2]["content"] in result[-2]["content"]
+
+
+class TestSessionMemoRootFallback:
+    """The fallback chain, which every other memo test bypasses via
+    SHAY_MEMORY_VAULT. That blind spot let a dead pre-migration root ship:
+    ~/famtastic stopped existing at consolidation, but it stayed the last
+    candidate, so the final fallback returned it and real session memos were
+    written into a directory nothing reads."""
+
+    def _compressor(self):
+        with patch("agent.context_compressor.get_model_context_length", return_value=100000):
+            return ContextCompressor(model="test/model", quiet_mode=True)
+
+    def test_never_resolves_to_the_pre_migration_root(self, tmp_path):
+        c = self._compressor()
+        c._session_shay_home = str(tmp_path / "shay")
+        with patch.dict("os.environ", {"SHAY_MEMORY_VAULT": "", "FAMTASTIC_ROOT": ""}):
+            root = c._session_memo_root()
+        stale = Path.home() / "famtastic"
+        assert stale not in root.parents, f"resolved into the dead pre-migration root: {root}"
+
+    def test_falls_back_under_shay_home_when_nothing_exists(self, tmp_path):
+        # Home is redirected at tmp_path so the conventional
+        # ~/Development/FAMtastic checkout cannot resolve — otherwise this
+        # machine's real brain satisfies the candidate list and the last-resort
+        # branch is never reached.
+        shay_home = tmp_path / "shay"
+        c = self._compressor()
+        c._session_shay_home = str(shay_home)
+        with patch.dict("os.environ", {"SHAY_MEMORY_VAULT": "", "FAMTASTIC_ROOT": str(tmp_path / "nope")}), \
+             patch("agent.context_compressor.Path.home", return_value=tmp_path / "home"):
+            root = c._session_memo_root()
+        assert shay_home in root.parents, f"fallback escaped shay_home: {root}"
+
+    def test_prefers_famtastic_root_when_it_exists(self, tmp_path):
+        famtastic = tmp_path / "FAMtastic"
+        (famtastic / "obsidian" / "Shay-Memory").mkdir(parents=True)
+        c = self._compressor()
+        c._session_shay_home = str(tmp_path / "shay")
+        with patch.dict("os.environ", {"SHAY_MEMORY_VAULT": "", "FAMTASTIC_ROOT": str(famtastic)}):
+            root = c._session_memo_root()
+        assert famtastic in root.parents, f"ignored FAMTASTIC_ROOT: {root}"
 
 
 class TestSessionMemoPersistence:

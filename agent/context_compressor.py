@@ -531,14 +531,25 @@ class ContextCompressor(ContextEngine):
         env_vault = os.environ.get("SHAY_MEMORY_VAULT", "").strip()
         if env_vault:
             return Path(env_vault).expanduser() / "reflections" / "episodic" / "sessions"
-        candidates = [
-            shay_home / "obsidian" / "Shay-Memory",
-            Path.home() / "famtastic" / "obsidian" / "Shay-Memory",
-        ]
+        # FAMTASTIC_ROOT lets a caller point at the repo explicitly; otherwise
+        # try the conventional checkout before falling back to Shay's own home.
+        # The pre-migration ~/famtastic root is deliberately NOT a candidate:
+        # it has not existed since the consolidation, and listing it here meant
+        # the final fallback silently created it and wrote real session memos
+        # into a directory nothing reads.
+        famtastic_root = os.environ.get("FAMTASTIC_ROOT", "").strip()
+        candidates = []
+        if famtastic_root:
+            candidates.append(Path(famtastic_root).expanduser() / "obsidian" / "Shay-Memory")
+        candidates.append(Path.home() / "Development" / "FAMtastic" / "obsidian" / "Shay-Memory")
+        candidates.append(shay_home / "obsidian" / "Shay-Memory")
         for base in candidates:
             if base.exists():
                 return base / "reflections" / "episodic" / "sessions"
-        return candidates[-1] / "reflections" / "episodic" / "sessions"
+        # Never fall back to a root that does not exist. Writing under
+        # shay_home keeps orphaned memos inside Shay's own tree, where the
+        # memory tooling can still find them.
+        return shay_home / "obsidian" / "Shay-Memory" / "reflections" / "episodic" / "sessions"
 
     def _session_memo_path(self, session_id: str) -> Path:
         started = self._session_started_at or _dt.datetime.now(_dt.timezone.utc)
