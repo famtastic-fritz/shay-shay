@@ -87,7 +87,7 @@ def run_shay(prompt: str, provider: str | None, model: str | None, timeout: int)
     if model:
         cmd.extend(["-m", model])
     start = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd="/Users/famtasticfritz/famtastic")
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd="/Users/famtastic-fritz/famtastic")
     elapsed = time.time() - start
     out = (proc.stdout or "").strip()
     err = (proc.stderr or "").strip() or None
@@ -142,7 +142,7 @@ def check_output(test: dict[str, Any], output: str) -> tuple[bool, float, str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--output", default="/Users/famtasticfritz/famtastic/shay-shay/tmp/model-eval-report.json")
+    ap.add_argument("--output", default="/Users/famtastic-fritz/famtastic/shay-shay/tmp/model-eval-report.json")
     ap.add_argument("--timeout", type=int, default=240)
     ap.add_argument("--models", nargs="*", help="Optional labels subset")
     ap.add_argument("--tests", nargs="*", help="Optional test-id subset")

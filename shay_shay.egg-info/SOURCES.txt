@@ -27,6 +27,7 @@ acp_adapter/session.py
 acp_adapter/tools.py
 agent/__init__.py
 agent/account_usage.py
+agent/ambient_context.py
 agent/anthropic_adapter.py
 agent/auxiliary_client.py
 agent/bedrock_adapter.py
@@ -52,6 +53,9 @@ agent/image_gen_provider.py
 agent/image_gen_registry.py
 agent/image_routing.py
 agent/insights.py
+agent/intelligence_governance.py
+agent/intelligence_loop.py
+agent/intelligence_prefetch.py
 agent/lmstudio_reasoning.py
 agent/manual_compression_feedback.py
 agent/markdown_tables.py
@@ -69,11 +73,14 @@ agent/prompt_caching.py
 agent/rate_limit_tracker.py
 agent/redact.py
 agent/retry_utils.py
+agent/reviewer_bakeoff.py
+agent/reviewer_routing_guard.py
 agent/shell_hooks.py
 agent/skill_commands.py
 agent/skill_preprocessing.py
 agent/skill_utils.py
 agent/subdirectory_hints.py
+agent/swarm_telemetry.py
 agent/think_scrubber.py
 agent/title_generator.py
 agent/tool_guardrails.py
@@ -533,6 +540,7 @@ shay_cli/goals.py
 shay_cli/hooks.py
 shay_cli/identity_cmd.py
 shay_cli/intelligence_cmd.py
+shay_cli/intelligence_control_plane.py
 shay_cli/intelligence_seed.py
 shay_cli/kanban.py
 shay_cli/kanban_db.py
@@ -544,6 +552,7 @@ shay_cli/mcp_config.py
 shay_cli/memory_setup.py
 shay_cli/model_catalog.py
 shay_cli/model_normalize.py
+shay_cli/model_probe.py
 shay_cli/model_switch.py
 shay_cli/models.py
 shay_cli/nous_subscription.py

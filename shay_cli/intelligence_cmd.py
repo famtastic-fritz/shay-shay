@@ -891,7 +891,7 @@ def backfill_events() -> list[dict[str, Any]]:
             "session_id": None,
             "conversation_id": None,
             "agent_model": "shay",
-            "worktree": "/Users/famtasticfritz/famtastic/shay-shay",
+            "worktree": "/Users/famtastic-fritz/famtastic/shay-shay",
             "branch": "main",
             "commit": "b30a8f5",
             "plan_id": "plan-shay-intelligence-layer",
@@ -1422,7 +1422,7 @@ def build_mission_graph() -> dict[str, Any]:
                     "shay_cli/intelligence_seed.py",
                 ],
                 "linked_worktrees": [
-                    "/Users/famtasticfritz/famtastic/shay-intelligence-layer-complete-20260614"
+                    "/Users/famtastic-fritz/famtastic/shay-intelligence-layer-complete-20260614"
                 ],
                 "linked_branches": [
                     "feature/shay-intelligence-layer-complete-20260614"
@@ -1824,7 +1824,7 @@ def new_worker_record(
         "allowed_paths": allowed_paths or [str(base)],
         "forbidden_paths": forbidden_paths
         or [
-            "/Users/famtasticfritz/famtastic/shay-shay",
+            "/Users/famtastic-fritz/famtastic/shay-shay",
             "~/.shay/skills",
             "SOUL.md",
             "PERSONA.md",
@@ -2349,7 +2349,7 @@ def run_safe_swarm_dry_run() -> dict[str, Any]:
             branch="none",
             allowed_paths=[str(base)],
             forbidden_paths=[
-                "/Users/famtasticfritz/famtastic/shay-shay",
+                "/Users/famtastic-fritz/famtastic/shay-shay",
                 "~/.shay/skills",
                 "SOUL.md",
                 "PERSONA.md",

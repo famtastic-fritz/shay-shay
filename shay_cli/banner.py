@@ -161,7 +161,7 @@ def _clean_mail_text(value: str, *, limit: int) -> str:
     replacements = [
         ("Cron <", "Cron "),
         (">> ~/.famtastic/logs/cron-analysis.log 2>&1", ""),
-        ("/Users/famtasticfritz/.famtastic/logs/cron-analysis.log", "cron-analysis.log"),
+        ("/Users/famtastic-fritz/.famtastic/logs/cron-analysis.log", "cron-analysis.log"),
         ("No such file or directory", "missing cron-analysis.log"),
     ]
     for needle, repl in replacements:

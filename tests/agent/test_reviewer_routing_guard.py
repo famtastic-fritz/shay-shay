@@ -37,5 +37,27 @@ def test_promoted_reviewer_allowed_for_passed_family():
     assert decision.reason == "reviewer promoted by bakeoff scorecard"
 
 
+def test_promoted_reviewer_reads_reducer_task_family_counts():
+    summary = {
+        "models": {
+            "openai-codex/gpt-5.5": {
+                "provider": "openai-codex",
+                "model": "gpt-5.5",
+                "recommendation": "promote_for_passed_task_families",
+                "task_families_passed": {"code_diff_review": 1},
+                "pass_rate": 0.6,
+            }
+        }
+    }
+    decision = decide_reviewer_route(
+        provider="openai-codex",
+        model="gpt-5.5",
+        goal="Run adversarial review on this code diff",
+        summary=summary,
+    )
+    assert decision.decision == "allow"
+    assert decision.reason == "reviewer promoted by bakeoff scorecard"
+
+
 def test_plain_tasks_are_not_review_lanes():
     assert infer_reviewer_lane("Implement the prefetch proof harness") == "non_review"

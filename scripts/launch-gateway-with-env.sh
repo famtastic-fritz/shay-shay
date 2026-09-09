@@ -32,5 +32,5 @@ PY
 source "$ENV_EXPORTS"
 rm -f "$ENV_EXPORTS"
 
-cd /Users/famtasticfritz/famtastic/shay-shay
-exec /Users/famtasticfritz/famtastic/shay-shay/.venv/bin/python -m shay_cli.main gateway run --replace
+cd /Users/famtastic-fritz/famtastic/shay-shay
+exec /Users/famtastic-fritz/famtastic/shay-shay/.venv/bin/python -m shay_cli.main gateway run --replace

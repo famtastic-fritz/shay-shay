@@ -79,6 +79,14 @@ def load_reviewer_summary(path: Path = DEFAULT_SUMMARY_PATH) -> dict:
 def _candidate_rows(summary: Mapping) -> list[dict]:
     if isinstance(summary.get("candidates"), list):
         return [row for row in summary.get("candidates", []) if isinstance(row, dict)]
+    if isinstance(summary.get("models"), Mapping):
+        rows = []
+        for key, value in summary.get("models", {}).items():
+            if isinstance(value, Mapping):
+                row = dict(value)
+                row.setdefault("candidate", key)
+                rows.append(row)
+        return rows
     if isinstance(summary.get("by_candidate"), Mapping):
         rows = []
         for key, value in summary.get("by_candidate", {}).items():
@@ -113,6 +121,9 @@ def find_candidate(summary: Mapping, provider: str, model: str) -> dict | None:
 
 
 def _passed_families(row: Mapping) -> set[str]:
+    reducer_families = row.get("task_families_passed")
+    if isinstance(reducer_families, Mapping):
+        return {_norm(item) for item, count in reducer_families.items() if count}
     for key in ("passed_task_families", "passed", "task_families"):
         value = row.get(key)
         if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
