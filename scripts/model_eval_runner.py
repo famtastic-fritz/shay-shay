@@ -12,6 +12,9 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_OUTPUT = REPO_ROOT / "tmp" / "model-eval-report.json"
+
 DEFAULT_MODELS = [
     {"label": "hosted-gpt54", "provider": None, "model": None, "group": "hosted"},
     {"label": "qwen3-14b", "provider": "ollama", "model": "qwen3:14b", "group": "local"},
@@ -87,7 +90,7 @@ def run_shay(prompt: str, provider: str | None, model: str | None, timeout: int)
     if model:
         cmd.extend(["-m", model])
     start = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd="/Users/famtastic-fritz/famtastic")
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=REPO_ROOT)
     elapsed = time.time() - start
     out = (proc.stdout or "").strip()
     err = (proc.stderr or "").strip() or None
@@ -142,7 +145,7 @@ def check_output(test: dict[str, Any], output: str) -> tuple[bool, float, str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--output", default="/Users/famtastic-fritz/famtastic/shay-shay/tmp/model-eval-report.json")
+    ap.add_argument("--output", default=str(DEFAULT_OUTPUT))
     ap.add_argument("--timeout", type=int, default=240)
     ap.add_argument("--models", nargs="*", help="Optional labels subset")
     ap.add_argument("--tests", nargs="*", help="Optional test-id subset")

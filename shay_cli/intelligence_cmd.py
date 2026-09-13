@@ -48,6 +48,8 @@ from shay_cli.intelligence_seed import (
 )
 from shay_cli.model_probe import list_probe_registry, probe_model
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 BENCHMARK_TEMPLATE_COMPATIBILITY: dict[str, set[str]] = {
     "scout": {"provider-intel-researcher", "memory-curator", "capability-cartographer"},
@@ -891,7 +893,7 @@ def backfill_events() -> list[dict[str, Any]]:
             "session_id": None,
             "conversation_id": None,
             "agent_model": "shay",
-            "worktree": "/Users/famtastic-fritz/famtastic/shay-shay",
+            "worktree": str(REPO_ROOT),
             "branch": "main",
             "commit": "b30a8f5",
             "plan_id": "plan-shay-intelligence-layer",
@@ -1422,7 +1424,7 @@ def build_mission_graph() -> dict[str, Any]:
                     "shay_cli/intelligence_seed.py",
                 ],
                 "linked_worktrees": [
-                    "/Users/famtastic-fritz/famtastic/shay-intelligence-layer-complete-20260614"
+                    str(REPO_ROOT.parent / "shay-intelligence-layer-complete-20260614")
                 ],
                 "linked_branches": [
                     "feature/shay-intelligence-layer-complete-20260614"
@@ -1824,7 +1826,7 @@ def new_worker_record(
         "allowed_paths": allowed_paths or [str(base)],
         "forbidden_paths": forbidden_paths
         or [
-            "/Users/famtastic-fritz/famtastic/shay-shay",
+            str(REPO_ROOT),
             "~/.shay/skills",
             "SOUL.md",
             "PERSONA.md",
@@ -2349,7 +2351,7 @@ def run_safe_swarm_dry_run() -> dict[str, Any]:
             branch="none",
             allowed_paths=[str(base)],
             forbidden_paths=[
-                "/Users/famtastic-fritz/famtastic/shay-shay",
+                str(REPO_ROOT),
                 "~/.shay/skills",
                 "SOUL.md",
                 "PERSONA.md",

@@ -3,6 +3,7 @@ set -euo pipefail
 
 SHAY_HOME="${SHAY_HOME:-$HOME/.shay}"
 ENV_EXPORTS="$SHAY_HOME/.env.launchctl.exports"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 python3 - <<'PY' > "$ENV_EXPORTS"
 from pathlib import Path
@@ -32,5 +33,5 @@ PY
 source "$ENV_EXPORTS"
 rm -f "$ENV_EXPORTS"
 
-cd /Users/famtastic-fritz/famtastic/shay-shay
-exec /Users/famtastic-fritz/famtastic/shay-shay/.venv/bin/python -m shay_cli.main gateway run --replace
+cd "$REPO_ROOT"
+exec "$REPO_ROOT/.venv/bin/python" -m shay_cli.main gateway run --replace
