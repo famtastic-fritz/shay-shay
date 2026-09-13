@@ -1144,13 +1144,18 @@ agent:
 
 ```yaml
 tts:
-  provider: "edge"              # "edge" | "elevenlabs" | "openai" | "minimax" | "mistral" | "gemini" | "xai" | "neutts"
+  provider: "macos"             # local default on macOS; Edge is keyless cloud TTS
+  voice_profile: "shay-v1"      # provider-neutral delivery, outside PERSONA.md
+  voice_mode: "conversational"  # conversational | focused | reassuring | briefing
   speed: 1.0                    # Global speed multiplier (fallback for all providers)
+  macos:
+    voice: "Samantha"           # provisional; use the local audition script before final selection
+    rate_wpm: ""                # empty = voice-profile pace
   edge:
     voice: "en-US-AriaNeural"   # 322 voices, 74 languages
     speed: 1.0                  # Speed multiplier (converted to rate percentage, e.g. 1.5 → +50%)
   elevenlabs:
-    voice_id: "pNInz6obpgDQGcFmaJgB"
+    voice_id: ""                # required when selected; no bundled voice identity
     model_id: "eleven_multilingual_v2"
   openai:
     model: "gpt-4o-mini-tts"
@@ -1181,7 +1186,7 @@ tts:
 
 This controls both the `text_to_speech` tool and spoken replies in voice mode (`/voice tts` in the CLI or messaging gateway).
 
-**Speed fallback hierarchy:** provider-specific speed (e.g. `tts.edge.speed`) → global `tts.speed` → `1.0` default. Set the global `tts.speed` to apply a uniform speed across all providers, or override per-provider for fine-grained control.
+**Delivery hierarchy:** provider-specific speed/rate → the selected voice profile → global `tts.speed`. The versioned profile also carries pause, pronunciation, and mode guidance. Set `voice_profile: off` to disable it. macOS System Voice is local and zero-metered but system-grade; Edge is keyless but cloud-based; paid providers require explicit selection and credentials.
 
 ## Display Settings
 
@@ -1295,9 +1300,10 @@ Hashes are deterministic — the same user always maps to the same hash, so the 
 
 ```yaml
 stt:
-  provider: "local"            # "local" | "groq" | "openai" | "mistral"
+  provider: "local"            # "local" | "local_command" | "groq" | "openai" | "mistral" | "xai"
   local:
     model: "base"              # tiny, base, small, medium, large-v3
+    model_path: ""             # optional existing ggml-*.bin for whisper-cli; never auto-downloaded
   openai:
     model: "whisper-1"         # whisper-1 | gpt-4o-mini-transcribe | gpt-4o-transcribe
   # model: "whisper-1"         # Legacy fallback key still respected
@@ -1305,11 +1311,13 @@ stt:
 
 Provider behavior:
 
-- `local` uses `faster-whisper` running on your machine. Install it separately with `pip install faster-whisper`.
+- `local` uses `faster-whisper` when installed, then an installed `whisper-cli` with an existing GGML model. Both run on-device.
+- `local_command` selects the same local CLI seam directly; `SHAY_LOCAL_STT_COMMAND` can provide a custom template.
 - `groq` uses Groq's Whisper-compatible endpoint and reads `GROQ_API_KEY`.
 - `openai` uses the OpenAI speech API and reads `VOICE_TOOLS_OPENAI_KEY`.
+- `mistral` and `xai` use their named cloud APIs and require explicit credentials.
 
-If the requested provider is unavailable, Shay-Shay falls back automatically in this order: `local` → `groq` → `openai`.
+Explicit provider choices fail closed: local choices do not cross over to cloud, and one cloud provider does not cross over to another. When `provider` is omitted, Shay auto-detects local capability first, then cloud providers whose credentials are already configured.
 
 Groq and OpenAI model overrides are environment-driven:
 

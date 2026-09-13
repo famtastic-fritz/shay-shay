@@ -294,6 +294,7 @@ class TestCheckTtsRequirementsPiper:
         monkeypatch.setattr(tts_tool, "_check_kittentts_available", lambda: False)
         monkeypatch.setattr(tts_tool, "_has_any_command_tts_provider", lambda: False)
         monkeypatch.setattr(tts_tool, "_has_openai_audio_backend", lambda: False)
+        monkeypatch.setattr(tts_tool, "_find_macos_say_binary", lambda: None)
         for env in ("MINIMAX_API_KEY", "XAI_API_KEY", "GEMINI_API_KEY",
                     "GOOGLE_API_KEY", "MISTRAL_API_KEY", "ELEVENLABS_API_KEY"):
             monkeypatch.delenv(env, raising=False)

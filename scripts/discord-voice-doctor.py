@@ -246,7 +246,10 @@ def check_config(groq_key, eleven_key):
                 cfg = yaml.safe_load(f) or {}
 
             stt_provider = cfg.get("stt", {}).get("provider", "local")
-            tts_provider = cfg.get("tts", {}).get("provider", "edge")
+            from shay_cli.config import DEFAULT_CONFIG
+            tts_provider = cfg.get("tts", {}).get(
+                "provider", DEFAULT_CONFIG["tts"]["provider"]
+            )
             check("STT provider", True, stt_provider)
             check("TTS provider", True, tts_provider)
 

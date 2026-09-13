@@ -55,15 +55,16 @@ See [Browser Automation](/docs/user-guide/features/browser) for setup and usage.
 
 Text-to-speech and speech-to-text across all messaging platforms:
 
-| Provider | Quality | Cost | API Key |
-||----------|---------|------|---------|
-|| **Edge TTS** (default) | Good | Free | None needed |
-|| **ElevenLabs** | Excellent | Paid | `ELEVENLABS_API_KEY` |
-|| **OpenAI TTS** | Good | Paid | `VOICE_TOOLS_OPENAI_KEY` |
-|| **MiniMax** | Good | Paid | `MINIMAX_API_KEY` |
-|| **NeuTTS** | Good | Free | None needed |
+| Provider | Quality | Cost | Processing | API Key |
+|----------|---------|------|------------|---------|
+| **macOS System Voice** (macOS default) | System voice | Free | Local | None needed |
+| **Edge TTS** | Good | Free | Cloud | None needed |
+| **ElevenLabs** | Excellent | Paid | Cloud | Key plus explicit voice ID |
+| **OpenAI TTS** | Good | Paid | Cloud | `VOICE_TOOLS_OPENAI_KEY` |
+| **MiniMax** | Good | Paid | Cloud | `MINIMAX_API_KEY` |
+| **NeuTTS** | Good | Free | Local | None needed |
 
-Speech-to-text supports six providers: local faster-whisper (free, runs on-device), a local command wrapper, Groq, OpenAI Whisper API, Mistral, and xAI. Voice message transcription works across Telegram, Discord, WhatsApp, and other messaging platforms. See [Voice & TTS](/docs/user-guide/features/tts) and [Voice Mode](/docs/user-guide/features/voice-mode) for details.
+Speech-to-text supports local faster-whisper or whisper.cpp (free, runs on-device), a custom local command, Groq, OpenAI Whisper API, Mistral, and xAI. The local whisper.cpp path reuses an existing GGML model and never downloads one. Voice message transcription works across Telegram, Discord, WhatsApp, and other messaging platforms. See [Voice & TTS](/docs/user-guide/features/tts) and [Voice Mode](/docs/user-guide/features/voice-mode) for details.
 
 ## IDE & Editor Integration
 

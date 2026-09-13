@@ -500,7 +500,7 @@ Tokens from this file are merged with any tokens specified via `SLACK_BOT_TOKEN`
 
 Shay-Shay supports voice on Slack:
 
-- **Incoming:** Voice/audio messages are automatically transcribed using the configured STT provider: local `faster-whisper`, Groq Whisper (`GROQ_API_KEY`), or OpenAI Whisper (`VOICE_TOOLS_OPENAI_KEY`)
+- **Incoming:** Voice/audio messages are automatically transcribed using the configured STT provider: local `faster-whisper` or `whisper-cli` with an existing GGML model, Groq Whisper (`GROQ_API_KEY`), or OpenAI Whisper (`VOICE_TOOLS_OPENAI_KEY`)
 - **Outgoing:** TTS responses are sent as audio file attachments
 
 ---

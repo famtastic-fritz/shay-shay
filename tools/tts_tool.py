@@ -3,7 +3,8 @@
 Text-to-Speech Tool Module
 
 Built-in TTS providers:
-- Edge TTS (default, free, no API key): Microsoft Edge neural voices
+- macOS System Voice (default, local, no API key): built-in ``say`` voices
+- Edge TTS (free, cloud, no API key): Microsoft Edge neural voices
 - ElevenLabs (premium): High-quality voices, needs ELEVENLABS_API_KEY
 - OpenAI TTS: Good quality, needs OPENAI_API_KEY
 - MiniMax TTS: High-quality with voice cloning, needs MINIMAX_API_KEY
@@ -46,6 +47,7 @@ import shlex
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import uuid
@@ -54,6 +56,12 @@ from typing import Callable, Dict, Any, Optional
 from urllib.parse import urljoin
 
 from shay_constants import display_shay_home
+from shay_cli.voice_profiles import (
+    DEFAULT_VOICE_PROFILE,
+    VoiceProfileError,
+    apply_pronunciations,
+    resolve_voice_profile,
+)
 
 logger = logging.getLogger(__name__)
 def get_env_value(name, default=None):
@@ -125,9 +133,13 @@ def _import_piper():
 # ===========================================================================
 # Defaults
 # ===========================================================================
-DEFAULT_PROVIDER = "edge"
+DEFAULT_PROVIDER = "macos" if sys.platform == "darwin" else "edge"
+DEFAULT_MACOS_VOICE = "Samantha"  # Provisional; final selection is owner-audition-gated.
+DEFAULT_MACOS_RATE_WPM = 178
 DEFAULT_EDGE_VOICE = "en-US-AriaNeural"
-DEFAULT_ELEVENLABS_VOICE_ID = "pNInz6obpgDQGcFmaJgB"  # Adam
+# Kept as an empty compatibility symbol for external imports. ElevenLabs is an
+# explicit premium provider and no bundled voice identity is assumed.
+DEFAULT_ELEVENLABS_VOICE_ID = ""
 DEFAULT_ELEVENLABS_MODEL_ID = "eleven_multilingual_v2"
 DEFAULT_ELEVENLABS_STREAMING_MODEL_ID = "eleven_flash_v2_5"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini-tts"
@@ -168,6 +180,7 @@ DEFAULT_OUTPUT_DIR = _get_default_output_dir()
 # ``tts.<provider>.max_text_length`` in config.yaml.
 # ---------------------------------------------------------------------------
 PROVIDER_MAX_TEXT_LENGTH: Dict[str, int] = {
+    "macos": 5000,        # local system synthesizer; practical cap
     "edge": 5000,         # edge-tts practical sync limit
     "openai": 4096,       # https://platform.openai.com/docs/guides/text-to-speech
     "xai": 15000,         # https://docs.x.ai/developers/model-capabilities/audio/text-to-speech
@@ -282,6 +295,35 @@ def _get_provider(tts_config: Dict[str, Any]) -> str:
     return (tts_config.get("provider") or DEFAULT_PROVIDER).lower().strip()
 
 
+def _resolve_configured_voice_profile(
+    tts_config: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Resolve the selected provider-neutral voice profile, if enabled."""
+
+    configured = tts_config.get("voice_profile", DEFAULT_VOICE_PROFILE)
+    if configured is False or configured is None:
+        return None
+    profile_name = str(configured).strip().lower()
+    if profile_name in {"", "off", "none", "disabled"}:
+        return None
+    mode = str(tts_config.get("voice_mode") or "").strip().lower() or None
+    return resolve_voice_profile(profile_name, mode=mode)
+
+
+def _configured_elevenlabs_voice_id(tts_config: Dict[str, Any]) -> str:
+    """Return the explicitly configured ElevenLabs voice ID or fail closed."""
+
+    voice_id = str(
+        _get_provider_section(tts_config, "elevenlabs").get("voice_id") or ""
+    ).strip()
+    if not voice_id:
+        raise ValueError(
+            "ElevenLabs requires an explicit tts.elevenlabs.voice_id; "
+            "Shay does not assume a premium-provider voice identity"
+        )
+    return voice_id
+
+
 # ===========================================================================
 # Custom command providers (type: command under tts.providers.<name>)
 # ===========================================================================
@@ -314,6 +356,7 @@ def _get_provider(tts_config: Dict[str, Any]) -> str:
 # Built-in provider names. Any ``tts.provider`` value NOT in this set is
 # interpreted as a reference to ``tts.providers.<name>``.
 BUILTIN_TTS_PROVIDERS = frozenset({
+    "macos",
     "edge",
     "elevenlabs",
     "openai",
@@ -741,6 +784,143 @@ def _convert_to_opus(mp3_path: str) -> Optional[str]:
 
 
 # ===========================================================================
+# Provider: macOS System Voice (local, zero metered cost)
+# ===========================================================================
+def _find_macos_say_binary() -> Optional[str]:
+    """Return the local macOS speech synthesizer without probing the network."""
+
+    if sys.platform != "darwin":
+        return None
+    candidate = Path("/usr/bin/say")
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return str(candidate)
+    return shutil.which("say")
+
+
+def _render_macos_profile_text(
+    text: str,
+    resolved_profile: Optional[Dict[str, Any]],
+) -> str:
+    """Translate provider-neutral pause values to safe macOS speech markup."""
+
+    # Prevent untrusted input from injecting its own ``say`` speech commands.
+    rendered = text.replace("[[", "[ [")
+    if not resolved_profile:
+        return rendered
+
+    sentence_pause = int(resolved_profile.get("sentence_pause_ms") or 0)
+    paragraph_pause = int(resolved_profile.get("paragraph_pause_ms") or 0)
+    paragraphs = re.split(r"\n\s*\n", rendered)
+    with_sentence_pauses = []
+    for paragraph in paragraphs:
+        if sentence_pause > 0:
+            paragraph = re.sub(
+                r"([.!?])(?=\s|$)",
+                rf"\1 [[slnc {sentence_pause}]]",
+                paragraph,
+            )
+        with_sentence_pauses.append(paragraph)
+    separator = (
+        f" [[slnc {paragraph_pause}]] " if paragraph_pause > 0 else " "
+    )
+    return separator.join(with_sentence_pauses)
+
+
+def _generate_macos_tts(
+    text: str,
+    output_path: str,
+    tts_config: Dict[str, Any],
+) -> str:
+    """Generate speech with macOS ``say`` and no network or metered API."""
+
+    say_binary = _find_macos_say_binary()
+    if not say_binary:
+        raise FileNotFoundError(
+            "macOS system TTS is unavailable because /usr/bin/say was not found"
+        )
+
+    macos_config = _get_provider_section(tts_config, "macos")
+    voice = str(macos_config.get("voice") or DEFAULT_MACOS_VOICE).strip()
+    resolved_profile = tts_config.get("_resolved_voice_profile")
+
+    explicit_rate = macos_config.get("rate_wpm")
+    if explicit_rate not in (None, ""):
+        try:
+            rate_wpm = round(float(explicit_rate))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("tts.macos.rate_wpm must be a positive number") from exc
+    elif isinstance(resolved_profile, dict):
+        rate_wpm = int(resolved_profile.get("words_per_minute") or DEFAULT_MACOS_RATE_WPM)
+    else:
+        speed = float(tts_config.get("speed", 1.0))
+        rate_wpm = round(DEFAULT_MACOS_RATE_WPM * speed)
+    if rate_wpm <= 0:
+        raise ValueError("tts.macos.rate_wpm must be a positive number")
+
+    output = Path(output_path).expanduser()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    profile_text = _render_macos_profile_text(text, resolved_profile)
+
+    with tempfile.TemporaryDirectory(prefix="shay-macos-tts-") as tmpdir:
+        text_path = Path(tmpdir) / "input.txt"
+        text_path.write_text(profile_text, encoding="utf-8")
+        direct_wav = output.suffix.lower() == ".wav"
+        wav_path = output if direct_wav else Path(tmpdir) / "speech.wav"
+
+        command = [
+            say_binary,
+            "--voice",
+            voice,
+            "--rate",
+            str(rate_wpm),
+            "--output-file",
+            str(wav_path),
+            "--file-format",
+            "WAVE",
+            "--data-format",
+            "LEI16@22050",
+            "--input-file",
+            str(text_path),
+        ]
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            details = result.stderr.strip() or result.stdout.strip() or "unknown error"
+            raise RuntimeError(f"macOS say failed: {details}")
+        if not wav_path.is_file() or wav_path.stat().st_size == 0:
+            raise RuntimeError("macOS say completed without producing audio")
+
+        if not direct_wav:
+            ffmpeg = shutil.which("ffmpeg")
+            if not ffmpeg:
+                homebrew_ffmpeg = Path("/opt/homebrew/bin/ffmpeg")
+                if homebrew_ffmpeg.is_file() and os.access(homebrew_ffmpeg, os.X_OK):
+                    ffmpeg = str(homebrew_ffmpeg)
+            if not ffmpeg:
+                raise FileNotFoundError(
+                    f"ffmpeg is required to encode macOS system TTS as {output.suffix or 'the requested format'}; "
+                    "request a .wav output or install ffmpeg"
+                )
+            conversion = subprocess.run(
+                [ffmpeg, "-y", "-i", str(wav_path), str(output)],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if conversion.returncode != 0:
+                details = conversion.stderr.strip() or conversion.stdout.strip() or "unknown error"
+                raise RuntimeError(f"ffmpeg could not encode macOS TTS output: {details}")
+
+    if not output.is_file() or output.stat().st_size == 0:
+        raise RuntimeError("macOS system TTS did not produce the requested audio file")
+    return str(output)
+
+
+# ===========================================================================
 # Provider: Edge TTS (free)
 # ===========================================================================
 async def _generate_edge_tts(text: str, output_path: str, tts_config: Dict[str, Any]) -> str:
@@ -790,7 +970,7 @@ def _generate_elevenlabs(text: str, output_path: str, tts_config: Dict[str, Any]
         raise ValueError("ELEVENLABS_API_KEY not set. Get one at https://elevenlabs.io/")
 
     el_config = tts_config.get("elevenlabs", {})
-    voice_id = el_config.get("voice_id", DEFAULT_ELEVENLABS_VOICE_ID)
+    voice_id = _configured_elevenlabs_voice_id(tts_config)
     model_id = el_config.get("model_id", DEFAULT_ELEVENLABS_MODEL_ID)
 
     # Determine output format based on file extension
@@ -1558,7 +1738,9 @@ def text_to_speech_tool(
 
     Args:
         text: The text to convert to speech.
-        output_path: Optional custom save path. Defaults to ~/voice-memos/<timestamp>.mp3
+        output_path: Optional custom save path. Defaults to a provider-native
+            file under ~/voice-memos (WAV for macOS System Voice, MP3 for most
+            other providers).
 
     Returns:
         str: JSON result with success, file_path, and optionally MEDIA tag.
@@ -1568,6 +1750,15 @@ def text_to_speech_tool(
 
     tts_config = _load_tts_config()
     provider = _get_provider(tts_config)
+    try:
+        resolved_profile = _resolve_configured_voice_profile(tts_config)
+    except VoiceProfileError as exc:
+        return tool_error(f"TTS voice profile error: {exc}", success=False)
+    if resolved_profile is not None:
+        tts_config = dict(tts_config)
+        tts_config["_resolved_voice_profile"] = resolved_profile
+        tts_config.setdefault("speed", resolved_profile["speed_multiplier"])
+        text = apply_pronunciations(text, resolved_profile)
 
     # User-declared command provider (type: command under tts.providers.<name>)
     # resolves BEFORE the built-in dispatch. Built-in names short-circuit here
@@ -1610,6 +1801,8 @@ def text_to_speech_tool(
         if command_provider_config is not None:
             fmt = _get_command_tts_output_format(command_provider_config)
             file_path = out_dir / f"tts_{timestamp}.{fmt}"
+        elif provider == "macos":
+            file_path = out_dir / f"tts_{timestamp}.wav"
         # Use .ogg for Telegram with providers that support native Opus output,
         # otherwise fall back to .mp3 (Edge TTS will attempt ffmpeg conversion later).
         elif want_opus and provider in {"openai", "elevenlabs", "mistral", "gemini"}:
@@ -1630,6 +1823,10 @@ def text_to_speech_tool(
             file_str = _generate_command_tts(
                 text, file_str, provider, command_provider_config, tts_config,
             )
+
+        elif provider == "macos":
+            logger.info("Generating speech with macOS System Voice (local)...")
+            _generate_macos_tts(text, file_str, tts_config)
 
         elif provider == "elevenlabs":
             try:
@@ -1713,34 +1910,33 @@ def text_to_speech_tool(
             logger.info("Generating speech with Piper (local)...")
             _generate_piper_tts(text, file_str, tts_config)
 
-        else:
-            # Default: Edge TTS (free), with NeuTTS as local fallback
-            edge_available = True
+        elif provider == "edge":
             try:
                 _import_edge_tts()
             except ImportError:
-                edge_available = False
-
-            if edge_available:
-                logger.info("Generating speech with Edge TTS...")
-                try:
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                        pool.submit(
-                            lambda: asyncio.run(_generate_edge_tts(text, file_str, tts_config))
-                        ).result(timeout=60)
-                except RuntimeError:
-                    asyncio.run(_generate_edge_tts(text, file_str, tts_config))
-            elif _check_neutts_available():
-                logger.info("Edge TTS not available, falling back to NeuTTS (local)...")
-                provider = "neutts"
-                _generate_neutts(text, file_str, tts_config)
-            else:
                 return json.dumps({
                     "success": False,
-                    "error": "No TTS provider available. Install edge-tts (pip install edge-tts) "
-                             "or set up NeuTTS for local synthesis."
+                    "error": "Edge TTS was explicitly selected but edge-tts is not installed. "
+                             "Install edge-tts or select a local provider."
                 }, ensure_ascii=False)
+            logger.info("Generating speech with Edge TTS (cloud)...")
+            try:
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    pool.submit(
+                        lambda: asyncio.run(_generate_edge_tts(text, file_str, tts_config))
+                    ).result(timeout=60)
+            except RuntimeError:
+                asyncio.run(_generate_edge_tts(text, file_str, tts_config))
+
+        else:
+            return json.dumps({
+                "success": False,
+                "error": (
+                    f"Unknown TTS provider '{provider}'. Select an installed local provider "
+                    "or explicitly configure a named command provider."
+                ),
+            }, ensure_ascii=False)
 
         # Check the file was actually created
         if not os.path.exists(file_str) or os.path.getsize(file_str) == 0:
@@ -1762,7 +1958,7 @@ def text_to_speech_tool(
                     if opus_path:
                         file_str = opus_path
                 voice_compatible = file_str.endswith(".ogg")
-        elif provider in {"edge", "neutts", "minimax", "xai", "kittentts", "piper"} and not file_str.endswith(".ogg"):
+        elif provider in {"macos", "edge", "neutts", "minimax", "xai", "kittentts", "piper"} and not file_str.endswith(".ogg"):
             opus_path = _convert_to_opus(file_str)
             if opus_path:
                 file_str = opus_path
@@ -1778,13 +1974,20 @@ def text_to_speech_tool(
         if voice_compatible:
             media_tag = f"[[audio_as_voice]]\n{media_tag}"
 
-        return json.dumps({
+        response = {
             "success": True,
             "file_path": file_str,
             "media_tag": media_tag,
             "provider": provider,
             "voice_compatible": voice_compatible,
-        }, ensure_ascii=False)
+        }
+        if resolved_profile is not None:
+            response.update({
+                "voice_profile": resolved_profile["id"],
+                "voice_mode": resolved_profile["mode"],
+                "voice_selection_status": resolved_profile.get("selection", {}).get("status", ""),
+            })
+        return json.dumps(response, ensure_ascii=False)
 
     except ValueError as e:
         # Configuration errors (missing API keys, etc.)
@@ -1810,15 +2013,17 @@ def check_tts_requirements() -> bool:
     """
     Check if at least one TTS provider is available.
 
-    Edge TTS needs no API key and is the default, so if the package
-    is installed, TTS is available. A user-declared command provider
-    also satisfies the requirement.
+    macOS System Voice is the zero-metered default on supported Macs. Edge
+    and paid providers remain explicit alternatives. A user-declared command
+    provider also satisfies the requirement.
 
     Returns:
         bool: True if at least one provider can work.
     """
     # Any configured command provider counts as available.
     if _has_any_command_tts_provider():
+        return True
+    if _find_macos_say_binary():
         return True
     try:
         _import_edge_tts()
@@ -1828,7 +2033,11 @@ def check_tts_requirements() -> bool:
     try:
         _import_elevenlabs()
         if get_env_value("ELEVENLABS_API_KEY"):
-            return True
+            try:
+                _configured_elevenlabs_voice_id(_load_tts_config())
+                return True
+            except ValueError:
+                pass
     except ImportError:
         pass
     try:
@@ -1942,25 +2151,44 @@ def stream_tts_to_speaker(
         # --- TTS client setup (optional -- display_callback works without it) ---
         client = None
         output_stream = None
-        voice_id = DEFAULT_ELEVENLABS_VOICE_ID
+        voice_id = ""
         model_id = DEFAULT_ELEVENLABS_STREAMING_MODEL_ID
 
         tts_config = _load_tts_config()
+        explicit_elevenlabs = _get_provider(tts_config) == "elevenlabs"
         el_config = tts_config.get("elevenlabs", {})
-        voice_id = el_config.get("voice_id", voice_id)
+        if explicit_elevenlabs:
+            try:
+                voice_id = _configured_elevenlabs_voice_id(tts_config)
+            except ValueError as exc:
+                logger.warning("%s; streaming TTS audio disabled", exc)
         model_id = el_config.get("streaming_model_id",
                                  el_config.get("model_id", model_id))
         # Per-sentence cap for the streaming path. Look up the cap against
         # the *streaming* model_id (defaults to eleven_flash_v2_5 = 40k chars),
         # not the sync model_id. A user override
         # (tts.elevenlabs.max_text_length) still wins.
-        stream_max_len = _resolve_max_text_length(
-            "elevenlabs",
-            {**tts_config, "elevenlabs": {**el_config, "model_id": model_id}},
+        stream_max_len = (
+            _resolve_max_text_length(
+                "elevenlabs",
+                {**tts_config, "elevenlabs": {**el_config, "model_id": model_id}},
+            )
+            if explicit_elevenlabs
+            else FALLBACK_MAX_TEXT_LENGTH
         )
 
-        api_key = (get_env_value("ELEVENLABS_API_KEY") or "")
-        if not api_key:
+        api_key = (
+            (get_env_value("ELEVENLABS_API_KEY") or "")
+            if explicit_elevenlabs
+            else ""
+        )
+        if not explicit_elevenlabs:
+            logger.debug(
+                "Streaming ElevenLabs audio disabled: provider is not explicitly selected"
+            )
+        elif not voice_id:
+            logger.warning("ElevenLabs voice ID not configured; streaming TTS audio disabled")
+        elif not api_key:
             logger.warning("ELEVENLABS_API_KEY not set; streaming TTS audio disabled")
         else:
             try:

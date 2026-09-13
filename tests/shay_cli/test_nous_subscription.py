@@ -3,6 +3,27 @@
 from shay_cli import nous_subscription as ns
 
 
+def test_local_macos_tts_is_available_without_becoming_a_cloud_override(monkeypatch):
+    monkeypatch.setattr(ns, "get_env_value", lambda name: "")
+    monkeypatch.setattr(ns, "get_nous_auth_status", lambda: {})
+    monkeypatch.setattr(ns, "managed_nous_tools_enabled", lambda: False)
+    monkeypatch.setattr(ns, "_toolset_enabled", lambda config, key: key == "tts")
+    monkeypatch.setattr(ns, "_has_agent_browser", lambda: False)
+    monkeypatch.setattr(ns, "resolve_openai_audio_api_key", lambda: "")
+    monkeypatch.setattr(ns, "has_direct_modal_credentials", lambda: False)
+    monkeypatch.setattr(ns, "is_managed_tool_gateway_ready", lambda vendor: False)
+    monkeypatch.setitem(ns.DEFAULT_CONFIG["tts"], "provider", "macos")
+    monkeypatch.setattr(ns.sys, "platform", "darwin")
+    monkeypatch.setattr(ns.Path, "is_file", lambda self: self == ns.Path("/usr/bin/say"))
+
+    features = ns.get_nous_subscription_features({"tts": {"provider": "macos"}})
+
+    assert features.tts.available is True
+    assert features.tts.active is True
+    assert features.tts.managed_by_nous is False
+    assert features.tts.explicit_configured is False
+
+
 def test_get_nous_subscription_features_recognizes_direct_exa_backend(monkeypatch):
     env = {"EXA_API_KEY": "exa-test"}
 

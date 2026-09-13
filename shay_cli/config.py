@@ -971,13 +971,25 @@ DEFAULT_CONFIG = {
     # limit (OpenAI 4096, xAI 15000, MiniMax 10000, ElevenLabs 5k-40k model-aware,
     # Gemini 5000, Edge 5000, Mistral 4000, NeuTTS/KittenTTS 2000).
     "tts": {
-        "provider": "edge",  # "edge" (free) | "elevenlabs" (premium) | "openai" | "xai" | "minimax" | "mistral" | "gemini" | "neutts" (local) | "kittentts" (local) | "piper" (local)
+        # macOS ships a private, zero-metered synthesizer. Other platforms
+        # retain Edge for compatibility and can explicitly select Piper or
+        # another local provider for on-device speech.
+        "provider": "macos" if sys.platform == "darwin" else "edge",
+        "voice_profile": "shay-v1",  # Provider-neutral delivery profile; separate from PERSONA.md
+        "voice_mode": "conversational",  # conversational | focused | reassuring | briefing
+        "macos": {
+            # Provisional technical candidate. Run scripts/audition_shay_voice.py;
+            # Fritz owns final voice selection.
+            "voice": "Samantha",
+            "rate_wpm": "",  # Empty = resolve pace from voice_profile
+        },
         "edge": {
             "voice": "en-US-AriaNeural",
             # Popular: AriaNeural, JennyNeural, AndrewNeural, BrianNeural, SoniaNeural
         },
         "elevenlabs": {
-            "voice_id": "pNInz6obpgDQGcFmaJgB",  # Adam
+            # Required when ElevenLabs is explicitly selected. No paid voice is assumed.
+            "voice_id": "",
             "model_id": "eleven_multilingual_v2",
         },
         "openai": {
@@ -1018,9 +1030,10 @@ DEFAULT_CONFIG = {
     
     "stt": {
         "enabled": True,
-        "provider": "local",  # "local" (free, faster-whisper) | "groq" | "openai" (Whisper API) | "mistral" (Voxtral Transcribe)
+        "provider": "local",  # "local" (free, faster-whisper or whisper-cli) | "local_command" | "groq" | "openai" | "mistral" | "xai"
         "local": {
             "model": "base",  # tiny, base, small, medium, large-v3
+            "model_path": "",  # Optional existing ggml-*.bin for whisper-cli; never auto-downloaded
             "language": "",  # auto-detect by default; set to "en", "es", "fr", etc. to force
         },
         "openai": {

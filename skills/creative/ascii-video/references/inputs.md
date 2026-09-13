@@ -356,7 +356,6 @@ VOICE_POOL = [
     ("hpp4J3VqNfWAUOO0d1Us", "Bella"),
     ("N2lVS1w4EtoT3dr4eOWO", "Callum"),
     ("cgSgspJ2msm6clMCkdW9", "Jessica"),
-    ("pNInz6obpgDQGcFmaJgB", "Adam"),
 ]
 ```
 

@@ -89,16 +89,17 @@ Add to `~/.shay/.env`:
 ```bash
 # Speech-to-Text — local provider needs NO key at all
 # pip install faster-whisper          # Free, runs locally, recommended
+# or: brew install whisper-cpp        # Uses an existing ggml-*.bin; no auto-download by Shay
 GROQ_API_KEY=your-key                 # Groq Whisper — fast, free tier (cloud)
 VOICE_TOOLS_OPENAI_KEY=your-key       # OpenAI Whisper — paid (cloud)
 
-# Text-to-Speech (optional — Edge TTS and NeuTTS work without any key)
+# Text-to-Speech (optional — macOS System Voice is local; Edge is keyless cloud TTS)
 ELEVENLABS_API_KEY=***           # ElevenLabs — premium quality
 # VOICE_TOOLS_OPENAI_KEY above also enables OpenAI TTS
 ```
 
 :::tip
-If `faster-whisper` is installed, voice mode works with **zero API keys** for STT. The model (~150 MB for `base`) downloads automatically on first use.
+Voice mode works with **zero API keys** for STT when `faster-whisper` is installed or `whisper-cli` can reuse an existing GGML model. `faster-whisper` may download its named model; Shay never downloads a whisper.cpp model.
 :::
 
 ---
@@ -311,10 +312,10 @@ The bot auto-loads the codec from:
 DISCORD_BOT_TOKEN=your-bot-token
 DISCORD_ALLOWED_USERS=your-user-id
 
-# STT — local provider needs no key (pip install faster-whisper)
+# STT — local provider needs no key (faster-whisper or whisper-cli plus a cached GGML model)
 # GROQ_API_KEY=your-key            # Alternative: cloud-based, fast, free tier
 
-# TTS — optional. Edge TTS and NeuTTS need no key.
+# TTS — optional. macOS System Voice is local; Edge is keyless cloud TTS.
 # ELEVENLABS_API_KEY=***      # Premium quality
 # VOICE_TOOLS_OPENAI_KEY=***  # OpenAI TTS / Whisper
 ```
@@ -391,18 +392,24 @@ voice:
 
 # Speech-to-Text
 stt:
-  provider: "local"                  # "local" (free) | "groq" | "openai"
+  provider: "local"                  # faster-whisper, then local whisper-cli; no cloud crossover
   local:
     model: "base"                    # tiny, base, small, medium, large-v3
+    model_path: ""                   # optional existing ggml-*.bin for whisper-cli
   # model: "whisper-1"              # Legacy: used when provider is not set
 
 # Text-to-Speech
 tts:
-  provider: "edge"                 # "edge" (free) | "elevenlabs" | "openai" | "neutts" | "minimax"
+  provider: "macos"                # private, zero-metered default on macOS
+  voice_profile: "shay-v1"         # provider-neutral; separate from PERSONA.md
+  voice_mode: "conversational"
+  macos:
+    voice: "Samantha"              # provisional; audition before owner selection
+    rate_wpm: ""                   # empty = voice-profile pace
   edge:
     voice: "en-US-AriaNeural"      # 322 voices, 74 languages
   elevenlabs:
-    voice_id: "pNInz6obpgDQGcFmaJgB"    # Adam
+    voice_id: "your-reviewed-voice-id"   # required; no default identity
     model_id: "eleven_multilingual_v2"
   openai:
     model: "gpt-4o-mini-tts"
@@ -429,7 +436,7 @@ STT_OPENAI_MODEL=whisper-1               # Override default OpenAI STT model
 GROQ_BASE_URL=https://api.groq.com/openai/v1     # Custom Groq endpoint
 STT_OPENAI_BASE_URL=https://api.openai.com/v1    # Custom OpenAI STT endpoint
 
-# Text-to-Speech providers (Edge TTS and NeuTTS need no key)
+# Text-to-Speech providers (macOS System Voice is local; Edge is a keyless cloud service)
 ELEVENLABS_API_KEY=***             # ElevenLabs (premium quality)
 # VOICE_TOOLS_OPENAI_KEY above also enables OpenAI TTS
 
@@ -492,14 +499,14 @@ The bot requires an @mention by default in server channels. Make sure you:
 
 ### Bot hears me but doesn't respond
 
-- Verify STT is available: install `faster-whisper` (no key needed) or set `GROQ_API_KEY` / `VOICE_TOOLS_OPENAI_KEY`
+- Verify STT is available: install `faster-whisper`, or install `whisper-cli` and point `stt.local.model_path` at an existing GGML model
 - Check the LLM model is configured and accessible
 - Review gateway logs: `tail -f ~/.shay/logs/gateway.log`
 
 ### Bot responds in text but not in voice channel
 
-- TTS provider may be failing — check API key and quota
-- Edge TTS (free, no key) is the default fallback
+- TTS provider may be failing — check the selected local binary or explicit provider credential
+- On macOS, `/usr/bin/say` is the local zero-metered default; Edge remains an explicit keyless cloud option
 - Check logs for TTS errors
 
 ### Whisper returns garbage text

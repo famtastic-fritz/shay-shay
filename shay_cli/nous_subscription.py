@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Set
 
 from shay_cli.auth import get_nous_auth_status
-from shay_cli.config import get_env_value, load_config
+from shay_cli.config import DEFAULT_CONFIG, get_env_value, load_config
 from tools.managed_tool_gateway import is_managed_tool_gateway_ready
 from utils import is_truthy_value
 from tools.tool_backend_helpers import (
@@ -259,7 +260,10 @@ def get_nous_subscription_features(
     # search/extract independently of web.backend.
     web_search_backend = str(web_cfg.get("search_backend") or "").strip().lower()
     web_extract_backend = str(web_cfg.get("extract_backend") or "").strip().lower()
-    tts_provider = str(tts_cfg.get("provider") or "edge").strip().lower()
+    default_tts_provider = str(DEFAULT_CONFIG["tts"]["provider"])
+    tts_provider = str(
+        tts_cfg.get("provider") or default_tts_provider
+    ).strip().lower()
     browser_provider_explicit = "cloud_provider" in browser_cfg
     browser_provider = normalize_browser_cloud_provider(
         browser_cfg.get("cloud_provider") if browser_provider_explicit else None
@@ -346,7 +350,10 @@ def get_nous_subscription_features(
     image_active = bool(image_tool_enabled and (image_managed or direct_fal))
     image_available = bool(managed_image_available or direct_fal)
 
-    tts_current_provider = tts_provider or "edge"
+    tts_current_provider = tts_provider or default_tts_provider
+    macos_tts_available = (
+        sys.platform == "darwin" and Path("/usr/bin/say").is_file()
+    )
     tts_managed = (
         tts_tool_enabled
         and tts_current_provider == "openai"
@@ -354,7 +361,8 @@ def get_nous_subscription_features(
         and not direct_openai_tts
     )
     tts_available = bool(
-        tts_current_provider in {"edge", "neutts"}
+        (tts_current_provider == "macos" and macos_tts_available)
+        or tts_current_provider in {"edge", "neutts"}
         or (tts_current_provider == "openai" and (managed_tts_available or direct_openai_tts))
         or (tts_current_provider == "elevenlabs" and direct_elevenlabs)
         or (tts_current_provider == "mistral" and bool(get_env_value("MISTRAL_API_KEY")))
@@ -413,7 +421,7 @@ def get_nous_subscription_features(
     tts_explicit_configured = False
     raw_tts_cfg = config.get("tts")
     if isinstance(raw_tts_cfg, dict) and "provider" in raw_tts_cfg:
-        tts_explicit_configured = tts_provider not in {"", "edge"}
+        tts_explicit_configured = tts_provider not in {"", default_tts_provider}
 
     features = {
         "web": NousFeatureState(

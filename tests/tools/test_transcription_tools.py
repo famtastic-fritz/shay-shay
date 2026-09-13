@@ -367,6 +367,98 @@ class TestTranscribeLocalCommand:
         assert "{model}" in template
         assert "{output_dir}" in template
 
+    def test_auto_detects_homebrew_whisper_cli(self, monkeypatch):
+        monkeypatch.delenv("SHAY_LOCAL_STT_COMMAND", raising=False)
+        monkeypatch.setattr(
+            "tools.transcription_tools._find_whisper_binary",
+            lambda: "/opt/homebrew/bin/whisper-cli",
+        )
+
+        from tools.transcription_tools import _get_local_command_template
+
+        template = _get_local_command_template()
+
+        assert template is not None
+        assert template.startswith("/opt/homebrew/bin/whisper-cli ")
+        assert "--model {model_path}" in template
+        assert "--output-file {output_base}" in template
+        assert "--output-txt" in template
+
+    def test_whisper_cpp_model_resolver_reuses_bounded_cache(self, monkeypatch, tmp_path):
+        model = tmp_path / "ggml-small.en.bin"
+        model.write_bytes(b"cached model")
+        monkeypatch.setattr(
+            "tools.transcription_tools._local_whisper_model_roots",
+            lambda: (tmp_path,),
+        )
+
+        from tools.transcription_tools import _resolve_whisper_cpp_model_path
+
+        assert _resolve_whisper_cpp_model_path("base", {"language": "en"}) == str(model)
+
+    def test_whisper_cpp_explicit_missing_model_fails_closed(self, tmp_path):
+        from tools.transcription_tools import _resolve_whisper_cpp_model_path
+
+        with pytest.raises(ValueError, match="model_path does not exist"):
+            _resolve_whisper_cpp_model_path(
+                "base",
+                {"model_path": str(tmp_path / "missing.bin")},
+            )
+
+    def test_whisper_cli_command_uses_resolved_model(
+        self, monkeypatch, sample_wav, tmp_path
+    ):
+        model = tmp_path / "ggml-small.en.bin"
+        model.write_bytes(b"cached model")
+        out_dir = tmp_path / "local-out"
+        out_dir.mkdir()
+        commands = []
+
+        monkeypatch.delenv("SHAY_LOCAL_STT_COMMAND", raising=False)
+        monkeypatch.setattr(
+            "tools.transcription_tools._find_whisper_binary",
+            lambda: "/opt/homebrew/bin/whisper-cli",
+        )
+        monkeypatch.setattr(
+            "tools.transcription_tools._load_stt_config",
+            lambda: {"local": {"model": "base", "language": "en", "model_path": str(model)}},
+        )
+
+        def fake_tempdir(prefix=None):
+            class _TempDir:
+                def __enter__(self_inner):
+                    return str(out_dir)
+
+                def __exit__(self_inner, exc_type, exc, tb):
+                    return False
+
+            return _TempDir()
+
+        def fake_run(command, *args, **kwargs):
+            commands.append(command)
+            (out_dir / "transcript.txt").write_text(
+                "hello from whisper cpp\n",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(
+            "tools.transcription_tools.tempfile.TemporaryDirectory",
+            fake_tempdir,
+        )
+        monkeypatch.setattr("tools.transcription_tools.subprocess.run", fake_run)
+
+        from tools.transcription_tools import _transcribe_local_command
+
+        result = _transcribe_local_command(sample_wav, "base")
+
+        assert result["success"] is True
+        assert result["transcript"] == "hello from whisper cpp"
+        assert result["backend"] == "whisper_cpp"
+        assert result["model_path"] == str(model)
+        assert str(model) in commands[0]
+        assert "--output-txt" in commands[0]
+
     def test_command_fallback_with_template(self, monkeypatch, sample_ogg, tmp_path):
         out_dir = tmp_path / "local-out"
         out_dir.mkdir()
