@@ -4362,6 +4362,7 @@ class AIAgent:
         execution_context: Optional[str] = None,
         task_id: Optional[str] = None,
         tool_call_id: Optional[str] = None,
+        memory_provenance: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Build provenance metadata for external memory-provider mirrors."""
         metadata: Dict[str, Any] = {
@@ -4379,6 +4380,10 @@ class AIAgent:
             metadata["task_id"] = task_id
         if tool_call_id:
             metadata["tool_call_id"] = tool_call_id
+        if memory_provenance:
+            # External providers may mirror this write, but the built-in
+            # MemoryStore remains the authoritative owner of the record.
+            metadata["memory_provenance"] = dict(memory_provenance)
         return {k: v for k, v in metadata.items() if v not in {None, ""}}
 
     def _apply_persist_user_message_override(self, messages: List[Dict]) -> None:
@@ -10484,11 +10489,20 @@ class AIAgent:
                 target=target,
                 content=function_args.get("content"),
                 old_text=function_args.get("old_text"),
+                session_id=self.session_id or "",
+                parent_session_id=self._parent_session_id or "",
+                tool_call_id=tool_call_id or "",
+                task_id=effective_task_id or "",
                 store=self._memory_store,
             )
             # Bridge: notify external memory provider of built-in memory writes
             if self._memory_manager and function_args.get("action") in {"add", "replace"}:
                 try:
+                    _memory_provenance = {}
+                    try:
+                        _memory_provenance = json.loads(result).get("memory_provenance", {})
+                    except (TypeError, ValueError, AttributeError):
+                        pass
                     self._memory_manager.on_memory_write(
                         function_args.get("action", ""),
                         target,
@@ -10496,6 +10510,7 @@ class AIAgent:
                         metadata=self._build_memory_write_metadata(
                             task_id=effective_task_id,
                             tool_call_id=tool_call_id,
+                            memory_provenance=_memory_provenance,
                         ),
                     )
                 except Exception:
@@ -11153,11 +11168,20 @@ class AIAgent:
                     target=target,
                     content=function_args.get("content"),
                     old_text=function_args.get("old_text"),
+                    session_id=self.session_id or "",
+                    parent_session_id=self._parent_session_id or "",
+                    tool_call_id=getattr(tool_call, "id", None) or "",
+                    task_id=effective_task_id or "",
                     store=self._memory_store,
                 )
                 # Bridge: notify external memory provider of built-in memory writes
                 if self._memory_manager and function_args.get("action") in {"add", "replace"}:
                     try:
+                        _memory_provenance = {}
+                        try:
+                            _memory_provenance = json.loads(function_result).get("memory_provenance", {})
+                        except (TypeError, ValueError, AttributeError):
+                            pass
                         self._memory_manager.on_memory_write(
                             function_args.get("action", ""),
                             target,
@@ -11165,6 +11189,7 @@ class AIAgent:
                             metadata=self._build_memory_write_metadata(
                                 task_id=effective_task_id,
                                 tool_call_id=getattr(tool_call, "id", None),
+                                memory_provenance=_memory_provenance,
                             ),
                         )
                     except Exception:
