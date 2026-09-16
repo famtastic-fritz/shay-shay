@@ -71,6 +71,15 @@ def _coerce_port(value: Any, default: int = DEFAULT_PORT) -> int:
         return default
 
 
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    """Parse feature flags without treating arbitrary strings as enabled."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _normalize_chat_content(
     content: Any, *, _max_depth: int = 10, _depth: int = 0,
 ) -> str:
@@ -616,6 +625,23 @@ class APIServerAdapter(BasePlatformAdapter):
         # in-flight run by run_id.
         self._run_approval_sessions: Dict[str, str] = {}
         self._session_db: Optional[Any] = None  # Lazy-init SessionDB for session continuity
+        # R3 is an additive rollout.  The historical process-memory run
+        # reader remains the default until the operator explicitly enables
+        # the durable Kanban adapter.
+        self._durable_runs_enabled = _coerce_bool(
+            extra.get("durable_runs", os.getenv("SHAY_DURABLE_RUNS", "0")),
+        )
+        self._kanban_run_adapter = None
+        if self._durable_runs_enabled:
+            try:
+                from shay_cli.kanban_run_adapter import KanbanRunAdapter
+                self._kanban_run_adapter = KanbanRunAdapter()
+            except Exception as exc:
+                # Do not make the legacy API unavailable because an optional
+                # rollout database cannot initialize; surface the reason and
+                # keep the flag observably disabled.
+                logger.warning("[api_server] durable run adapter unavailable: %s", exc)
+                self._durable_runs_enabled = False
 
     @staticmethod
     def _parse_cors_origins(value: Any) -> tuple[str, ...]:
@@ -2754,6 +2780,34 @@ class APIServerAdapter(BasePlatformAdapter):
         self._run_statuses[run_id] = current
         return current
 
+    def _durable_status(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """Return the durable projection in the legacy status envelope."""
+        adapter = self._kanban_run_adapter
+        if adapter is None:
+            return None
+        try:
+            run = adapter.snapshot(run_id)
+        except KeyError:
+            return None
+        data = {
+            "object": "shay.run",
+            "run_id": run.run_id,
+            "task_id": run.task_id,
+            "kanban_run_id": run.kanban_run_id,
+            "status": run.status,
+            "created_at": run.created_at,
+            "updated_at": run.updated_at,
+        }
+        if run.session_id is not None:
+            data["session_id"] = run.session_id
+        if run.model is not None:
+            data["model"] = run.model
+        if run.output is not None:
+            data["output"] = run.output
+        if run.error is not None:
+            data["error"] = run.error
+        return data
+
     def _make_run_event_callback(self, run_id: str, loop: "asyncio.AbstractEventLoop"):
         """Return a tool_progress_callback that pushes structured events to the run's SSE queue."""
         def _push(event: Dict[str, Any]) -> None:
@@ -2883,6 +2937,41 @@ class APIServerAdapter(BasePlatformAdapter):
         approval_session_key = gateway_session_key or session_id or run_id
         ephemeral_system_prompt = instructions
         loop = asyncio.get_running_loop()
+
+        # Bind the external run to Kanban before any worker is scheduled.  A
+        # repeated request carrying the same idempotency key returns the
+        # original durable run and creates no second task/run/event chain.
+        durable_existing = None
+        if self._kanban_run_adapter is not None:
+            try:
+                request_key = (
+                    request.headers.get("Idempotency-Key")
+                    or body.get("idempotency_key")
+                    or run_id
+                )
+                durable_existing = self._kanban_run_adapter.begin(
+                    run_id,
+                    input_text=user_message,
+                    request_key=str(request_key),
+                    session_id=session_id,
+                    model=body.get("model", self._model_name),
+                )
+                if durable_existing.run_id != run_id:
+                    status_payload = self._durable_status(durable_existing.run_id) or {
+                        "object": "shay.run",
+                        "run_id": durable_existing.run_id,
+                        "status": durable_existing.status,
+                    }
+                    return web.json_response(
+                        {"run_id": durable_existing.run_id, "status": durable_existing.status},
+                        status=202,
+                    )
+            except Exception as exc:
+                logger.exception("[api_server] durable run binding failed")
+                return web.json_response(
+                    _openai_error(f"Durable run ledger unavailable: {exc}", code="run_ledger_unavailable"),
+                    status=503,
+                )
         q: "asyncio.Queue[Optional[Dict]]" = asyncio.Queue()
         created_at = time.time()
         self._run_streams[run_id] = q
@@ -2912,10 +3001,14 @@ class APIServerAdapter(BasePlatformAdapter):
             session_id=session_id,
             model=body.get("model", self._model_name),
         )
+        if self._kanban_run_adapter is not None:
+            self._kanban_run_adapter.event(run_id, "run.queued", {"session_id": session_id})
 
         async def _run_and_close():
             try:
                 self._set_run_status(run_id, "running")
+                if self._kanban_run_adapter is not None:
+                    self._kanban_run_adapter.event(run_id, "run.started")
                 agent = self._create_agent(
                     ephemeral_system_prompt=ephemeral_system_prompt,
                     session_id=session_id,
@@ -2938,6 +3031,10 @@ class APIServerAdapter(BasePlatformAdapter):
                         "waiting_for_approval",
                         last_event="approval.request",
                     )
+                    if self._kanban_run_adapter is not None:
+                        self._kanban_run_adapter.waiting_for_approval(
+                            run_id, approval_id=event.get("approval_id")
+                        )
                     try:
                         loop.call_soon_threadsafe(q.put_nowait, event)
                     except Exception:
@@ -3009,6 +3106,8 @@ class APIServerAdapter(BasePlatformAdapter):
                         error=error_msg,
                         last_event="run.failed",
                     )
+                    if self._kanban_run_adapter is not None:
+                        self._kanban_run_adapter.fail(run_id, error=error_msg)
                 else:
                     final_response = result.get("final_response", "") if isinstance(result, dict) else ""
                     q.put_nowait({
@@ -3025,12 +3124,16 @@ class APIServerAdapter(BasePlatformAdapter):
                         usage=usage,
                         last_event="run.completed",
                     )
+                    if self._kanban_run_adapter is not None:
+                        self._kanban_run_adapter.complete(run_id, output=final_response, metadata=usage)
             except asyncio.CancelledError:
                 self._set_run_status(
                     run_id,
                     "cancelled",
                     last_event="run.cancelled",
                 )
+                if self._kanban_run_adapter is not None:
+                    self._kanban_run_adapter.cancel(run_id, reason="asyncio task cancelled", actor="api")
                 try:
                     q.put_nowait({
                         "event": "run.cancelled",
@@ -3105,6 +3208,9 @@ class APIServerAdapter(BasePlatformAdapter):
         run_id = request.match_info["run_id"]
         status = self._run_statuses.get(run_id)
         if status is None:
+            durable = self._durable_status(run_id)
+            if durable is not None:
+                return web.json_response(durable)
             return web.json_response(
                 _openai_error(f"Run not found: {run_id}", code="run_not_found"),
                 status=404,
@@ -3118,6 +3224,48 @@ class APIServerAdapter(BasePlatformAdapter):
             return auth_err
 
         run_id = request.match_info["run_id"]
+
+        # Durable runs can be replayed after the in-memory stream was lost
+        # during a gateway restart.  Last-Event-ID is the existing Kanban
+        # task_events.id cursor; never use timestamps for replay.
+        durable = self._kanban_run_adapter
+        if durable is not None:
+            try:
+                cursor = int(
+                    request.headers.get("Last-Event-ID")
+                    or request.query.get("cursor", "0")
+                    or 0
+                )
+                replay = durable.events(run_id, cursor=cursor)
+            except (KeyError, TypeError, ValueError):
+                replay = None
+            if replay is not None and run_id not in self._run_streams:
+                response = web.StreamResponse(
+                    status=200,
+                    headers={
+                        "Content-Type": "text/event-stream",
+                        "Cache-Control": "no-cache",
+                        "X-Accel-Buffering": "no",
+                    },
+                )
+                await response.prepare(request)
+                try:
+                    for event in replay:
+                        await response.write(
+                            f"id: {event['id']}\ndata: {json.dumps(event)}\n\n".encode()
+                        )
+                    snap = self._durable_status(run_id)
+                    if snap and snap.get("status") in {
+                        "completed", "blocked", "failed", "cancelled", "interrupted",
+                    }:
+                        await response.write(b": stream closed\n\n")
+                        return response
+                except Exception as exc:
+                    logger.debug("[api_server] durable SSE replay error for %s: %s", run_id, exc)
+                # No active in-memory stream remains to follow, so an empty
+                # replay is an honest open stream only for a live run.
+                if run_id not in self._run_streams:
+                    return response
 
         # Allow subscribing slightly before the run is registered (race condition window)
         for _ in range(20):
@@ -3257,6 +3405,16 @@ class APIServerAdapter(BasePlatformAdapter):
         task = self._active_run_tasks.get(run_id)
 
         if agent is None and task is None:
+            if self._kanban_run_adapter is not None:
+                durable = self._durable_status(run_id)
+                if durable is not None and durable.get("status") in {
+                    "running", "waiting_for_approval", "stopping",
+                }:
+                    self._kanban_run_adapter.cancel(
+                        run_id, reason="stop requested via API", actor="api"
+                    )
+                    self._set_run_status(run_id, "cancelled", last_event="run.cancelled")
+                    return web.json_response({"run_id": run_id, "status": "cancelled"})
             return web.json_response(_openai_error(f"Run not found: {run_id}", code="run_not_found"), status=404)
 
         self._set_run_status(run_id, "stopping", last_event="run.stopping")
@@ -3266,6 +3424,11 @@ class APIServerAdapter(BasePlatformAdapter):
                 agent.interrupt("Stop requested via API")
             except Exception:
                 pass
+
+        if self._kanban_run_adapter is not None:
+            self._kanban_run_adapter.cancel(
+                run_id, reason="stop requested via API", actor="api"
+            )
 
         if task is not None and not task.done():
             task.cancel()

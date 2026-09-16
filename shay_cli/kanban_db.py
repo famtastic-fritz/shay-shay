@@ -867,6 +867,30 @@ CREATE TABLE IF NOT EXISTS kanban_notify_subs (
     PRIMARY KEY (task_id, platform, chat_id, thread_id)
 );
 
+-- External API run ids must survive a gateway restart.  Keep the binding in
+-- the Kanban ledger so the API remains an adapter over the existing durable
+-- task/run/event authority rather than growing a second database.
+CREATE TABLE IF NOT EXISTS kanban_run_bindings (
+    run_id         TEXT PRIMARY KEY,
+    task_id        TEXT NOT NULL,
+    request_key    TEXT UNIQUE,
+    session_id     TEXT,
+    model          TEXT,
+    input_sha256   TEXT,
+    created_at     INTEGER NOT NULL
+);
+
+-- Historical active idempotency collisions are reconciled rather than
+-- deleted.  One row is retained as canonical and every other task is
+-- recorded here before its active key is cleared, preserving an audit trail.
+CREATE TABLE IF NOT EXISTS task_idempotency_reconciliations (
+    idempotency_key TEXT NOT NULL,
+    canonical_task_id TEXT NOT NULL,
+    duplicate_task_id TEXT NOT NULL,
+    reconciled_at INTEGER NOT NULL,
+    PRIMARY KEY (idempotency_key, duplicate_task_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee_status ON tasks(assignee, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_status          ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_tenant          ON tasks(tenant);
@@ -879,6 +903,9 @@ CREATE INDEX IF NOT EXISTS idx_events_run            ON task_events(run_id, id);
 CREATE INDEX IF NOT EXISTS idx_runs_task             ON task_runs(task_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_runs_status           ON task_runs(status);
 CREATE INDEX IF NOT EXISTS idx_notify_task           ON kanban_notify_subs(task_id);
+CREATE INDEX IF NOT EXISTS idx_run_bindings_task     ON kanban_run_bindings(task_id);
+CREATE INDEX IF NOT EXISTS idx_idempotency_reconcile_key
+    ON task_idempotency_reconciliations(idempotency_key);
 """
 
 
@@ -991,6 +1018,34 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
 
     Called by ``init_db`` so opening an old DB is always safe.
     """
+    # These tables were added after the original run ledger.  Keep the
+    # explicit CREATEs here as well as in SCHEMA_SQL so a connection whose
+    # module-level initialization cache predates the additive migration still
+    # receives the durable API binding and duplicate audit tables.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS kanban_run_bindings (
+            run_id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            request_key TEXT UNIQUE,
+            session_id TEXT,
+            model TEXT,
+            input_sha256 TEXT,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS task_idempotency_reconciliations (
+            idempotency_key TEXT NOT NULL,
+            canonical_task_id TEXT NOT NULL,
+            duplicate_task_id TEXT NOT NULL,
+            reconciled_at INTEGER NOT NULL,
+            PRIMARY KEY (idempotency_key, duplicate_task_id)
+        )
+        """
+    )
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
     if "tenant" not in cols:
         _add_column_if_missing(conn, "tasks", "tenant", "tenant TEXT")
@@ -1168,6 +1223,12 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
             (new, old),
         )
 
+    # Reconcile old active-key duplicates before creating the new partial
+    # unique index.  The pass is deterministic and idempotent: the oldest
+    # task id (created_at, then lexical id) remains canonical, while every
+    # other row is retained with its key cleared and an audit mapping.
+    reconcile_idempotency_duplicates(conn)
+
 
 @contextlib.contextmanager
 def write_txn(conn: sqlite3.Connection):
@@ -1185,6 +1246,75 @@ def write_txn(conn: sqlite3.Connection):
         raise
     else:
         conn.execute("COMMIT")
+
+
+def reconcile_idempotency_duplicates(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Reconcile historical active idempotency-key duplicates.
+
+    Older databases only had a non-unique lookup index, so a crash or
+    concurrent legacy writer may have left multiple active rows for one key.
+    The canonical row is selected deterministically (oldest creation, then
+    lexical task id).  Noncanonical rows are *not* deleted: their key is
+    cleared so new writes can enforce uniqueness and a mapping is retained in
+    ``task_idempotency_reconciliations`` for audit/readers.  Running the pass
+    repeatedly produces no further changes.
+    """
+    repaired = 0
+    task_columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+    # Some callers exercise the additive migration against a deliberately
+    # minimal legacy stub that has no status/created_at columns.  There is no
+    # safe duplicate policy to apply to that stub; leave it untouched and let
+    # the normal migration complete.
+    if not {"id", "status", "created_at", "idempotency_key"}.issubset(task_columns):
+        return {"groups": 0, "duplicates_reconciled": 0}
+    groups = conn.execute(
+        """
+        SELECT idempotency_key
+          FROM tasks
+         WHERE idempotency_key IS NOT NULL AND status != 'archived'
+         GROUP BY idempotency_key
+        HAVING COUNT(*) > 1
+         ORDER BY idempotency_key
+        """
+    ).fetchall()
+    with write_txn(conn):
+        for group in groups:
+            key = group["idempotency_key"]
+            rows = conn.execute(
+                """
+                SELECT id FROM tasks
+                 WHERE idempotency_key = ? AND status != 'archived'
+                 ORDER BY created_at ASC, id ASC
+                """,
+                (key,),
+            ).fetchall()
+            if len(rows) < 2:
+                continue
+            canonical = rows[0]["id"]
+            now = int(time.time())
+            for row in rows[1:]:
+                duplicate = row["id"]
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO task_idempotency_reconciliations
+                        (idempotency_key, canonical_task_id, duplicate_task_id, reconciled_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (key, canonical, duplicate, now),
+                )
+                conn.execute(
+                    "UPDATE tasks SET idempotency_key = NULL WHERE id = ?",
+                    (duplicate,),
+                )
+                repaired += 1
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_active_idempotency
+                ON tasks(idempotency_key)
+             WHERE idempotency_key IS NOT NULL AND status != 'archived'
+            """
+        )
+    return {"groups": len(groups), "duplicates_reconciled": repaired}
 
 
 # ---------------------------------------------------------------------------
@@ -4801,6 +4931,193 @@ def latest_summary(conn: sqlite3.Connection, task_id: str) -> Optional[str]:
         (task_id,),
     ).fetchone()
     return row["summary"] if row else None
+
+
+def list_events_after(
+    conn: sqlite3.Connection,
+    task_id: str,
+    *,
+    cursor: int = 0,
+    run_id: Optional[int] = None,
+) -> list[Event]:
+    """Return durable events strictly after the monotonic event-id cursor.
+
+    ``task_events.id`` is the ledger's existing SQLite sequence and is the
+    replay cursor.  Filtering by ``id`` (rather than timestamp) makes
+    reconnects deterministic even when several transitions share a second.
+    """
+    clauses = ["task_id = ?", "id > ?"]
+    params: list[Any] = [task_id, int(cursor)]
+    if run_id is not None:
+        clauses.append("run_id = ?")
+        params.append(int(run_id))
+    rows = conn.execute(
+        "SELECT * FROM task_events WHERE " + " AND ".join(clauses)
+        + " ORDER BY id ASC",
+        params,
+    ).fetchall()
+    out: list[Event] = []
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"]) if row["payload"] else None
+        except Exception:
+            payload = None
+        out.append(
+            Event(
+                id=int(row["id"]),
+                task_id=row["task_id"],
+                kind=row["kind"],
+                payload=payload,
+                created_at=int(row["created_at"]),
+                run_id=(int(row["run_id"]) if row["run_id"] is not None else None),
+            )
+        )
+    return out
+
+
+def record_run_event(
+    conn: sqlite3.Connection,
+    task_id: str,
+    kind: str,
+    payload: Optional[dict] = None,
+    *,
+    run_id: Optional[int] = None,
+) -> int:
+    """Append one adapter/lifecycle event and return its ledger sequence."""
+    with write_txn(conn):
+        _append_event(conn, task_id, kind, payload, run_id=run_id)
+        row = conn.execute("SELECT last_insert_rowid() AS id").fetchone()
+        return int(row["id"])
+
+
+def set_run_waiting_for_approval(
+    conn: sqlite3.Connection,
+    task_id: str,
+    *,
+    run_id: Optional[int] = None,
+    approval_id: Optional[str] = None,
+) -> bool:
+    """Persist approval-wait state without writing approval secrets."""
+    with write_txn(conn):
+        rid = int(run_id) if run_id is not None else _current_run_id(conn, task_id)
+        if rid is None:
+            return False
+        cur = conn.execute(
+            "UPDATE task_runs SET status = 'waiting_for_approval' "
+            "WHERE id = ? AND ended_at IS NULL",
+            (rid,),
+        )
+        if cur.rowcount != 1:
+            return False
+        _append_event(
+            conn, task_id, "approval_waiting",
+            {"approval_id": approval_id} if approval_id else None,
+            run_id=rid,
+        )
+        return True
+
+
+def cancel_run(
+    conn: sqlite3.Connection,
+    task_id: str,
+    *,
+    run_id: Optional[int] = None,
+    reason: Optional[str] = None,
+    actor: str = "system",
+) -> bool:
+    """Durably cancel a run; repeated calls are harmless.
+
+    The run row is the authoritative terminal record.  The task is moved to
+    ``blocked`` so legacy task readers cannot dispatch it after cancellation;
+    the cancelled outcome remains explicit on the run and event rows.
+    """
+    now = int(time.time())
+    with write_txn(conn):
+        row = conn.execute(
+            """
+            SELECT t.status, t.current_run_id, r.ended_at
+              FROM tasks t LEFT JOIN task_runs r ON r.id = t.current_run_id
+             WHERE t.id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        rid = int(run_id) if run_id is not None else (
+            int(row["current_run_id"]) if row["current_run_id"] is not None else None
+        )
+        if rid is None:
+            return False
+        active = row["current_run_id"] == rid and row["ended_at"] is None
+        if not active:
+            # Idempotent replay: an already-cancelled run is success, but a
+            # different terminal outcome must not be rewritten.
+            prior = conn.execute(
+                "SELECT outcome FROM task_runs WHERE id = ?", (rid,)
+            ).fetchone()
+            return bool(prior and prior["outcome"] == "cancelled")
+        conn.execute(
+            "UPDATE task_runs SET status='cancelled', outcome='cancelled', "
+            "ended_at=?, claim_lock=NULL, claim_expires=NULL, worker_pid=NULL "
+            "WHERE id=? AND ended_at IS NULL",
+            (now, rid),
+        )
+        conn.execute(
+            "UPDATE tasks SET status='blocked', current_run_id=NULL, "
+            "claim_lock=NULL, claim_expires=NULL, worker_pid=NULL "
+            "WHERE id=? AND current_run_id=?",
+            (task_id, rid),
+        )
+        _append_event(
+            conn, task_id, "cancelled",
+            {"reason": reason, "actor": actor}, run_id=rid,
+        )
+        return True
+
+
+def recover_interrupted_runs(
+    conn: sqlite3.Connection,
+    *,
+    current_pid: Optional[int] = None,
+    reason: str = "gateway_restart",
+) -> list[int]:
+    """Close active runs owned by a previous process as ``interrupted``.
+
+    This intentionally never synthesizes completion.  A run whose worker PID
+    is still this process is left alone; all other active rows become an
+    explicit retry-required/blocked task while retaining their history.
+    """
+    pid = int(current_pid or os.getpid())
+    recovered: list[int] = []
+    with write_txn(conn):
+        rows = conn.execute(
+            "SELECT t.id AS task_id, t.current_run_id, r.worker_pid "
+            "FROM tasks t JOIN task_runs r ON r.id=t.current_run_id "
+            "WHERE r.ended_at IS NULL AND t.status='running'"
+        ).fetchall()
+        now = int(time.time())
+        for row in rows:
+            if row["worker_pid"] is not None and int(row["worker_pid"]) == pid:
+                continue
+            rid = int(row["current_run_id"])
+            conn.execute(
+                "UPDATE task_runs SET status='interrupted', outcome='interrupted', "
+                "ended_at=?, error=?, claim_lock=NULL, claim_expires=NULL, worker_pid=NULL "
+                "WHERE id=? AND ended_at IS NULL",
+                (now, reason, rid),
+            )
+            conn.execute(
+                "UPDATE tasks SET status='blocked', current_run_id=NULL, "
+                "claim_lock=NULL, claim_expires=NULL, worker_pid=NULL "
+                "WHERE id=? AND current_run_id=?",
+                (row["task_id"], rid),
+            )
+            _append_event(
+                conn, row["task_id"], "interrupted",
+                {"reason": reason, "retry_required": True}, run_id=rid,
+            )
+            recovered.append(rid)
+    return recovered
 
 
 def latest_summaries(
