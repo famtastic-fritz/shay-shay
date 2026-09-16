@@ -728,3 +728,8 @@ and fresh isolated profiles. It requires provenance precision 1.0, zero required
 omission, zero stale facts, median token p95 at most baseline*1.10+32, and median
 latency p95 at most max(baseline*1.25, baseline+5ms). These technical thresholds are
 fixed by the R0 implementation contract; merge approval remains separate.
+
+R8's repository reporter is intentionally fail-closed. It requires an
+explicit external execution-ledger path and a fresh external output path. An
+incomplete R1-R7 lifecycle produces `launch-blocked`; it cannot derive review,
+CI, completion, or `program_finalized` from branch tips or phase-local prose.
