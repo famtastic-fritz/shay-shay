@@ -43,6 +43,7 @@ import os
 import sys
 import threading
 import types
+import contextvars
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Union
@@ -70,6 +71,102 @@ except ImportError:  # pragma: no cover – yaml is optional at import time
     yaml = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
+
+
+# ``pre_tool_call`` historically exposed only a string block helper.  Keep
+# that API stable while carrying one structured decision through the same hook
+# invocation so callers never need to fire a policy hook twice.
+_last_pre_tool_call_decision: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar(
+    "shay_last_pre_tool_call_decision", default=None
+)
+_TYPED_ACTIONS = frozenset({"allow", "block", "request_approval"})
+_TYPED_EFFECT_CLASSES = frozenset({
+    "read", "local_reversible_write", "destructive_local_write",
+    "credential_account", "external_message_publish", "payment_spend",
+    "production",
+})
+
+
+def _normalize_pre_tool_call_result(result: Any) -> Optional[dict]:
+    """Validate one typed policy result without changing legacy semantics."""
+    if result is None:
+        return None
+    if not isinstance(result, dict):
+        return {"action": "block", "reason": "hook_invalid", "message": "Blocked: invalid safety policy response."}
+    action = result.get("action")
+    # ``decision`` was used by a few early hook examples; accepting it here
+    # makes the seam additive while the canonical wire field remains action.
+    if action is None:
+        action = result.get("decision")
+    if action not in _TYPED_ACTIONS:
+        return {"action": "block", "reason": "hook_invalid", "message": "Blocked: invalid safety policy action."}
+    normalized = {"action": action}
+    for key in ("message", "reason", "rule_id", "effect_class", "effect_id", "approval_id"):
+        value = result.get(key)
+        if value is not None:
+            if not isinstance(value, str) or not value.strip():
+                return {"action": "block", "reason": "hook_invalid", "message": "Blocked: invalid safety policy field."}
+            normalized[key] = value
+    if "effect_class" in normalized and normalized["effect_class"] not in _TYPED_EFFECT_CLASSES:
+        return {"action": "block", "reason": "hook_invalid", "message": "Blocked: unknown effect class."}
+    if action == "block" and not normalized.get("message"):
+        normalized["message"] = "Blocked by safety policy."
+    if action == "request_approval" and not normalized.get("message"):
+        normalized["message"] = "Approval required before this tool can run."
+    normalized.setdefault("reason", "policy")
+    return normalized
+
+
+def resolve_pre_tool_call_decision(
+    tool_name: str,
+    args: Optional[Dict[str, Any]],
+    task_id: str = "",
+    session_id: str = "",
+    tool_call_id: str = "",
+) -> dict:
+    """Invoke typed pre-tool policy hooks exactly once and fail closed.
+
+    Observer hooks still return no decision.  A block beats approval, which
+    beats allow, across all registered policy hooks.  Callback exceptions and
+    malformed non-empty responses become deterministic blocks; this is the
+    safety path and deliberately differs from observer-only ``invoke_hook``.
+    """
+    manager = get_plugin_manager()
+    payload = {
+        "tool_name": tool_name,
+        "args": args if isinstance(args, dict) else {},
+        "task_id": task_id or "",
+        "session_id": session_id or "",
+        "tool_call_id": tool_call_id or "",
+    }
+    decisions: list[dict] = []
+    for callback in list(manager._hooks.get("pre_tool_call", [])):
+        try:
+            result = callback(**payload)
+        except Exception:
+            decision = {"action": "block", "reason": "hook_error", "message": "Blocked: safety policy hook failed."}
+        else:
+            decision = _normalize_pre_tool_call_result(result)
+        if decision is not None:
+            decisions.append(decision)
+
+    if not decisions:
+        decision = {"action": "allow", "reason": "no_policy"}
+    else:
+        rank = {"allow": 0, "request_approval": 1, "block": 2}
+        decision = max(decisions, key=lambda item: rank[item["action"]])
+    _last_pre_tool_call_decision.set(decision)
+    return decision
+
+
+def get_last_pre_tool_call_decision() -> Optional[dict]:
+    """Return the decision produced by the most recent typed hook call."""
+    return _last_pre_tool_call_decision.get()
+
+
+def clear_pre_tool_call_decision() -> None:
+    """Clear the per-context decision before a legacy-compatible call."""
+    _last_pre_tool_call_decision.set(None)
 
 
 # ---------------------------------------------------------------------------
@@ -1311,6 +1408,8 @@ def invoke_hook(hook_name: str, **kwargs: Any) -> List[Any]:
     return get_plugin_manager().invoke_hook(hook_name, **kwargs)
 
 
+_ORIGINAL_INVOKE_HOOK = invoke_hook
+
 
 def get_pre_tool_call_block_message(
     tool_name: str,
@@ -1330,25 +1429,32 @@ def get_pre_tool_call_block_message(
     directive wins.  Invalid or irrelevant hook return values are
     silently ignored so existing observer-only hooks are unaffected.
     """
-    hook_results = invoke_hook(
-        "pre_tool_call",
-        tool_name=tool_name,
-        args=args if isinstance(args, dict) else {},
-        task_id=task_id,
-        session_id=session_id,
+    # Preserve the deliberately permissive legacy helper when callers replace
+    # ``invoke_hook`` in tests or integrations. In normal operation the typed
+    # resolver owns the one hook invocation and stores its decision for the
+    # caller to consume.
+    if invoke_hook is not _ORIGINAL_INVOKE_HOOK:
+        hook_results = invoke_hook(
+            "pre_tool_call",
+            tool_name=tool_name,
+            args=args if isinstance(args, dict) else {},
+            task_id=task_id,
+            session_id=session_id,
+            tool_call_id=tool_call_id,
+        )
+        for result in hook_results:
+            if not isinstance(result, dict) or result.get("action") != "block":
+                continue
+            message = result.get("message")
+            if isinstance(message, str) and message:
+                return message
+        return None
+
+    decision = resolve_pre_tool_call_decision(
+        tool_name, args, task_id=task_id, session_id=session_id,
         tool_call_id=tool_call_id,
     )
-
-    for result in hook_results:
-        if not isinstance(result, dict):
-            continue
-        if result.get("action") != "block":
-            continue
-        message = result.get("message")
-        if isinstance(message, str) and message:
-            return message
-
-    return None
+    return decision.get("message") if decision.get("action") == "block" else None
 
 
 def _ensure_plugins_discovered(force: bool = False) -> PluginManager:

@@ -10446,7 +10446,8 @@ class AIAgent:
         block_message: Optional[str] = None
         if not pre_tool_block_checked:
             try:
-                from shay_cli.plugins import get_pre_tool_call_block_message
+                from shay_cli.plugins import get_pre_tool_call_block_message, clear_pre_tool_call_decision
+                clear_pre_tool_call_decision()
                 block_message = get_pre_tool_call_block_message(
                     function_name, function_args, task_id=effective_task_id or "",
                 )
@@ -10584,34 +10585,20 @@ class AIAgent:
             if not isinstance(function_args, dict):
                 function_args = {}
 
-            # Checkpoint for file-mutating tools
-            if function_name in {"write_file", "patch"} and self._checkpoint_mgr.enabled:
-                try:
-                    file_path = function_args.get("path", "")
-                    if file_path:
-                        work_dir = self._checkpoint_mgr.get_working_dir_for_path(file_path)
-                        self._checkpoint_mgr.ensure_checkpoint(work_dir, f"before {function_name}")
-                except Exception:
-                    pass
-
-            # Checkpoint before destructive terminal commands
-            if function_name == "terminal" and self._checkpoint_mgr.enabled:
-                try:
-                    cmd = function_args.get("command", "")
-                    if _is_destructive_command(cmd):
-                        cwd = function_args.get("workdir") or os.getenv("TERMINAL_CWD", os.getcwd())
-                        self._checkpoint_mgr.ensure_checkpoint(
-                            cwd, f"before terminal: {cmd[:60]}"
-                        )
-                except Exception:
-                    pass
-
             block_result = None
             blocked_by_guardrail = False
             try:
-                from shay_cli.plugins import get_pre_tool_call_block_message
+                from shay_cli.plugins import (
+                    clear_pre_tool_call_decision,
+                    get_last_pre_tool_call_decision,
+                    get_pre_tool_call_block_message,
+                )
+                clear_pre_tool_call_decision()
                 block_message = get_pre_tool_call_block_message(
-                    function_name, function_args, task_id=effective_task_id or "",
+                    function_name, function_args,
+                    task_id=effective_task_id or "",
+                    session_id=self.session_id or "",
+                    tool_call_id=getattr(tool_call, "id", "") or "",
                 )
             except Exception:
                 block_message = None
@@ -10619,6 +10606,42 @@ class AIAgent:
             if block_message is not None:
                 block_result = json.dumps({"error": block_message}, ensure_ascii=False)
             else:
+                try:
+                    typed_decision = get_last_pre_tool_call_decision()
+                    if typed_decision and typed_decision.get("action") == "request_approval":
+                        from tools.approval import resolve_typed_approval
+                        approval = resolve_typed_approval(
+                            typed_decision,
+                            approval_callback=_get_approval_callback(),
+                            session_key=self.session_id or effective_task_id or "",
+                        )
+                        if not approval.get("approved"):
+                            block_result = json.dumps({
+                                "error": approval.get("message") or "Blocked: approval was not granted.",
+                                "reason": approval.get("reason", "denied"),
+                            }, ensure_ascii=False)
+                except Exception:
+                    block_result = json.dumps({
+                        "error": "Blocked: typed approval resolution failed.",
+                        "reason": "approval_error",
+                    }, ensure_ascii=False)
+                # A typed policy must resolve before checkpoint/ref creation.
+                if block_result is None and function_name in {"write_file", "patch"} and self._checkpoint_mgr.enabled:
+                    try:
+                        file_path = function_args.get("path", "")
+                        if file_path:
+                            work_dir = self._checkpoint_mgr.get_working_dir_for_path(file_path)
+                            self._checkpoint_mgr.ensure_checkpoint(work_dir, f"before {function_name}")
+                    except Exception:
+                        pass
+                if block_result is None and function_name == "terminal" and self._checkpoint_mgr.enabled:
+                    try:
+                        cmd = function_args.get("command", "")
+                        if _is_destructive_command(cmd):
+                            cwd = function_args.get("workdir") or os.getenv("TERMINAL_CWD", os.getcwd())
+                            self._checkpoint_mgr.ensure_checkpoint(cwd, f"before terminal: {cmd[:60]}")
+                    except Exception:
+                        pass
                 guardrail_decision = self._tool_guardrails.before_call(function_name, function_args)
                 if not guardrail_decision.allows_execution:
                     block_result = self._guardrail_block_result(guardrail_decision)
@@ -10980,10 +11003,29 @@ class AIAgent:
             # Check plugin hooks for a block directive before executing.
             _block_msg: Optional[str] = None
             try:
-                from shay_cli.plugins import get_pre_tool_call_block_message
-                _block_msg = get_pre_tool_call_block_message(
-                    function_name, function_args, task_id=effective_task_id or "",
+                from shay_cli.plugins import (
+                    clear_pre_tool_call_decision,
+                    get_last_pre_tool_call_decision,
+                    get_pre_tool_call_block_message,
                 )
+                clear_pre_tool_call_decision()
+                _block_msg = get_pre_tool_call_block_message(
+                    function_name, function_args,
+                    task_id=effective_task_id or "",
+                    session_id=self.session_id or "",
+                    tool_call_id=getattr(tool_call, "id", "") or "",
+                )
+                if _block_msg is None:
+                    typed_decision = get_last_pre_tool_call_decision()
+                    if typed_decision and typed_decision.get("action") == "request_approval":
+                        from tools.approval import resolve_typed_approval
+                        approval = resolve_typed_approval(
+                            typed_decision,
+                            approval_callback=_get_approval_callback(),
+                            session_key=self.session_id or effective_task_id or "",
+                        )
+                        if not approval.get("approved"):
+                            _block_msg = approval.get("message") or "Blocked: approval was not granted."
             except Exception:
                 pass
 

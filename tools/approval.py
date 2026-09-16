@@ -23,6 +23,88 @@ from utils import is_truthy_value
 
 logger = logging.getLogger(__name__)
 
+# Typed effect classes are intentionally small and closed.  Plugins may add
+# rule IDs, but they cannot invent an effect class that bypasses the core
+# approval seam.
+EFFECT_CLASSES = frozenset({
+    "read", "local_reversible_write", "destructive_local_write",
+    "credential_account", "external_message_publish", "payment_spend",
+    "production",
+})
+
+
+def resolve_typed_approval(
+    decision: dict,
+    *,
+    approval_callback=None,
+    session_key: str = "",
+    timeout_seconds: int | None = None,
+) -> dict:
+    """Resolve a plugin-neutral typed approval decision.
+
+    ``allow`` and ``block`` are terminal. ``request_approval`` is routed to a
+    caller-provided callback (or the existing CLI callback when available).
+    Missing callbacks, malformed responses, exceptions, and timeout all deny;
+    no caller can accidentally turn an unavailable prompt into permission.
+    """
+    if not isinstance(decision, dict):
+        return {"approved": False, "status": "denied", "reason": "invalid_decision"}
+    action = decision.get("action")
+    if action == "allow":
+        return {"approved": True, "status": "allowed", "reason": decision.get("reason", "policy")}
+    if action == "block":
+        return {
+            "approved": False,
+            "status": "denied",
+            "reason": decision.get("reason", "policy"),
+            "message": decision.get("message", "Blocked by safety policy."),
+        }
+    if action != "request_approval":
+        return {"approved": False, "status": "denied", "reason": "invalid_decision"}
+    effect_class = decision.get("effect_class", "")
+    if effect_class and effect_class not in EFFECT_CLASSES:
+        return {"approved": False, "status": "denied", "reason": "invalid_effect_class"}
+
+    callback = approval_callback
+    if callback is None:
+        try:
+            from tools.terminal_tool import _get_approval_callback
+            callback = _get_approval_callback()
+        except Exception:
+            callback = None
+    if callback is None:
+        return {"approved": False, "status": "denied", "reason": "approval_unavailable"}
+
+    request = {
+        "effect_class": effect_class,
+        "message": decision.get("message", "Approval required before this tool can run."),
+        "rule_id": decision.get("rule_id", "policy"),
+        "effect_id": decision.get("effect_id", ""),
+        "session_key": session_key or get_current_session_key(),
+    }
+    try:
+        # New callbacks accept one immutable request object. Legacy CLI
+        # callbacks retain their command/description contract.
+        import inspect
+        positional = [p for p in inspect.signature(callback).parameters.values()
+                      if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+        if len(positional) <= 1:
+            result = callback(request)
+        else:
+            result = callback(
+                request.get("effect_id", "typed-effect"),
+                request["message"],
+                allow_permanent=False,
+            )
+    except Exception:
+        return {"approved": False, "status": "denied", "reason": "approval_callback_error"}
+    if isinstance(result, dict):
+        result = result.get("choice", result.get("status", ""))
+    choice = str(result or "").strip().lower()
+    if choice in {"allow", "approve", "approved", "once", "session"}:
+        return {"approved": True, "status": "allowed", "reason": "user_approved", "effect_id": request["effect_id"]}
+    return {"approved": False, "status": "denied", "reason": "timeout" if choice in {"timeout", "timed_out"} else "user_denied", "effect_id": request["effect_id"]}
+
 # Per-thread/per-task gateway session identity.
 # Gateway runs agent turns concurrently in executor threads, so reading a
 # process-global env var for session identity is racy. Keep env fallback for

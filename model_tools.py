@@ -773,7 +773,12 @@ def handle_function_call(
         if not skip_pre_tool_call_hook:
             block_message: Optional[str] = None
             try:
-                from shay_cli.plugins import get_pre_tool_call_block_message
+                from shay_cli.plugins import (
+                    clear_pre_tool_call_decision,
+                    get_last_pre_tool_call_decision,
+                    get_pre_tool_call_block_message,
+                )
+                clear_pre_tool_call_decision()
                 block_message = get_pre_tool_call_block_message(
                     function_name,
                     function_args,
@@ -786,6 +791,28 @@ def handle_function_call(
 
             if block_message is not None:
                 return json.dumps({"error": block_message}, ensure_ascii=False)
+
+            # Typed request_approval decisions share the legacy hook call
+            # above. Resolve once here, before any registry dispatch.
+            try:
+                typed_decision = get_last_pre_tool_call_decision()
+                if typed_decision and typed_decision.get("action") == "request_approval":
+                    from tools.approval import resolve_typed_approval
+                    approval = resolve_typed_approval(
+                        typed_decision,
+                        session_key=session_id or task_id or "",
+                    )
+                    if not approval.get("approved"):
+                        return json.dumps({
+                            "error": approval.get("message") or "Blocked: approval was not granted.",
+                            "reason": approval.get("reason", "denied"),
+                        }, ensure_ascii=False)
+            except Exception as _approval_err:
+                logger.debug("typed approval resolution failed: %s", _approval_err)
+                return json.dumps({
+                    "error": "Blocked: typed approval resolution failed.",
+                    "reason": "approval_error",
+                }, ensure_ascii=False)
 
         # Notify the read-loop tracker when a non-read/search tool runs,
         # so the *consecutive* counter resets (reads after other work are fine).
