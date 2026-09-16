@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -75,6 +76,51 @@ def test_create_task_unknown_parent_errors(kanban_home):
         kb.create_task(conn, title="orphan", parents=["t_ghost"])
 
 
+def test_create_task_same_key_is_atomic_across_connections(kanban_home):
+    """Concurrent creators must converge on one active row and event."""
+    barrier = threading.Barrier(5)
+
+    def create(_index):
+        with kb.connect() as conn:
+            barrier.wait()
+            return kb.create_task(
+                conn,
+                title="same-key",
+                idempotency_key="r1-same-key",
+            )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as workers:
+        task_ids = list(workers.map(create, range(5)))
+
+    assert len(set(task_ids)) == 1
+    with kb.connect() as conn:
+        rows = conn.execute(
+            "SELECT id, status FROM tasks WHERE idempotency_key = ?",
+            ("r1-same-key",),
+        ).fetchall()
+        events = conn.execute(
+            "SELECT kind FROM task_events WHERE task_id = ? AND kind = 'created'",
+            (task_ids[0],),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["status"] != "archived"
+    assert len(events) == 1
+
+
+def test_create_task_distinct_keys_remain_distinct(kanban_home):
+    with kb.connect() as conn:
+        first = kb.create_task(conn, title="first", idempotency_key="r1-key-a")
+        second = kb.create_task(conn, title="second", idempotency_key="r1-key-b")
+    assert first != second
+    with kb.connect() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) AS count FROM tasks "
+            "WHERE idempotency_key IN (?, ?)",
+            ("r1-key-a", "r1-key-b"),
+        ).fetchone()["count"]
+    assert count == 2
+
+
 def test_workspace_kind_validation(kanban_home):
     with kb.connect() as conn, pytest.raises(ValueError, match="workspace_kind"):
         kb.create_task(conn, title="bad ws", workspace_kind="cloud")
@@ -143,6 +189,36 @@ def test_recompute_ready_fan_in_waits_for_all_parents(kanban_home):
         assert kb.get_task(conn, c).status == "todo"
         kb.complete_task(conn, b)
         assert kb.get_task(conn, c).status == "ready"
+
+
+def test_archived_parent_blocks_child_created_after_archival(kanban_home):
+    with kb.connect() as conn:
+        parent = kb.create_task(conn, title="archived-parent")
+        kb.archive_task(conn, parent)
+        child = kb.create_task(conn, title="waiting-child", parents=[parent])
+        assert kb.get_task(conn, child).status == "todo"
+        assert kb.recompute_ready(conn) == 0
+        assert kb.get_task(conn, child).status == "todo"
+
+
+def test_archiving_existing_parent_does_not_promote_child(kanban_home):
+    with kb.connect() as conn:
+        parent = kb.create_task(conn, title="parent")
+        child = kb.create_task(conn, title="child", parents=[parent])
+        kb.archive_task(conn, parent)
+        assert kb.recompute_ready(conn) == 0
+        assert kb.get_task(conn, child).status == "todo"
+
+
+def test_claim_demotes_forced_ready_child_with_archived_parent(kanban_home):
+    with kb.connect() as conn:
+        parent = kb.create_task(conn, title="parent")
+        child = kb.create_task(conn, title="child", parents=[parent])
+        kb.archive_task(conn, parent)
+        conn.execute("UPDATE tasks SET status = 'ready' WHERE id = ?", (child,))
+        conn.commit()
+        assert kb.claim_task(conn, child, claimer="host:archived") is None
+        assert kb.get_task(conn, child).status == "todo"
 
 
 # ---------------------------------------------------------------------------

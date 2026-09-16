@@ -454,6 +454,9 @@ def _(home, kb):
     """Dispatching a task whose workspace can't be resolved should go
     through the spawn-failure circuit breaker, not crash."""
     kb.init_db()
+    # Make the synthetic assignee spawnable so this scenario exercises the
+    # workspace-failure circuit breaker instead of the control-plane skip.
+    (Path(home) / "profiles" / "w").mkdir(parents=True, exist_ok=True)
     conn = kb.connect()
     try:
         tid = kb.create_task(
@@ -472,9 +475,9 @@ def _(home, kb):
         print(f"  after 1 tick with nonexistent workspace: status={task.status}")
         if task.status == "ready":
             # Expected path: workspace failure led to release
-            spawn_failures = task.spawn_failures
-            print(f"  spawn_failures counter: {spawn_failures}")
-            assert spawn_failures >= 1, "spawn_failures counter didn't increment"
+            consecutive_failures = task.consecutive_failures
+            print(f"  consecutive_failures counter: {consecutive_failures}")
+            assert consecutive_failures >= 1, "consecutive_failures counter didn't increment"
         elif task.status == "running":
             # Workspace not checked before spawn — the worker would hit
             # the bad path itself. Defensible for `dir:` workspaces that

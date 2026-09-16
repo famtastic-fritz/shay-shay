@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/shay-agent-*']
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -11,6 +11,7 @@ on:
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,7 +24,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
@@ -34,19 +35,41 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
 
-      - name: Set up Python 3.11
-        run: uv python install 3.11
-
-      - name: Install dependencies
+      - name: Build attested Python environment
         run: |
-          uv venv .venv --python 3.11
-          source .venv/bin/activate
-          uv pip install -e ".[all,dev]"
+          set -euo pipefail
+          uv python install 3.11
+          uv venv "$RUNNER_TEMP/shay-python" --python 3.11
+          uv export --locked --all-extras --dev --format requirements.txt --no-emit-project --no-annotate > "$RUNNER_TEMP/shay-constraints.txt"
+          uv pip install --python "$RUNNER_TEMP/shay-python/bin/python" -e ".[all,dev]" --constraint "$RUNNER_TEMP/shay-constraints.txt"
+          "$RUNNER_TEMP/shay-python/bin/python" -m pip check
+          python3 - "$RUNNER_TEMP/shay-python/bin/python" "$RUNNER_TEMP/shay-provenance.json" <<'PY'
+          import hashlib, json, os, pathlib, subprocess, sys
+          python_exe, output = sys.argv[1:]
+          root = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          reviewed = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+          digest = lambda p: hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
+          payload = {
+              "dependency_lock_hashes": {"uv.lock": digest(root / "uv.lock")},
+              "environment_kind": "ephemeral_ci",
+              "install_command": "uv export --locked --all-extras --dev --format requirements.txt --no-emit-project --no-annotate && uv pip install --python \"$RUNNER_TEMP/shay-python/bin/python\" -e \".[all,dev]\" --constraint \"$RUNNER_TEMP/shay-constraints.txt\"",
+              "pip_check_exit_code": 0,
+              "pyproject_sha256": digest(root / "pyproject.toml"),
+              "python_executable": python_exe,
+              "python_version": subprocess.check_output([python_exe, "-c", "import platform; print(platform.python_version())"], text=True).strip(),
+              "repository": str(root),
+              "reviewed_sha": reviewed,
+              "schema_version": 1,
+          }
+          pathlib.Path(output).write_bytes((json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode())
+          os.chmod(output, 0o400)
+          PY
 
       - name: Run tests
         run: |
-          source .venv/bin/activate
-          python -m pytest tests/ -q --ignore=tests/integration --ignore=tests/e2e --tb=short -n auto
+          TEST_ROOT="$RUNNER_TEMP/shay-test"
+          mkdir -p "$TEST_ROOT/home" "$TEST_ROOT/shay-home" "$TEST_ROOT/prompt-memory-vault" "$TEST_ROOT/tmp" "$TEST_ROOT/xdg-cache" "$TEST_ROOT/pip-cache" "$TEST_ROOT/uv-cache" "$TEST_ROOT/coverage"
+          HOME="$TEST_ROOT/home" SHAY_HOME="$TEST_ROOT/shay-home" SHAY_PROMPT_MEMORY_VAULT="$TEST_ROOT/prompt-memory-vault" TMPDIR="$TEST_ROOT/tmp" XDG_CACHE_HOME="$TEST_ROOT/xdg-cache" PIP_CACHE_DIR="$TEST_ROOT/pip-cache" UV_CACHE_DIR="$TEST_ROOT/uv-cache" COVERAGE_FILE="$TEST_ROOT/coverage/.coverage" SHAY_TEST_PYTHON="$RUNNER_TEMP/shay-python/bin/python" SHAY_TEST_ENV_PROVENANCE="$RUNNER_TEMP/shay-provenance.json" PYTHONDONTWRITEBYTECODE=1 scripts/run_tests.sh
         env:
           # Ensure tests don't accidentally call real APIs
           OPENROUTER_API_KEY: ""
@@ -55,7 +78,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 40
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
@@ -63,19 +86,41 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
 
-      - name: Set up Python 3.11
-        run: uv python install 3.11
-
-      - name: Install dependencies
+      - name: Build attested Python environment
         run: |
-          uv venv .venv --python 3.11
-          source .venv/bin/activate
-          uv pip install -e ".[all,dev]"
+          set -euo pipefail
+          uv python install 3.11
+          uv venv "$RUNNER_TEMP/shay-python" --python 3.11
+          uv export --locked --all-extras --dev --format requirements.txt --no-emit-project --no-annotate > "$RUNNER_TEMP/shay-constraints.txt"
+          uv pip install --python "$RUNNER_TEMP/shay-python/bin/python" -e ".[all,dev]" --constraint "$RUNNER_TEMP/shay-constraints.txt"
+          "$RUNNER_TEMP/shay-python/bin/python" -m pip check
+          python3 - "$RUNNER_TEMP/shay-python/bin/python" "$RUNNER_TEMP/shay-provenance.json" <<'PY'
+          import hashlib, json, os, pathlib, subprocess, sys
+          python_exe, output = sys.argv[1:]
+          root = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          reviewed = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+          digest = lambda p: hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
+          payload = {
+              "dependency_lock_hashes": {"uv.lock": digest(root / "uv.lock")},
+              "environment_kind": "ephemeral_ci",
+              "install_command": "uv export --locked --all-extras --dev --format requirements.txt --no-emit-project --no-annotate && uv pip install --python \"$RUNNER_TEMP/shay-python/bin/python\" -e \".[all,dev]\" --constraint \"$RUNNER_TEMP/shay-constraints.txt\"",
+              "pip_check_exit_code": 0,
+              "pyproject_sha256": digest(root / "pyproject.toml"),
+              "python_executable": python_exe,
+              "python_version": subprocess.check_output([python_exe, "-c", "import platform; print(platform.python_version())"], text=True).strip(),
+              "repository": str(root),
+              "reviewed_sha": reviewed,
+              "schema_version": 1,
+          }
+          pathlib.Path(output).write_bytes((json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode())
+          os.chmod(output, 0o400)
+          PY
 
       - name: Run e2e tests
         run: |
-          source .venv/bin/activate
-          python -m pytest tests/e2e/ -v --tb=short
+          TEST_ROOT="$RUNNER_TEMP/shay-test"
+          mkdir -p "$TEST_ROOT/home" "$TEST_ROOT/shay-home" "$TEST_ROOT/prompt-memory-vault" "$TEST_ROOT/tmp" "$TEST_ROOT/xdg-cache" "$TEST_ROOT/pip-cache" "$TEST_ROOT/uv-cache" "$TEST_ROOT/coverage"
+          HOME="$TEST_ROOT/home" SHAY_HOME="$TEST_ROOT/shay-home" SHAY_PROMPT_MEMORY_VAULT="$TEST_ROOT/prompt-memory-vault" TMPDIR="$TEST_ROOT/tmp" XDG_CACHE_HOME="$TEST_ROOT/xdg-cache" PIP_CACHE_DIR="$TEST_ROOT/pip-cache" UV_CACHE_DIR="$TEST_ROOT/uv-cache" COVERAGE_FILE="$TEST_ROOT/coverage/.coverage" SHAY_TEST_PYTHON="$RUNNER_TEMP/shay-python/bin/python" SHAY_TEST_ENV_PROVENANCE="$RUNNER_TEMP/shay-provenance.json" PYTHONDONTWRITEBYTECODE=1 scripts/run_tests.sh --e2e
         env:
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""

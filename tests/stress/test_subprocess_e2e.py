@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 WT = str(Path(__file__).resolve().parents[2])
 FAKE_WORKER = str(Path(__file__).parent / "_fake_worker.py")
@@ -69,6 +70,12 @@ exec {PY} -m shay_cli.main "$@"
 """)
     os.chmod(shim_path, 0o755)
     os.environ["PATH"] = f"{shim_dir}:{os.environ.get('PATH','')}"
+
+    # dispatch_once only auto-spawns named Shay profiles.  The fake worker
+    # deliberately uses the disposable default home, so a minimal profile
+    # directory is enough to exercise the real subprocess lifecycle without
+    # reading the owner's profile.
+    os.makedirs(os.path.join(home, "profiles", "worker"), exist_ok=True)
 
     kb.init_db()
     conn = kb.connect()

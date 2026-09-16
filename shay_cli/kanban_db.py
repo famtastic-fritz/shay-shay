@@ -1324,21 +1324,6 @@ def create_task(
             )
         skills_list = cleaned
 
-    # Idempotency check — return the existing task instead of creating a
-    # duplicate. Done BEFORE entering write_txn to keep the fast path fast
-    # and to avoid holding a write lock during the lookup. Race is
-    # acceptable: two concurrent creators with the same key might both
-    # insert, at which point both rows exist but the next lookup stabilises.
-    if idempotency_key:
-        row = conn.execute(
-            "SELECT id FROM tasks WHERE idempotency_key = ? "
-            "AND status != 'archived' "
-            "ORDER BY created_at DESC LIMIT 1",
-            (idempotency_key,),
-        ).fetchone()
-        if row:
-            return row["id"]
-
     now = int(time.time())
 
     # Retry once on the extremely unlikely id collision.
@@ -1346,6 +1331,21 @@ def create_task(
         task_id = _new_task_id()
         try:
             with write_txn(conn):
+                # The lookup must share the IMMEDIATE transaction with the
+                # insert. BEGIN IMMEDIATE serializes concurrent creators, so
+                # only the first active task for a key emits ``created``;
+                # archived rows remain reusable. Returning from this context
+                # still commits normally through the context manager.
+                if idempotency_key:
+                    row = conn.execute(
+                        "SELECT id FROM tasks WHERE idempotency_key = ? "
+                        "AND status != 'archived' "
+                        "ORDER BY created_at DESC LIMIT 1",
+                        (idempotency_key,),
+                    ).fetchone()
+                    if row:
+                        return row["id"]
+
                 # Determine initial status from parent status, unless the
                 # caller is parking this task in triage for a specifier.
                 if triage:
@@ -1826,7 +1826,7 @@ def _synthesize_ended_run(
 # ---------------------------------------------------------------------------
 
 def recompute_ready(conn: sqlite3.Connection) -> int:
-    """Promote ``todo`` tasks to ``ready`` when all parents are ``done`` or ``archived``.
+    """Promote ``todo`` tasks to ``ready`` when every parent is ``done``.
 
     Returns the number of tasks promoted.  Safe to call inside or outside
     an existing transaction; it opens its own IMMEDIATE txn.
@@ -1844,7 +1844,7 @@ def recompute_ready(conn: sqlite3.Connection) -> int:
                 "WHERE l.child_id = ?",
                 (task_id,),
             ).fetchall()
-            if all(p["status"] in {"done", "archived"} for p in parents):
+            if all(p["status"] == "done" for p in parents):
                 conn.execute(
                     "UPDATE tasks SET status = 'ready' WHERE id = ? AND status = 'todo'",
                     (task_id,),
@@ -1885,7 +1885,7 @@ def claim_task(
         undone = conn.execute(
             "SELECT 1 FROM task_links l "
             "JOIN tasks p ON p.id = l.parent_id "
-            "WHERE l.child_id = ? AND p.status NOT IN ('done', 'archived') LIMIT 1",
+            "WHERE l.child_id = ? AND p.status != 'done' LIMIT 1",
             (task_id,),
         ).fetchone()
         if undone:
