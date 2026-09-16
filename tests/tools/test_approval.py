@@ -27,6 +27,16 @@ class TestApprovalModeParsing:
         with mock_patch("shay_cli.config.load_config", return_value={"approvals": {"mode": "off"}}):
             assert _get_approval_mode() == "off"
 
+    def test_typed_approval_timeout_or_missing_callback_denies(self):
+        from tools.approval import resolve_typed_approval
+
+        result = resolve_typed_approval({
+            "action": "request_approval",
+            "effect_class": "local_reversible_write",
+        }, approval_callback=lambda _request: "timeout")
+        assert result["approved"] is False
+        assert result["reason"] == "timeout"
+
 
 class TestSmartApproval:
     def test_smart_approval_uses_call_llm(self):

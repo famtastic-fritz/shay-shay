@@ -3,6 +3,7 @@ from pathlib import Path
 
 from agent.memory_manager import MemoryManager
 from agent.memory_provider import MemoryProvider
+from shay_constants import get_shay_home
 
 
 class DummyMemoryProvider(MemoryProvider):
@@ -31,7 +32,7 @@ def test_prefetch_writes_trace(monkeypatch, tmp_path):
     context = manager.prefetch_all("that billing thing", session_id="s1")
 
     assert "loaded context" in context
-    trace_path = tmp_path / ".shay/runtime/prefetch/prefetch-proof.jsonl"
+    trace_path = get_shay_home() / "runtime/prefetch/prefetch-proof.jsonl"
     rows = [json.loads(line) for line in trace_path.read_text().splitlines()]
     assert rows[-1]["hit"] is True
     assert rows[-1]["providers"][0]["provider"] == "dummy"

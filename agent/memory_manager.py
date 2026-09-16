@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional
 
 from agent.memory_provider import MemoryProvider
 from tools.registry import tool_error
+from shay_constants import get_shay_home
 
 logger = logging.getLogger(__name__)
 
@@ -325,7 +326,11 @@ class MemoryManager:
 
     def _append_prefetch_trace(self, trace: Dict[str, Any]) -> None:
         try:
-            path = Path.home() / ".shay/runtime/prefetch/prefetch-proof.jsonl"
+            # Provider traces are profile-scoped just like built-in memory.
+            # External providers remain optional mirrors; this path change
+            # prevents a non-default SHAY_HOME from leaking recall evidence
+            # into the owner profile.
+            path = get_shay_home() / "runtime/prefetch/prefetch-proof.jsonl"
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(trace, ensure_ascii=False) + "\n")

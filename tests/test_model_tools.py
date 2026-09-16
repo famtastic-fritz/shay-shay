@@ -20,6 +20,22 @@ from model_tools import (
 # =========================================================================
 
 class TestHandleFunctionCall:
+    def test_typed_request_denies_before_registry_dispatch(self, monkeypatch):
+        from shay_cli.plugins import PluginManager
+
+        manager = PluginManager()
+        manager._hooks["pre_tool_call"] = [
+            lambda **_kwargs: {
+                "action": "request_approval",
+                "effect_class": "local_reversible_write",
+            }
+        ]
+        monkeypatch.setattr("shay_cli.plugins._plugin_manager", manager)
+        with patch("model_tools.registry.dispatch") as dispatch:
+            result = json.loads(handle_function_call("write_file", {"path": "x"}, task_id="t"))
+        assert result["reason"] == "approval_unavailable"
+        dispatch.assert_not_called()
+
     def test_agent_loop_tool_returns_error(self):
         for tool_name in _AGENT_LOOP_TOOLS:
             result = json.loads(handle_function_call(tool_name, {}))

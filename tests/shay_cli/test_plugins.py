@@ -537,6 +537,16 @@ class TestPreToolCallBlocking:
         )
         assert get_pre_tool_call_block_message("terminal", {}) == "first blocker"
 
+    def test_typed_invalid_hook_response_fails_closed(self, monkeypatch):
+        from shay_cli.plugins import PluginManager, resolve_pre_tool_call_decision
+
+        manager = PluginManager()
+        manager._hooks["pre_tool_call"] = [lambda **_kwargs: {"action": "unknown"}]
+        monkeypatch.setattr("shay_cli.plugins._plugin_manager", manager)
+        decision = resolve_pre_tool_call_decision("write_file", {})
+        assert decision["action"] == "block"
+        assert decision["reason"] == "hook_invalid"
+
 
 # ── TestPluginContext ──────────────────────────────────────────────────────
 

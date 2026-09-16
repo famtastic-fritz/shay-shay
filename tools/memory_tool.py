@@ -35,6 +35,7 @@ from shay_constants import get_shay_home
 from typing import Dict, Any, List, Optional
 
 from utils import atomic_replace
+from tools.memory_provenance import MemoryProvenance
 
 # fcntl is Unix-only; on Windows use msvcrt for file locking
 msvcrt = None
@@ -129,11 +130,14 @@ class MemoryStore:
         self.user_char_limit = user_char_limit
         # Frozen snapshot for system prompt -- set once at load_from_disk()
         self._system_prompt_snapshot: Dict[str, str] = {"memory": "", "user": ""}
+        self._provenance: Optional[MemoryProvenance] = None
+        self.last_provenance: Optional[Dict[str, Any]] = None
 
     def load_from_disk(self):
         """Load entries from MEMORY.md and USER.md, capture system prompt snapshot."""
         mem_dir = get_memory_dir()
         mem_dir.mkdir(parents=True, exist_ok=True)
+        self._provenance = MemoryProvenance(mem_dir)
 
         self.memory_entries = self._read_file(mem_dir / "MEMORY.md")
         self.user_entries = self._read_file(mem_dir / "USER.md")
@@ -295,10 +299,13 @@ class MemoryStore:
             return True
         return False
 
-    def _save_spillover(self, target: str, content: str, *, reason: str) -> Dict[str, Any]:
+    def _save_spillover(self, target: str, content: str, *, reason: str,
+                        provenance: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         path = self._append_to_spillover(target, content, reason=reason)
         pointer_added = self._ensure_pointer_entry(target)
         self.save_to_disk(target)
+        if provenance is not None:
+            self._record_provenance(action="add", target=target, content=content, **provenance)
         message = "Saved to off-prompt spillover ledger."
         if pointer_added:
             message += " Added compact pointer entry to prompt memory."
@@ -308,7 +315,35 @@ class MemoryStore:
             "spillover_path": str(path),
         }
 
-    def add(self, target: str, content: str) -> Dict[str, Any]:
+    def _record_provenance(self, *, action: str, target: str, content: str,
+                           tier: str = "curated", supersedes: Optional[List[str]] = None,
+                           write_origin: str = "memory_tool", source: str = "memory_tool",
+                           session_id: str = "", parent_session_id: str = "",
+                           tool_call_id: str = "", task_id: str = "",
+                           confidence: float = 1.0, record_id: Optional[str] = None) -> Dict[str, Any]:
+        if self._provenance is None:
+            self._provenance = MemoryProvenance(get_memory_dir())
+        row = self._provenance.append_record(
+            record_id=record_id or f"memory-{__import__('uuid').uuid4().hex}",
+            target=target,
+            content=content,
+            tier="tombstone" if action == "remove" else tier,
+            write_origin=write_origin,
+            source=source,
+            session_id=session_id,
+            parent_session_id=parent_session_id,
+            tool_call_id=tool_call_id,
+            task_id=task_id,
+            confidence=confidence,
+            supersedes_or_tombstones=supersedes,
+        )
+        self.last_provenance = row
+        return row
+
+    def add(self, target: str, content: str, *, write_origin: str = "memory_tool",
+            source: str = "memory_tool", session_id: str = "", parent_session_id: str = "",
+            tool_call_id: str = "", task_id: str = "", confidence: float = 1.0,
+            record_id: Optional[str] = None) -> Dict[str, Any]:
         """Append a new entry. Spill larger detail into an off-prompt ledger when needed."""
         content = content.strip()
         if not content:
@@ -339,15 +374,27 @@ class MemoryStore:
                     target,
                     content,
                     reason="auto-routed from prompt memory",
+                    provenance={"write_origin": write_origin, "source": source,
+                                "session_id": session_id, "parent_session_id": parent_session_id,
+                                "tool_call_id": tool_call_id, "task_id": task_id,
+                                "confidence": confidence},
                 )
 
             entries.append(content)
             self._set_entries(target, entries)
             self.save_to_disk(target)
+            self._record_provenance(action="add", target=target, content=content,
+                                    write_origin=write_origin, source=source,
+                                    session_id=session_id, parent_session_id=parent_session_id,
+                                    tool_call_id=tool_call_id, task_id=task_id,
+                                    confidence=confidence, record_id=record_id)
 
         return self._success_response(target, "Entry added.")
 
-    def replace(self, target: str, old_text: str, new_content: str) -> Dict[str, Any]:
+    def replace(self, target: str, old_text: str, new_content: str, *,
+                write_origin: str = "memory_tool", source: str = "memory_tool",
+                session_id: str = "", parent_session_id: str = "", tool_call_id: str = "",
+                task_id: str = "", confidence: float = 1.0) -> Dict[str, Any]:
         """Find entry containing old_text substring, replace it with new_content."""
         old_text = old_text.strip()
         new_content = new_content.strip()
@@ -396,6 +443,10 @@ class MemoryStore:
                     target,
                     new_content,
                     reason=f"replacement for prompt-memory entry matching '{old_text}'",
+                    provenance={"write_origin": write_origin, "source": source,
+                                "session_id": session_id, "parent_session_id": parent_session_id,
+                                "tool_call_id": tool_call_id, "task_id": task_id,
+                                "confidence": confidence},
                 )
                 spill_result["message"] = (
                     f"Replaced prompt-memory entry with spillover ledger entry. "
@@ -406,10 +457,18 @@ class MemoryStore:
             entries[idx] = new_content
             self._set_entries(target, entries)
             self.save_to_disk(target)
+            prior = self._provenance_for_content(target, old_text)
+            self._record_provenance(action="replace", target=target, content=new_content,
+                                    supersedes=[prior] if prior else [], write_origin=write_origin,
+                                    source=source, session_id=session_id,
+                                    parent_session_id=parent_session_id, tool_call_id=tool_call_id,
+                                    task_id=task_id, confidence=confidence)
 
         return self._success_response(target, "Entry replaced.")
 
-    def remove(self, target: str, old_text: str) -> Dict[str, Any]:
+    def remove(self, target: str, old_text: str, *, write_origin: str = "memory_tool",
+               source: str = "memory_tool", session_id: str = "", parent_session_id: str = "",
+               tool_call_id: str = "", task_id: str = "", confidence: float = 1.0) -> Dict[str, Any]:
         """Remove the entry containing old_text substring."""
         old_text = old_text.strip()
         if not old_text:
@@ -437,11 +496,99 @@ class MemoryStore:
                 # All identical -- safe to remove just the first
 
             idx = matches[0][0]
+            removed = entries[idx]
             entries.pop(idx)
             self._set_entries(target, entries)
             self.save_to_disk(target)
+            prior = self._provenance_for_content(target, old_text)
+            self._record_provenance(action="remove", target=target, content=removed,
+                                    supersedes=[prior] if prior else [], write_origin=write_origin,
+                                    source=source, session_id=session_id,
+                                    parent_session_id=parent_session_id, tool_call_id=tool_call_id,
+                                    task_id=task_id, confidence=confidence)
 
         return self._success_response(target, "Entry removed.")
+
+    def _provenance_for_content(self, target: str, query: str) -> Optional[str]:
+        """Find the active record that supplied a raw entry, if available."""
+        if self._provenance is None:
+            return None
+        matches = [r for r in self._provenance.curated_records(target=target)
+                   if query in str(r.get("content", ""))]
+        return matches[-1].get("record_id") if matches else None
+
+    def add_candidate(self, target: str, content: str, **metadata: Any) -> Dict[str, Any]:
+        """Persist an inert candidate; it is not injected into the prompt."""
+        content = (content or "").strip()
+        if not content or target not in {"memory", "user"}:
+            return {"success": False, "error": "ordinary candidate content and target are required"}
+        scan_error = _scan_memory_content(content)
+        if scan_error:
+            return {"success": False, "error": scan_error}
+        row = self._record_provenance(action="candidate", target=target, content=content,
+                                      tier="candidate", write_origin=metadata.get("write_origin", "candidate"),
+                                      source=metadata.get("source", "memory_candidate"),
+                                      session_id=metadata.get("session_id", ""),
+                                      parent_session_id=metadata.get("parent_session_id", ""),
+                                      tool_call_id=metadata.get("tool_call_id", ""),
+                                      task_id=metadata.get("task_id", ""),
+                                      confidence=metadata.get("confidence", 1.0))
+        return {"success": True, "tier": "candidate", "record_id": row["record_id"],
+                "memory_provenance": row}
+
+    def record_owner_decision(self, record_id: str, decision_id: str, *,
+                              decision: str = "approve", reviewer: str = "owner") -> Dict[str, Any]:
+        if self._provenance is None:
+            self._provenance = MemoryProvenance(get_memory_dir())
+        try:
+            row = self._provenance.append_decision(record_id=record_id, decision_id=decision_id,
+                                                   decision=decision, reviewer=reviewer)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+        return {"success": True, "decision": row}
+
+    def promote_candidate(self, record_id: str, decision_id: str) -> Dict[str, Any]:
+        """Promote exactly one ordinary candidate using one same-profile decision."""
+        if self._provenance is None:
+            self._provenance = MemoryProvenance(get_memory_dir())
+        try:
+            row = self._provenance.promote(record_id, decision_id)
+            target = row["target"]
+            self._reload_target(target)
+            if row["content"] not in self._entries_for(target):
+                entries = self._entries_for(target)
+                entries.append(row["content"])
+                self._set_entries(target, entries)
+                self.save_to_disk(target)
+            self.last_provenance = row
+            return {"success": True, "tier": "curated", "record_id": row["record_id"],
+                    "memory_provenance": row}
+        except (ValueError, OSError, RuntimeError) as exc:
+            return {"success": False, "error": str(exc)}
+
+    def recall(self, query: str, *, target: Optional[str] = None, limit: int = 5) -> Dict[str, Any]:
+        """Offline lexical recall of curated entries with cited provenance."""
+        if self._provenance is None:
+            self._provenance = MemoryProvenance(get_memory_dir())
+        terms = {t.lower() for t in re.findall(r"[\w'-]+", query or "")}
+        ranked = []
+        for row in self._provenance.curated_records(target=target):
+            words = {t.lower() for t in re.findall(r"[\w'-]+", row.get("content", ""))}
+            score = len(terms & words)
+            if score:
+                ranked.append((score, row))
+        ranked.sort(key=lambda item: (-item[0], item[1].get("record_id", "")))
+        rows = [r for _, r in ranked[:max(0, int(limit))]]
+        return {"success": True, "records": rows,
+                "record_ids": [r["record_id"] for r in rows],
+                "provenance": [self._provenance_fields(r) for r in rows]}
+
+    @staticmethod
+    def _provenance_fields(row: Dict[str, Any]) -> Dict[str, Any]:
+        return {key: row.get(key) for key in
+                ("schema_version", "content_hash", "write_origin", "source", "session_id",
+                 "parent_session_id", "tool_call_id", "task_id", "created_at", "confidence",
+                 "supersedes_or_tombstones")}
 
     def format_for_system_prompt(self, target: str) -> Optional[str]:
         """
@@ -552,6 +699,15 @@ def memory_tool(
     target: str = "memory",
     content: str = None,
     old_text: str = None,
+    decision_id: str = None,
+    record_id: str = None,
+    write_origin: str = "memory_tool",
+    source: str = "memory_tool",
+    session_id: str = "",
+    parent_session_id: str = "",
+    tool_call_id: str = "",
+    task_id: str = "",
+    confidence: float = 1.0,
     store: Optional[MemoryStore] = None,
 ) -> str:
     """
@@ -568,23 +724,46 @@ def memory_tool(
     if action == "add":
         if not content:
             return tool_error("Content is required for 'add' action.", success=False)
-        result = store.add(target, content)
+        result = store.add(target, content, write_origin=write_origin, source=source,
+                           session_id=session_id, parent_session_id=parent_session_id,
+                           tool_call_id=tool_call_id, task_id=task_id, confidence=confidence)
+
+    elif action == "candidate":
+        if not content:
+            return tool_error("Content is required for 'candidate' action.", success=False)
+        result = store.add_candidate(
+            target, content, write_origin=write_origin, source=source,
+            session_id=session_id, parent_session_id=parent_session_id,
+            tool_call_id=tool_call_id, task_id=task_id, confidence=confidence,
+        )
+
+    elif action == "promote":
+        if not record_id or not decision_id:
+            return tool_error("record_id and decision_id are required for 'promote' action.", success=False)
+        result = store.promote_candidate(record_id, decision_id)
 
     elif action == "replace":
         if not old_text:
             return tool_error("old_text is required for 'replace' action.", success=False)
         if not content:
             return tool_error("content is required for 'replace' action.", success=False)
-        result = store.replace(target, old_text, content)
+        result = store.replace(target, old_text, content, write_origin=write_origin,
+                               source=source, session_id=session_id,
+                               parent_session_id=parent_session_id, tool_call_id=tool_call_id,
+                               task_id=task_id, confidence=confidence)
 
     elif action == "remove":
         if not old_text:
             return tool_error("old_text is required for 'remove' action.", success=False)
-        result = store.remove(target, old_text)
+        result = store.remove(target, old_text, write_origin=write_origin, source=source,
+                              session_id=session_id, parent_session_id=parent_session_id,
+                              tool_call_id=tool_call_id, task_id=task_id, confidence=confidence)
 
     else:
         return tool_error(f"Unknown action '{action}'. Use: add, replace, remove", success=False)
 
+    if getattr(store, "last_provenance", None) and action in {"add", "replace", "remove"}:
+        result.setdefault("memory_provenance", store.last_provenance)
     return json.dumps(result, ensure_ascii=False)
 
 
@@ -619,7 +798,8 @@ MEMORY_SCHEMA = {
         "- 'user': who the user is -- name, role, preferences, communication style, pet peeves\n"
         "- 'memory': your notes -- environment facts, project conventions, tool quirks, lessons learned\n\n"
         "ACTIONS: add (new entry), replace (update existing -- old_text identifies it), "
-        "remove (delete -- old_text identifies it).\n\n"
+        "remove (delete -- old_text identifies it), candidate (inert durable candidate), "
+        "or promote (requires an exact owner decision).\n\n"
         "SKIP: trivial/obvious info, things easily re-discovered, raw data dumps, and temporary task state."
     ),
     "parameters": {
@@ -627,7 +807,7 @@ MEMORY_SCHEMA = {
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["add", "replace", "remove"],
+                "enum": ["add", "replace", "remove", "candidate", "promote"],
                 "description": "The action to perform."
             },
             "target": {
@@ -642,6 +822,14 @@ MEMORY_SCHEMA = {
             "old_text": {
                 "type": "string",
                 "description": "Short unique substring identifying the entry to replace or remove."
+            },
+            "record_id": {
+                "type": "string",
+                "description": "Candidate record ID for the owner-gated promote action."
+            },
+            "decision_id": {
+                "type": "string",
+                "description": "Single-use owner decision ID for the promote action."
             },
         },
         "required": ["action", "target"],
@@ -665,7 +853,3 @@ registry.register(
     check_fn=check_memory_requirements,
     emoji="🧠",
 )
-
-
-
-

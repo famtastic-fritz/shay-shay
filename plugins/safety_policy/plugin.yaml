@@ -1,0 +1,4 @@
+name: safety_policy
+version: 1.0.0
+description: Deterministic typed effect policy for Shay tool calls
+kind: standalone
