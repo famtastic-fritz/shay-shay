@@ -156,7 +156,14 @@ class KanbanRunAdapter:
                     "UPDATE task_runs SET worker_pid = ? WHERE id = ? AND ended_at IS NULL",
                     (os.getpid(), int(run.id)),
                 )
-        return self.snapshot(run_id)
+        # Another gateway process may have won the UNIQUE(request_key) race
+        # between the task lookup and binding insert.  Resolve the actual row
+        # after the transaction instead of attempting to read our losing
+        # external run id (which would otherwise raise KeyError).
+        actual = self._binding_for_request(request_key) or self._binding(run_id)
+        if actual is None:
+            raise RuntimeError("durable run binding was not created")
+        return self.snapshot(actual["run_id"])
 
     def snapshot(self, run_id: str) -> DurableRun:
         binding = self._binding(run_id)
