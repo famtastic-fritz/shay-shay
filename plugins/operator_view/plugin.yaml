@@ -1,0 +1,5 @@
+name: operator_view
+version: 1.0.0
+description: "Read-only operator visibility over Shay's shared task contract."
+author: "Shay-Shay"
+kind: standalone

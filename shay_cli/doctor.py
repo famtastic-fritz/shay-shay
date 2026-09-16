@@ -152,6 +152,92 @@ def _apply_doctor_tool_availability_overrides(available: list[str], unavailable:
     return updated_available, updated_unavailable
 
 
+def _check_operator_view_readiness(issues: list[str]) -> None:
+    """Report R7 operator-view readiness without enabling or repairing it.
+
+    Doctor is an inspection surface.  In particular, a bundled plugin being
+    present on disk does not mean it is available: ``operator_view`` is
+    intentionally owner-enabled and remains disabled by default.  This check
+    also keeps the domain protocol, E2E interpreter parity, profile path
+    scope, and durable-ledger readiness visible in the existing doctor report.
+    """
+    print()
+    print(color("◆ Operator View Readiness", Colors.CYAN, Colors.BOLD))
+
+    try:
+        from plugins.operator_view.commands import bundled_plugin_status
+
+        status = bundled_plugin_status()
+        if status["installed"]:
+            check_ok("Operator-view plugin installed")
+        else:
+            check_fail("Operator-view plugin missing")
+            issues.append("Install the bundled operator_view plugin")
+        if status["enabled"]:
+            check_ok("Operator-view plugin enabled")
+        else:
+            check_warn("Operator-view plugin unavailable", "(disabled by default; owner enable required)")
+            check_info("Run: shay plugins enable operator_view")
+    except Exception as exc:
+        check_warn("Could not inspect operator-view plugin", f"({exc})")
+
+    try:
+        from shay_cli.domain_contract import PROTOCOL_VERSION, require_compatible_version
+
+        require_compatible_version(PROTOCOL_VERSION)
+        check_ok(f"Client protocol compatible ({PROTOCOL_VERSION})")
+    except Exception as exc:
+        check_fail("Client protocol compatibility", f"({exc})")
+        issues.append("Upgrade Shay components to the same shay.client major protocol")
+
+    # E2E parity is deliberately a report, not an invitation to install or
+    # mutate an environment.  The phase runner supplies explicit paths; doctor
+    # accepts them only when they already exist and are Python 3.11+.
+    test_python = os.environ.get("SHAY_TEST_PYTHON", "").strip()
+    provenance = os.environ.get("SHAY_TEST_ENV_PROVENANCE", "").strip()
+    if test_python and provenance:
+        py = Path(test_python)
+        marker = Path(provenance)
+        if py.is_file() and os.access(py, os.X_OK) and marker.is_file():
+            check_ok("E2E dependency parity inputs present", "(explicit interpreter + provenance)")
+        else:
+            check_warn("E2E dependency parity unavailable", "(explicit inputs are missing or not executable)")
+            issues.append("Provide a valid SHAY_TEST_PYTHON and SHAY_TEST_ENV_PROVENANCE for E2E proof")
+    else:
+        check_warn("E2E dependency parity not asserted", "(doctor does not install or repair environments)")
+
+    try:
+        home = Path(get_shay_home()).expanduser()
+        resolved_home = home.resolve(strict=False)
+        if home.exists() and not home.is_symlink() and home.is_dir():
+            check_ok("Writable/path scope", f"({display_shay_home()} profile root)")
+        elif home.exists() and home.is_symlink():
+            check_fail("Writable/path scope", "(profile root is a symlink)")
+            issues.append("Use a regular Shay profile directory, not a symlink")
+        else:
+            check_warn("Writable/path scope", "(profile root does not exist yet)")
+        # The path resolver may legally collapse a profile to its shared root;
+        # this containment check only rejects an empty/relative resolution.
+        if not resolved_home.is_absolute():
+            issues.append("Shay profile path did not resolve to an absolute path")
+    except Exception as exc:
+        check_warn("Writable/path scope unavailable", f"({exc})")
+
+    try:
+        from shay_cli.kanban_db import kanban_db_path
+
+        db = kanban_db_path()
+        if db.exists() and db.is_file() and not db.is_symlink():
+            check_ok("Durable-ledger readiness", f"({db.name} present)")
+        elif db.exists() and db.is_symlink():
+            check_fail("Durable-ledger readiness", "(database path is a symlink)")
+            issues.append("Replace the symlinked Kanban database with an owner-reviewed regular file")
+        else:
+            check_warn("Durable-ledger unavailable", "(no board database for the active profile)")
+    except Exception as exc:
+        check_warn("Durable-ledger readiness unavailable", f"({exc})")
+
+
 def check_ok(text: str, detail: str = ""):
     print(f"  {color('✓', Colors.GREEN)} {text}" + (f" {color(detail, Colors.DIM)}" if detail else ""))
 
@@ -1738,6 +1824,11 @@ def run_doctor(args):
         pass
     except Exception:
         pass
+
+    # =========================================================================
+    # R7 operator-view readiness (read-only; plugin remains owner-disabled)
+    # =========================================================================
+    _check_operator_view_readiness(issues)
 
     # =========================================================================
     # Summary

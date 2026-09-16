@@ -839,3 +839,45 @@ class TestGitHubTokenCheck:
 
         assert "gh auth" in str(call_log) or any(c[0] == "gh" for c in call_log), f"gh not called: {call_log}"
         assert "GitHub authenticated via gh CLI" in out or "token configured" in out
+
+
+class TestOperatorViewReadiness:
+    def test_reports_disabled_plugin_without_claiming_availability(self, monkeypatch, tmp_path, capsys):
+        home = tmp_path / ".shay"
+        home.mkdir()
+        monkeypatch.setattr(doctor, "SHAY_HOME", home)
+        monkeypatch.setattr(doctor, "display_shay_home", lambda: "~/.shay")
+        monkeypatch.setattr("shay_cli.plugins._get_enabled_plugins", lambda: set())
+        issues = []
+
+        doctor._check_operator_view_readiness(issues)
+        out = capsys.readouterr().out
+
+        assert "Operator-view plugin installed" in out
+        assert "Operator-view plugin unavailable" in out
+        assert "enable required" in out
+        assert not any("enable" in issue.lower() for issue in issues)
+
+    def test_protocol_and_explicit_e2e_inputs_are_reported(self, monkeypatch, tmp_path, capsys):
+        home = tmp_path / ".shay"
+        home.mkdir()
+        db = home / "kanban.db"
+        db.touch()
+        marker = tmp_path / "provenance.json"
+        marker.write_text("{}\n")
+        interpreter = tmp_path / "python"
+        interpreter.write_text("#!/bin/sh\n")
+        interpreter.chmod(0o755)
+        monkeypatch.setattr(doctor, "SHAY_HOME", home)
+        monkeypatch.setattr(doctor, "display_shay_home", lambda: "~/.shay")
+        monkeypatch.setenv("SHAY_TEST_PYTHON", str(interpreter))
+        monkeypatch.setenv("SHAY_TEST_ENV_PROVENANCE", str(marker))
+        monkeypatch.setattr("shay_cli.kanban_db.kanban_db_path", lambda: db)
+        issues = []
+
+        doctor._check_operator_view_readiness(issues)
+        out = capsys.readouterr().out
+
+        assert "Client protocol compatible (shay.client.v1)" in out
+        assert "E2E dependency parity inputs present" in out
+        assert "Durable-ledger readiness" in out
