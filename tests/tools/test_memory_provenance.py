@@ -80,4 +80,3 @@ def test_fixture_is_closed_and_deterministic():
     assert len(payload["corpus"]) == 32 and len(payload["queries"]) == 16
     assert [r["id"] for r in payload["corpus"]] == [f"memory-{i:03d}" for i in range(1, 33)]
     assert [q["id"] for q in payload["queries"]] == [f"query-{i:03d}" for i in range(1, 17)]
-
