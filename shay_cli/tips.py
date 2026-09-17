@@ -185,8 +185,8 @@ TIPS = [
     "Cron jobs run in completely fresh agent sessions — prompts must be self-contained.",
 
     # --- Voice ---
-    "Voice mode works with zero API keys if faster-whisper is installed (free local speech-to-text).",
-    "Five TTS providers available: Edge TTS (free), ElevenLabs, OpenAI, NeuTTS (free local), MiniMax.",
+    "Voice mode works with zero API keys using faster-whisper or whisper-cli plus an existing local GGML model.",
+    "On macOS, the system voice is Shay's private zero-metered TTS default; cloud providers stay explicit.",
     "/voice on enables voice mode in the CLI. Ctrl+B toggles push-to-talk recording.",
     "Streaming TTS plays sentences as they generate — you don't wait for the full response.",
     "Voice messages on Telegram, Discord, WhatsApp, and Slack are auto-transcribed.",
@@ -393,6 +393,7 @@ TIPS = [
     'Checkpoints skip directories with more than 50,000 files to avoid slow git operations on massive monorepos.',
 
     # --- TTS ---
+    'tts.provider: macos uses the built-in system voice locally; run scripts/audition_shay_voice.py before choosing the final voice.',
     'tts.provider: piper runs 44-language local TTS on CPU — voices auto-download to ~/.shay/cache/piper-voices/.',
     'tts.providers.<name>.type: command wires any CLI TTS engine with {input_path} and {output_path} placeholders.',
 
@@ -483,5 +484,3 @@ def get_random_tip(exclude_recent: int = 0) -> str:
             deduplication across sessions.
     """
     return random.choice(TIPS)
-
-

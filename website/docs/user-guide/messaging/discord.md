@@ -575,7 +575,7 @@ Replace the ID with the actual channel ID (right-click → Copy Channel ID with 
 
 Shay-Shay supports Discord voice messages:
 
-- **Incoming voice messages** are automatically transcribed using the configured STT provider: local `faster-whisper` (no key), Groq Whisper (`GROQ_API_KEY`), or OpenAI Whisper (`VOICE_TOOLS_OPENAI_KEY`).
+- **Incoming voice messages** are automatically transcribed using the configured STT provider: local `faster-whisper` or `whisper-cli` with an existing GGML model (no key), Groq Whisper (`GROQ_API_KEY`), or OpenAI Whisper (`VOICE_TOOLS_OPENAI_KEY`). Explicit local selection never falls through to cloud.
 - **Text-to-speech**: Use `/voice tts` to have the bot send spoken audio responses alongside text replies.
 - **Discord voice channels**: Shay-Shay can also join a voice channel, listen to users speaking, and talk back in the channel.
 
@@ -697,5 +697,4 @@ Leave `everyone` and `roles` at `false` unless you know exactly why you need the
 :::
 
 For more information on securing your Shay-Shay deployment, see the [Security Guide](../security.md).
-
 

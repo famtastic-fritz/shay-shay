@@ -691,7 +691,7 @@ platform_toolsets:
 #   skills_hub   - skill_hub (search/install/manage from online registries — user-driven only)
 #   moa          - mixture_of_agents  (requires OPENROUTER_API_KEY)
 #   todo         - todo (in-memory task planning, no deps)
-#   tts          - text_to_speech  (Edge TTS free, or ELEVENLABS/OPENAI/MINIMAX/MISTRAL key)
+#   tts          - text_to_speech  (local macOS voice, Edge cloud, or an explicitly configured provider)
 #   cronjob      - cronjob (create/list/update/pause/resume/run/remove scheduled tasks)
 #   rl           - rl_list_environments, rl_start_training, etc. (requires TINKER_API_KEY)
 #
@@ -720,7 +720,7 @@ platform_toolsets:
 #   todo         - Task planning and tracking for multi-step work
 #   memory       - Persistent memory across sessions (personal notes + user profile)
 #   session_search - Search and recall past conversations (FTS5 + Gemini Flash summarization)
-#   tts          - Text-to-speech (Edge TTS free, ElevenLabs, OpenAI, MiniMax, Mistral)
+#   tts          - Text-to-speech (local macOS voice, Edge cloud, ElevenLabs, OpenAI, MiniMax, Mistral)
 #   cronjob      - Schedule and manage automated tasks (CLI-only)
 #   rl           - RL training tools (Tinker-Atropos)
 #
@@ -788,18 +788,32 @@ platform_toolsets:
 # Voice Transcription (Speech-to-Text)
 # =============================================================================
 # Automatically transcribe voice messages on messaging platforms.
-# Providers: local (free, faster-whisper) | groq (free tier) | openai (Whisper API) | mistral (Voxtral Transcribe)
+# Providers: local (free, faster-whisper or whisper-cli) | local_command | groq | openai | mistral | xai
 # Set the corresponding API key in .env: GROQ_API_KEY, OPENAI_API_KEY, or MISTRAL_API_KEY.
 stt:
   enabled: true
   # provider: "local"          # auto-detected if omitted
   local:
     model: "base"              # tiny | base | small | medium | large-v3 | turbo
+    # model_path: ""           # existing ggml-*.bin for whisper-cli; never auto-downloaded
     # language: ""             # auto-detect; set to "en", "es", "fr", etc. to force
   openai:
     model: "whisper-1"         # whisper-1 | gpt-4o-mini-transcribe | gpt-4o-transcribe
   # mistral:
   #   model: "voxtral-mini-latest"  # voxtral-mini-latest | voxtral-mini-2602
+
+# On macOS, the default TTS provider is local /usr/bin/say. Its voice quality
+# is system-grade but text stays on-device and no metered API runs. Edge is a
+# keyless cloud option; paid providers require explicit selection and config.
+tts:
+  provider: "macos"
+  voice_profile: "shay-v1"      # separate from PERSONA.md
+  voice_mode: "conversational"  # conversational | focused | reassuring | briefing
+  macos:
+    voice: "Samantha"           # provisional; run scripts/audition_shay_voice.py
+    rate_wpm: ""                # empty = derive from the selected profile
+  elevenlabs:
+    voice_id: ""                # required when provider is elevenlabs; no assumed voice
 
 # =============================================================================
 # Response Pacing (Messaging Platforms)

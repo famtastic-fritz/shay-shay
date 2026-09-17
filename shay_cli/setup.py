@@ -455,11 +455,26 @@ def _print_setup_summary(config: dict, shay_home):
             tool_status.append(("Image Generation", False, "FAL_KEY or OPENAI_API_KEY"))
 
     # TTS — show configured provider
-    tts_provider = cfg_get(config, "tts", "provider", default="edge")
+    default_tts_provider = DEFAULT_CONFIG["tts"]["provider"]
+    tts_provider = cfg_get(config, "tts", "provider", default=default_tts_provider)
     if subscription_features.tts.managed_by_nous:
         tool_status.append(("Text-to-Speech (OpenAI via Nous subscription)", True, None))
+    elif tts_provider == "macos":
+        say_available = sys.platform == "darwin" and Path("/usr/bin/say").is_file()
+        if say_available:
+            tool_status.append(("Text-to-Speech (macOS System Voice — local)", True, None))
+        else:
+            tool_status.append(("Text-to-Speech (macOS System Voice — unavailable)", False, "select another TTS provider"))
     elif tts_provider == "elevenlabs" and get_env_value("ELEVENLABS_API_KEY"):
-        tool_status.append(("Text-to-Speech (ElevenLabs)", True, None))
+        eleven_voice_id = cfg_get(config, "tts", "elevenlabs", "voice_id", default="")
+        if str(eleven_voice_id or "").strip():
+            tool_status.append(("Text-to-Speech (ElevenLabs)", True, None))
+        else:
+            tool_status.append((
+                "Text-to-Speech (ElevenLabs — voice not selected)",
+                False,
+                "set tts.elevenlabs.voice_id",
+            ))
     elif tts_provider == "openai" and (
         get_env_value("VOICE_TOOLS_OPENAI_KEY") or get_env_value("OPENAI_API_KEY")
     ):
@@ -1082,10 +1097,12 @@ def _install_kittentts_deps() -> bool:
 def _setup_tts_provider(config: dict):
     """Interactive TTS provider selection with install flow for NeuTTS."""
     tts_config = config.get("tts", {})
-    current_provider = tts_config.get("provider", "edge")
+    default_tts_provider = DEFAULT_CONFIG["tts"]["provider"]
+    current_provider = tts_config.get("provider", default_tts_provider)
     subscription_features = get_nous_subscription_features(config)
 
     provider_labels = {
+        "macos": "macOS System Voice",
         "edge": "Edge TTS",
         "elevenlabs": "ElevenLabs",
         "openai": "OpenAI TTS",
@@ -1096,6 +1113,11 @@ def _setup_tts_provider(config: dict):
         "neutts": "NeuTTS",
         "kittentts": "KittenTTS",
     }
+    default_tts_label = provider_labels.get(default_tts_provider, default_tts_provider)
+
+    def fall_back_to_safe_default(reason: str) -> str:
+        print_warning(f"{reason} Falling back to {default_tts_label}.")
+        return default_tts_provider
     current_label = provider_labels.get(current_provider, current_provider)
 
     print()
@@ -1108,6 +1130,9 @@ def _setup_tts_provider(config: dict):
     if managed_nous_tools_enabled() and subscription_features.nous_auth_present:
         choices.append("Nous Subscription (managed OpenAI TTS, billed to your subscription)")
         providers.append("nous-openai")
+    if sys.platform == "darwin" and Path("/usr/bin/say").is_file():
+        choices.append("macOS System Voice (local, private, zero-metered)")
+        providers.append("macos")
     choices.extend(
         [
             "Edge TTS (free, cloud-based, no setup needed)",
@@ -1156,11 +1181,10 @@ def _setup_tts_provider(config: dict):
             print()
             if prompt_yes_no("Install NeuTTS dependencies now?", True):
                 if not _install_neutts_deps():
-                    print_warning("NeuTTS installation incomplete. Falling back to Edge TTS.")
-                    selected = "edge"
+                    selected = fall_back_to_safe_default("NeuTTS installation incomplete.")
             else:
                 print_info("Skipping install. Set tts.provider to 'neutts' after installing manually.")
-                selected = "edge"
+                selected = fall_back_to_safe_default("NeuTTS was not installed.")
 
     elif selected == "elevenlabs":
         existing = get_env_value("ELEVENLABS_API_KEY")
@@ -1171,8 +1195,20 @@ def _setup_tts_provider(config: dict):
                 save_env_value("ELEVENLABS_API_KEY", api_key)
                 print_success("ElevenLabs API key saved")
             else:
-                print_warning("No API key provided. Falling back to Edge TTS.")
-                selected = "edge"
+                selected = fall_back_to_safe_default("No ElevenLabs API key provided.")
+        if selected == "elevenlabs":
+            current_voice_id = str(
+                config.get("tts", {}).get("elevenlabs", {}).get("voice_id") or ""
+            ).strip()
+            voice_id = prompt(
+                "ElevenLabs voice ID (required; no default voice is assumed)",
+                default=current_voice_id or None,
+            )
+            if voice_id and voice_id.strip():
+                config.setdefault("tts", {}).setdefault("elevenlabs", {})["voice_id"] = voice_id.strip()
+                print_success("ElevenLabs voice ID saved")
+            else:
+                selected = fall_back_to_safe_default("No ElevenLabs voice ID provided.")
 
     elif selected == "openai" and not selected_via_nous:
         existing = get_env_value("VOICE_TOOLS_OPENAI_KEY") or get_env_value("OPENAI_API_KEY")
@@ -1183,8 +1219,7 @@ def _setup_tts_provider(config: dict):
                 save_env_value("VOICE_TOOLS_OPENAI_KEY", api_key)
                 print_success("OpenAI TTS API key saved")
             else:
-                print_warning("No API key provided. Falling back to Edge TTS.")
-                selected = "edge"
+                selected = fall_back_to_safe_default("No OpenAI API key provided.")
 
     elif selected == "xai":
         existing = get_env_value("XAI_API_KEY")
@@ -1196,12 +1231,11 @@ def _setup_tts_provider(config: dict):
                 print_success("xAI TTS API key saved")
             else:
                 from shay_constants import display_shay_home as _dhh
-                print_warning(
+                print_info(
                     "No xAI API key provided for TTS. Configure XAI_API_KEY via "
-                    f"shay setup model or {_dhh()}/.env to use xAI TTS. "
-                    "Falling back to Edge TTS."
+                    f"shay setup model or {_dhh()}/.env to use xAI TTS."
                 )
-                selected = "edge"
+                selected = fall_back_to_safe_default("xAI TTS is not configured.")
         if selected == "xai":
             print()
             voice_id = prompt("xAI voice_id (Enter for 'eve', or paste a custom voice ID)")
@@ -1219,8 +1253,7 @@ def _setup_tts_provider(config: dict):
                 save_env_value("MINIMAX_API_KEY", api_key)
                 print_success("MiniMax TTS API key saved")
             else:
-                print_warning("No API key provided. Falling back to Edge TTS.")
-                selected = "edge"
+                selected = fall_back_to_safe_default("No MiniMax API key provided.")
 
     elif selected == "mistral":
         existing = get_env_value("MISTRAL_API_KEY")
@@ -1231,8 +1264,7 @@ def _setup_tts_provider(config: dict):
                 save_env_value("MISTRAL_API_KEY", api_key)
                 print_success("Mistral TTS API key saved")
             else:
-                print_warning("No API key provided. Falling back to Edge TTS.")
-                selected = "edge"
+                selected = fall_back_to_safe_default("No Mistral API key provided.")
 
     elif selected == "gemini":
         existing = get_env_value("GEMINI_API_KEY") or get_env_value("GOOGLE_API_KEY")
@@ -1244,8 +1276,7 @@ def _setup_tts_provider(config: dict):
                 save_env_value("GEMINI_API_KEY", api_key)
                 print_success("Gemini TTS API key saved")
             else:
-                print_warning("No API key provided. Falling back to Edge TTS.")
-                selected = "edge"
+                selected = fall_back_to_safe_default("No Gemini API key provided.")
 
     elif selected == "kittentts":
         # Check if already installed
@@ -1264,11 +1295,10 @@ def _setup_tts_provider(config: dict):
             print()
             if prompt_yes_no("Install KittenTTS now?", True):
                 if not _install_kittentts_deps():
-                    print_warning("KittenTTS installation incomplete. Falling back to Edge TTS.")
-                    selected = "edge"
+                    selected = fall_back_to_safe_default("KittenTTS installation incomplete.")
             else:
                 print_info("Skipping install. Set tts.provider to 'kittentts' after installing manually.")
-                selected = "edge"
+                selected = fall_back_to_safe_default("KittenTTS was not installed.")
 
     # Save the selection
     if "tts" not in config:
@@ -3262,7 +3292,8 @@ def _offer_launch_chat():
 def _run_first_time_quick_setup(config: dict, shay_home, is_existing: bool):
     """Streamlined first-time setup: provider, model, terminal & messaging.
 
-    Applies sensible defaults for TTS (Edge), agent settings, and tools —
+    Applies sensible defaults for TTS (local macOS voice when available),
+    agent settings, and tools —
     the user can customize later via ``shay setup <section>``.
     """
     # Step 1: Model & Provider (essential — skips rotation/vision/TTS)

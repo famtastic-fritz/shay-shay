@@ -52,7 +52,11 @@ class TestDotenvFallbackPerProvider:
             mock_import.return_value = MagicMock(return_value=mock_client)
 
             output = str(tmp_path / "out.mp3")
-            tts_tool._generate_elevenlabs("hi", output, {})
+            tts_tool._generate_elevenlabs(
+                "hi",
+                output,
+                {"elevenlabs": {"voice_id": "explicit-test-voice"}},
+            )
 
             mock_import.return_value.assert_called_once_with(api_key="el-dotenv-key")
 

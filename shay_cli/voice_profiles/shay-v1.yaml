@@ -1,0 +1,52 @@
+schema_version: 1
+id: shay-v1
+profile_version: 1.0.0
+label: Shay voice profile v1
+default_mode: conversational
+
+selection:
+  status: owner_audition_required
+  note: Provider and voice choices stay outside this profile. Fritz owns the final voice selection after a local audition.
+
+presentation:
+  gender_expression: feminine
+  traits:
+    - warm
+    - intelligent
+    - confident
+  boundary: These are delivery qualities only. They do not imply gendered personality, behavior, deference, or role stereotypes.
+
+delivery:
+  pace:
+    speed_multiplier: 0.96
+    words_per_minute: 178
+  pauses:
+    sentence_ms: 170
+    paragraph_ms: 420
+  articulation: clear and natural, with emphasis reserved for meaning
+
+modes:
+  conversational:
+    pace_multiplier: 1.0
+    pause_multiplier: 1.0
+    intent: relaxed everyday collaboration
+  focused:
+    pace_multiplier: 1.05
+    pause_multiplier: 0.85
+    intent: concise operational guidance
+  reassuring:
+    pace_multiplier: 0.92
+    pause_multiplier: 1.2
+    intent: calm delivery when stakes or uncertainty are high
+  briefing:
+    pace_multiplier: 1.08
+    pause_multiplier: 0.9
+    intent: crisp summaries and status readbacks
+
+pronunciations:
+  - written: Shay-Shay
+    spoken: Shay Shay
+  - written: FAMtastic
+    spoken: Fam-tastic
+  - written: Fritz Medine
+    spoken: Fritz Medenay

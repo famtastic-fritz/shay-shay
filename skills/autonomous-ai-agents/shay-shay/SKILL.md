@@ -356,8 +356,8 @@ Edit with `shay config edit` or `shay config set section.key value`.
 | `terminal` | `backend` (local/docker/ssh/modal), `cwd`, `timeout` (180) |
 | `compression` | `enabled`, `threshold` (0.50), `target_ratio` (0.20) |
 | `display` | `skin`, `tool_progress`, `show_reasoning`, `show_cost` |
-| `stt` | `enabled`, `provider` (local/groq/openai/mistral) |
-| `tts` | `provider` (edge/elevenlabs/openai/minimax/mistral/neutts) |
+| `stt` | `enabled`, `provider` (local/local_command/groq/openai/mistral/xai), `local.model_path` |
+| `tts` | `provider` (macos/edge/elevenlabs/openai/minimax/mistral/neutts), `voice_profile`, `voice_mode` |
 | `memory` | `memory_enabled`, `user_profile_enabled`, `provider` |
 | `security` | `tirith_enabled`, `website_blocklist` |
 | `delegation` | `model`, `provider`, `base_url`, `api_key`, `max_iterations` (50), `reasoning_effort` |
@@ -521,7 +521,8 @@ stt:
 
 | Provider | Env var | Free? |
 |----------|---------|-------|
-| Edge TTS | None | Yes (default) |
+| macOS System Voice | None | Yes (local default on macOS) |
+| Edge TTS | None | Yes (keyless cloud option) |
 | ElevenLabs | `ELEVENLABS_API_KEY` | Free tier |
 | OpenAI | `VOICE_TOOLS_OPENAI_KEY` | Paid |
 | MiniMax | `MINIMAX_API_KEY` | Paid |

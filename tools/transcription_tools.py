@@ -4,8 +4,11 @@ Transcription Tools Module
 
 Provides speech-to-text transcription with six providers:
 
-  - **local** (default, free) — faster-whisper running locally, no API key needed.
-    Auto-downloads the model (~150 MB for ``base``) on first use.
+  - **local** (default, free) — faster-whisper or whisper.cpp running locally.
+    faster-whisper can download a named model; whisper-cli reuses only a
+    pre-existing GGML model and never downloads one.
+  - **local_command** (free) — an installed whisper/whisper-cli binary or a
+    user-defined ``SHAY_LOCAL_STT_COMMAND`` template.
   - **groq** (free tier) — Groq Whisper API, requires ``GROQ_API_KEY``.
   - **openai** (paid) — OpenAI Whisper API, requires ``VOICE_TOOLS_OPENAI_KEY``.
   - **mistral** — Mistral Voxtral Transcribe API, requires ``MISTRAL_API_KEY``.
@@ -36,6 +39,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from urllib.parse import urljoin
 
+from shay_constants import get_shay_home
 from utils import is_truthy_value
 from tools.managed_tool_gateway import resolve_managed_tool_gateway
 from tools.tool_backend_helpers import managed_nous_tools_enabled, resolve_openai_audio_api_key
@@ -87,6 +91,7 @@ DEFAULT_MISTRAL_STT_MODEL = os.getenv("STT_MISTRAL_MODEL", "voxtral-mini-latest"
 LOCAL_STT_COMMAND_ENV = "SHAY_LOCAL_STT_COMMAND"
 LOCAL_STT_LANGUAGE_ENV = "SHAY_LOCAL_STT_LANGUAGE"
 COMMON_LOCAL_BIN_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
+WHISPER_CPP_BINARY_NAME = "whisper-cli"
 
 GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 OPENAI_BASE_URL = os.getenv("STT_OPENAI_BASE_URL", "https://api.openai.com/v1")
@@ -150,7 +155,9 @@ def _find_ffmpeg_binary() -> Optional[str]:
 
 
 def _find_whisper_binary() -> Optional[str]:
-    return _find_binary("whisper")
+    # Homebrew's whisper.cpp formula exposes ``whisper-cli``. Keep the
+    # Python/OpenAI Whisper CLI name as a compatibility fallback.
+    return _find_binary(WHISPER_CPP_BINARY_NAME) or _find_binary("whisper")
 
 
 def _get_local_command_template() -> Optional[str]:
@@ -161,6 +168,12 @@ def _get_local_command_template() -> Optional[str]:
     whisper_binary = _find_whisper_binary()
     if whisper_binary:
         quoted_binary = shlex.quote(whisper_binary)
+        if Path(whisper_binary).name == WHISPER_CPP_BINARY_NAME:
+            return (
+                f"{quoted_binary} --model {{model_path}} --file {{input_path}} "
+                "--language {language} --output-txt --output-file {output_base} "
+                "--no-prints"
+            )
         return (
             f"{quoted_binary} {{input_path}} --model {{model}} --output_format txt "
             "--output_dir {output_dir} --language {language}"
@@ -169,7 +182,17 @@ def _get_local_command_template() -> Optional[str]:
 
 
 def _has_local_command() -> bool:
-    return _get_local_command_template() is not None
+    template = _get_local_command_template()
+    if template is None:
+        return False
+    if "{model_path}" not in template:
+        return True
+    try:
+        local_cfg = _load_stt_config().get("local", {})
+        model_name = local_cfg.get("model", DEFAULT_LOCAL_MODEL)
+        return _resolve_whisper_cpp_model_path(model_name, local_cfg) is not None
+    except (OSError, ValueError):
+        return False
 
 
 def _normalize_local_model(model_name: Optional[str]) -> str:
@@ -197,6 +220,115 @@ def _normalize_local_command_model(model_name: Optional[str]) -> str:
     return _normalize_local_model(model_name)
 
 
+def _local_whisper_model_roots() -> tuple[Path, ...]:
+    """Return bounded local cache roots used by common Whisper installers.
+
+    The search is intentionally shallow and never downloads a model. The
+    Hyperframes cache is included because it uses the same whisper.cpp GGML
+    model format and can be safely reused across local tools.
+    """
+
+    home = Path.home()
+    shay_home = get_shay_home()
+    return (
+        shay_home / "cache" / "whisper" / "models",
+        shay_home / "cache" / "whisper",
+        home / ".cache" / "whisper",
+        home / ".cache" / "whisper.cpp",
+        home / ".cache" / "hyperframes" / "whisper" / "models",
+        Path("/opt/homebrew/share/whisper-cpp/models"),
+        Path("/usr/local/share/whisper-cpp/models"),
+    )
+
+
+def _whisper_cpp_model_filenames(model_name: Optional[str], language: str) -> list[str]:
+    normalized = _normalize_local_command_model(model_name).strip()
+    if normalized.startswith("ggml-"):
+        normalized = normalized[5:]
+    if normalized.endswith(".bin"):
+        normalized = normalized[:-4]
+
+    names: list[str] = []
+    if language.lower().startswith("en") and not normalized.endswith(".en"):
+        names.append(f"ggml-{normalized}.en.bin")
+    names.append(f"ggml-{normalized}.bin")
+    return names
+
+
+def _resolve_whisper_cpp_model_path(
+    model_name: Optional[str],
+    local_config: Optional[dict] = None,
+) -> Optional[str]:
+    """Resolve a pre-existing whisper.cpp GGML model without downloading.
+
+    Resolution order is an explicit ``stt.local.model_path``, a path supplied
+    as the model override, an exact name match in bounded cache roots, then a
+    conservative cached-model fallback. An explicit missing path fails closed.
+    """
+
+    local_cfg = local_config if isinstance(local_config, dict) else {}
+    configured_path = str(local_cfg.get("model_path") or "").strip()
+    if configured_path:
+        candidate = Path(configured_path).expanduser()
+        if not candidate.is_file():
+            raise ValueError(
+                f"Configured stt.local.model_path does not exist: {candidate}"
+            )
+        return str(candidate)
+
+    raw_model = str(model_name or "").strip()
+    if raw_model and ("/" in raw_model or raw_model.endswith(".bin")):
+        direct = Path(raw_model).expanduser()
+        if direct.is_file():
+            return str(direct)
+        # A bare GGML filename can still be found in a cache root. A path is
+        # explicit, so do not silently replace it with a different model.
+        if "/" in raw_model:
+            raise ValueError(f"Requested whisper.cpp model does not exist: {direct}")
+
+    language = str(local_cfg.get("language") or DEFAULT_LOCAL_STT_LANGUAGE)
+    preferred_names = _whisper_cpp_model_filenames(model_name, language)
+    roots = _local_whisper_model_roots()
+
+    for root in roots:
+        for filename in preferred_names:
+            candidate = root / filename
+            if candidate.is_file():
+                return str(candidate)
+
+    cached: dict[str, Path] = {}
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for candidate in root.glob("ggml-*.bin"):
+            if candidate.is_file():
+                cached.setdefault(candidate.name, candidate)
+
+    fallback_order = (
+        "ggml-base.en.bin",
+        "ggml-small.en.bin",
+        "ggml-base.bin",
+        "ggml-small.bin",
+        "ggml-tiny.en.bin",
+        "ggml-tiny.bin",
+        "ggml-medium.en.bin",
+        "ggml-medium.bin",
+        "ggml-large-v3-turbo.bin",
+        "ggml-large-v3.bin",
+    )
+    for filename in fallback_order:
+        candidate = cached.get(filename)
+        if candidate is not None:
+            logger.warning(
+                "Requested local STT model '%s' was not cached; using existing whisper.cpp model %s",
+                model_name or DEFAULT_LOCAL_MODEL,
+                candidate,
+            )
+            return str(candidate)
+
+    return None
+
+
 def _get_provider(stt_config: dict) -> str:
     """Determine which STT provider to use.
 
@@ -220,7 +352,8 @@ def _get_provider(stt_config: dict) -> str:
                 return "local_command"
             logger.warning(
                 "STT provider 'local' configured but unavailable "
-                "(install faster-whisper or set SHAY_LOCAL_STT_COMMAND)"
+                "(install faster-whisper, install whisper-cli with a cached GGML model, "
+                "or set SHAY_LOCAL_STT_COMMAND)"
             )
             return "none"
 
@@ -477,7 +610,7 @@ def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]
             "success": False,
             "transcript": "",
             "error": (
-                f"{LOCAL_STT_COMMAND_ENV} not configured and no local whisper binary was found"
+                f"{LOCAL_STT_COMMAND_ENV} not configured and no local whisper/whisper-cli binary was found"
             ),
         }
 
@@ -488,6 +621,22 @@ def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]
         or DEFAULT_LOCAL_STT_LANGUAGE
     )
     normalized_model = _normalize_local_command_model(model_name)
+    local_cfg = _load_stt_config().get("local", {})
+    model_path = ""
+    if "{model_path}" in command_template:
+        try:
+            model_path = _resolve_whisper_cpp_model_path(normalized_model, local_cfg) or ""
+        except ValueError as exc:
+            return {"success": False, "transcript": "", "error": str(exc)}
+        if not model_path:
+            return {
+                "success": False,
+                "transcript": "",
+                "error": (
+                    "whisper-cli is installed but no local GGML model was found. "
+                    "Set stt.local.model_path in config.yaml to an existing ggml-*.bin file."
+                ),
+            }
 
     try:
         with tempfile.TemporaryDirectory(prefix="shay-local-stt-") as output_dir:
@@ -498,10 +647,19 @@ def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]
             command = command_template.format(
                 input_path=shlex.quote(prepared_input),
                 output_dir=shlex.quote(output_dir),
+                output_base=shlex.quote(str(Path(output_dir) / "transcript")),
                 language=shlex.quote(language),
                 model=shlex.quote(normalized_model),
+                model_path=shlex.quote(model_path),
             )
-            subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
+            subprocess.run(
+                command,
+                shell=True,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
 
             txt_files = sorted(Path(output_dir).glob("*.txt"))
             if not txt_files:
@@ -518,7 +676,14 @@ def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]
                 normalized_model,
                 len(transcript_text),
             )
-            return {"success": True, "transcript": transcript_text, "provider": "local_command"}
+            result = {
+                "success": True,
+                "transcript": transcript_text,
+                "provider": "local_command",
+            }
+            if model_path:
+                result.update({"backend": "whisper_cpp", "model_path": model_path})
+            return result
 
     except KeyError as e:
         return {
@@ -530,6 +695,13 @@ def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]
         details = e.stderr.strip() or e.stdout.strip() or str(e)
         logger.error("Local STT command failed for %s: %s", file_path, details)
         return {"success": False, "transcript": "", "error": f"Local STT failed: {details}"}
+    except subprocess.TimeoutExpired:
+        logger.error("Local STT command timed out for %s", file_path)
+        return {
+            "success": False,
+            "transcript": "",
+            "error": "Local STT command timed out after 300 seconds",
+        }
     except Exception as e:
         logger.error("Unexpected error during local command transcription: %s", e, exc_info=True)
         return {"success": False, "transcript": "", "error": f"Local transcription failed: {e}"}
@@ -792,7 +964,9 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
 
     Provider priority:
       1. User config (``stt.provider`` in config.yaml)
-      2. Auto-detect: local faster-whisper (free) > Groq (free tier) > OpenAI (paid)
+      2. Auto-detect: local faster-whisper/whisper-cli (free), then explicitly
+         configured cloud credentials. Explicit provider choices never cross
+         over to a different cloud provider.
 
     Args:
         file_path: Absolute path to the audio file to transcribe.
@@ -860,7 +1034,7 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
         "transcript": "",
         "error": (
             "No STT provider available. Install faster-whisper for free local "
-            f"transcription, configure {LOCAL_STT_COMMAND_ENV} or install a local whisper CLI, "
+            f"transcription, install whisper-cli with a cached GGML model, or configure {LOCAL_STT_COMMAND_ENV}, "
             "set GROQ_API_KEY for free Groq Whisper, set MISTRAL_API_KEY for Mistral "
             "Voxtral Transcribe, set XAI_API_KEY for xAI Grok STT, or set VOICE_TOOLS_OPENAI_KEY "
             "or OPENAI_API_KEY for the OpenAI Whisper API."

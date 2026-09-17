@@ -91,6 +91,8 @@ pip install "shay-shay[all]"
 ```bash
 brew install portaudio ffmpeg opus
 brew install espeak-ng
+# Optional local STT without Python faster-whisper:
+brew install whisper-cpp
 ```
 
 ### Ubuntu / Debian
@@ -110,13 +112,13 @@ Why these matter:
 
 Shay-Shay supports both local and cloud speech stacks.
 
-### Easiest / cheapest setup
+### Safest zero-metered Mac setup
 
-Use local STT and free Edge TTS:
+Use local STT and the built-in macOS system voice:
 - STT provider: `local`
-- TTS provider: `edge`
+- TTS provider: `macos`
 
-This is usually the best place to start.
+Both paths stay on-device. The macOS voice is private and dependable but less natural than premium neural TTS. Edge is a keyless, unmetered alternative on every platform, but it processes text in the cloud.
 
 ### Environment file example
 
@@ -135,15 +137,16 @@ ELEVENLABS_API_KEY=***
 
 #### Speech-to-text
 
-- `local` → best default for privacy and zero-cost use
+- `local` → best default for privacy and zero-cost use; supports faster-whisper or whisper-cli plus a cached GGML model
 - `groq` → very fast cloud transcription
 - `openai` → good paid fallback
 
 #### Text-to-speech
 
-- `edge` → free and good enough for most users
+- `macos` → safest Mac default; local and zero-metered, with system-voice quality
+- `edge` → keyless cloud TTS; free but text leaves the machine
 - `neutts` → free local/on-device TTS
-- `elevenlabs` → best quality
+- `elevenlabs` → premium quality; requires an explicit voice ID and API key
 - `openai` → good middle ground
 - `mistral` → multilingual, native Opus
 
@@ -155,7 +158,7 @@ If you choose NeuTTS in the setup wizard, Shay-Shay checks whether `neutts` is a
 python -m pip install -U neutts[all]
 ```
 
-If you skip that install or it fails, the wizard falls back to Edge TTS.
+If you skip that install or it fails, the wizard returns to the safe platform default (`macos` on a supported Mac, otherwise Edge).
 
 ## Step 5: recommended config
 
@@ -172,14 +175,17 @@ stt:
   provider: "local"
   local:
     model: "base"
+    model_path: ""  # Optional existing ggml-*.bin for whisper-cli; no auto-download
 
 tts:
-  provider: "edge"
-  edge:
-    voice: "en-US-AriaNeural"
+  provider: "macos"
+  voice_profile: "shay-v1"
+  voice_mode: "conversational"
+  macos:
+    voice: "Samantha"  # provisional; owner should audition before final selection
 ```
 
-This is a good conservative default for most people.
+This is the safest default for a supported Mac. Generate local candidates with `python scripts/audition_shay_voice.py`; the script does not change your config, and Fritz owns the final voice choice.
 
 If you want local TTS instead, switch the `tts` block to:
 

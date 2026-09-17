@@ -219,5 +219,6 @@ class TestCheckTtsRequirementsMistral:
              patch("tools.tts_tool._check_neutts_available", return_value=False), \
              patch("tools.tts_tool._check_kittentts_available", return_value=False), \
              patch("tools.tts_tool._check_piper_available", return_value=False), \
-             patch("tools.tts_tool._has_any_command_tts_provider", return_value=False):
+             patch("tools.tts_tool._has_any_command_tts_provider", return_value=False), \
+             patch("tools.tts_tool._find_macos_say_binary", return_value=None):
             assert check_tts_requirements() is False

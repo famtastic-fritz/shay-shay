@@ -14,20 +14,23 @@ If you have a paid [Nous Portal](https://portal.nousresearch.com) subscription, 
 
 ## Text-to-Speech
 
-Convert text to speech with ten providers:
+Convert text to speech with eleven built-in providers:
 
-| Provider | Quality | Cost | API Key |
-|----------|---------|------|---------|
-| **Edge TTS** (default) | Good | Free | None needed |
-| **ElevenLabs** | Excellent | Paid | `ELEVENLABS_API_KEY` |
-| **OpenAI TTS** | Good | Paid | `VOICE_TOOLS_OPENAI_KEY` |
-| **MiniMax TTS** | Excellent | Paid | `MINIMAX_API_KEY` |
-| **Mistral (Voxtral TTS)** | Excellent | Paid | `MISTRAL_API_KEY` |
-| **Google Gemini TTS** | Excellent | Free tier | `GEMINI_API_KEY` |
-| **xAI TTS** | Excellent | Paid | `XAI_API_KEY` |
-| **NeuTTS** | Good | Free (local) | None needed |
-| **KittenTTS** | Good | Free (local) | None needed |
-| **Piper** | Good | Free (local) | None needed |
+| Provider | Quality | Cost | Processing | API Key |
+|----------|---------|------|------------|---------|
+| **macOS System Voice** (macOS default) | System voice | Free | Local | None needed |
+| **Edge TTS** (non-macOS default) | Good | Free | Cloud | None needed |
+| **ElevenLabs** | Excellent | Paid | Cloud | `ELEVENLABS_API_KEY` plus an explicit voice ID |
+| **OpenAI TTS** | Good | Paid | Cloud | `VOICE_TOOLS_OPENAI_KEY` |
+| **MiniMax TTS** | Excellent | Paid | Cloud | `MINIMAX_API_KEY` |
+| **Mistral (Voxtral TTS)** | Excellent | Paid | Cloud | `MISTRAL_API_KEY` |
+| **Google Gemini TTS** | Excellent | Free tier | Cloud | `GEMINI_API_KEY` |
+| **xAI TTS** | Excellent | Paid | Cloud | `XAI_API_KEY` |
+| **NeuTTS** | Good | Free | Local | None needed |
+| **KittenTTS** | Good | Free | Local | None needed |
+| **Piper** | Good | Free | Local | None needed |
+
+On macOS, the default is `/usr/bin/say`: it keeps text on the machine, makes no metered request, and needs no model download. Its voices are less natural than premium neural services. Edge is also unmetered and keyless, but it is a cloud service, so the text leaves the device. Paid providers are used only when you select and configure them; Shay does not silently fall back to one.
 
 ### Platform Delivery
 
@@ -36,20 +39,25 @@ Convert text to speech with ten providers:
 | Telegram | Voice bubble (plays inline) | Opus `.ogg` |
 | Discord | Voice bubble (Opus/OGG), falls back to file attachment | Opus/MP3 |
 | WhatsApp | Audio file attachment | MP3 |
-| CLI | Saved to `~/.shay/audio_cache/` | MP3 |
+| CLI | Saved to `~/.shay/audio_cache/` | WAV for macOS System Voice; provider-native otherwise |
 
 ### Configuration
 
 ```yaml
 # In ~/.shay/config.yaml
 tts:
-  provider: "edge"              # "edge" | "elevenlabs" | "openai" | "minimax" | "mistral" | "gemini" | "xai" | "neutts" | "kittentts" | "piper"
+  provider: "macos"             # macOS default; use "edge" explicitly for keyless cloud TTS
+  voice_profile: "shay-v1"      # Provider-neutral delivery profile, separate from PERSONA.md
+  voice_mode: "conversational"  # conversational | focused | reassuring | briefing
   speed: 1.0                    # Global speed multiplier (provider-specific settings override this)
+  macos:
+    voice: "Samantha"           # Provisional candidate; audition and choose explicitly
+    rate_wpm: ""                # Empty = derive pace from the voice profile
   edge:
     voice: "en-US-AriaNeural"   # 322 voices, 74 languages
     speed: 1.0                  # Converted to rate percentage (+/-%)
   elevenlabs:
-    voice_id: "pNInz6obpgDQGcFmaJgB"  # Adam
+    voice_id: "your-reviewed-voice-id" # Required; no premium voice identity is assumed
     model_id: "eleven_multilingual_v2"
   openai:
     model: "gpt-4o-mini-tts"
@@ -95,7 +103,28 @@ tts:
     # normalize_audio: true
 ```
 
-**Speed control**: The global `tts.speed` value applies to all providers by default. Each provider can override it with its own `speed` setting (e.g., `tts.openai.speed: 1.5`). Provider-specific speed takes precedence over the global value. Default is `1.0` (normal speed).
+**Speed control**: The selected voice profile supplies the default speed and, on macOS, words per minute. An explicit provider speed or `tts.macos.rate_wpm` takes precedence. Set `voice_profile: off` if you want only the legacy `tts.speed` behavior.
+
+### Shay voice profile and owner audition
+
+`shay-v1` is a versioned, provider-neutral delivery profile. It describes a warm, intelligent, confident feminine presentation through pace, pauses, pronunciation, and named modes; it does not assign personality, behavior, deference, or role stereotypes. The profile lives under `shay_cli/voice_profiles/`, not in `PERSONA.md`. A profile-scoped override can live at `$SHAY_HOME/voice_profiles/shay-v1.yaml`.
+
+The bundled profile is deliberately marked `owner_audition_required`. `Samantha` is only a technical default so local synthesis can work before review. On a Mac, generate a no-network comparison set with:
+
+```bash
+python scripts/audition_shay_voice.py --output-dir /tmp/shay-voice-auditions
+```
+
+Listen to the generated WAV files, then make the owner-approved choice explicit:
+
+```yaml
+tts:
+  provider: macos
+  macos:
+    voice: "Samantha"  # replace with the selected installed voice
+```
+
+The audition script does not edit runtime config. It writes a manifest whose status remains `owner_audition_required`; hearing and choosing a candidate is an owner decision.
 
 
 ### Input length limits
@@ -104,6 +133,7 @@ Each provider has a documented per-request input-character cap. Shay-Shay trunca
 
 | Provider | Default cap (chars) |
 |----------|---------------------|
+| macOS System Voice | 5000 |
 | Edge TTS | 5000 |
 | OpenAI | 4096 |
 | xAI | 15000 |
@@ -139,7 +169,8 @@ Only positive integers are honored. Zero, negative, non-numeric, or boolean valu
 Telegram voice bubbles require Opus/OGG audio format:
 
 - **OpenAI, ElevenLabs, and Mistral** produce Opus natively — no extra setup
-- **Edge TTS** (default) outputs MP3 and needs **ffmpeg** to convert:
+- **macOS System Voice** outputs WAV and needs **ffmpeg** to convert
+- **Edge TTS** outputs MP3 and needs **ffmpeg** to convert
 - **MiniMax TTS** outputs MP3 and needs **ffmpeg** to convert for Telegram voice bubbles
 - **Google Gemini TTS** outputs raw PCM and uses **ffmpeg** to encode Opus directly for Telegram voice bubbles
 - **xAI TTS** outputs MP3 and needs **ffmpeg** to convert for Telegram voice bubbles
@@ -158,7 +189,7 @@ brew install ffmpeg
 sudo dnf install ffmpeg
 ```
 
-Without ffmpeg, Edge TTS, MiniMax TTS, NeuTTS, KittenTTS, and Piper audio are sent as regular audio files (playable, but shown as a rectangular player instead of a voice bubble).
+Without ffmpeg, macOS System Voice, Edge TTS, MiniMax TTS, NeuTTS, KittenTTS, and Piper audio are sent as regular audio files (playable, but shown as a rectangular player instead of a voice bubble).
 
 :::tip
 If you want voice bubbles without installing ffmpeg, switch to the OpenAI, ElevenLabs, or Mistral provider.
@@ -303,12 +334,14 @@ Voice messages sent on Telegram, Discord, WhatsApp, Slack, or Signal are automat
 
 | Provider | Quality | Cost | API Key |
 |----------|---------|------|---------| 
-| **Local Whisper** (default) | Good | Free | None needed |
+| **Local Whisper** (default; faster-whisper or whisper.cpp) | Good | Free | None needed |
 | **Groq Whisper API** | Good–Best | Free tier | `GROQ_API_KEY` |
 | **OpenAI Whisper API** | Good–Best | Paid | `VOICE_TOOLS_OPENAI_KEY` or `OPENAI_API_KEY` |
+| **Mistral Voxtral Transcribe** | Good–Best | Paid | `MISTRAL_API_KEY` |
+| **xAI Grok STT** | Good–Best | Paid | `XAI_API_KEY` |
 
 :::info Zero Config
-Local transcription works out of the box when `faster-whisper` is installed. If that's unavailable, Shay-Shay can also use a local `whisper` CLI from common install locations (like `/opt/homebrew/bin`) or a custom command via `SHAY_LOCAL_STT_COMMAND`.
+Local transcription works when either `faster-whisper` is installed or `whisper-cli` plus a GGML model are already present. Homebrew's `/opt/homebrew/bin/whisper-cli` is detected directly. Shay searches only bounded local cache locations and never downloads a whisper.cpp model; set `stt.local.model_path` when you want an exact cached file. A custom command remains available through `SHAY_LOCAL_STT_COMMAND`.
 :::
 
 ### Configuration
@@ -319,6 +352,7 @@ stt:
   provider: "local"           # "local" | "groq" | "openai" | "mistral" | "xai"
   local:
     model: "base"             # tiny, base, small, medium, large-v3
+    model_path: ""            # Optional existing ggml-*.bin used by whisper-cli; never auto-downloaded
   openai:
     model: "whisper-1"        # whisper-1, gpt-4o-mini-transcribe, gpt-4o-transcribe
   mistral:
@@ -329,7 +363,7 @@ stt:
 
 ### Provider Details
 
-**Local (faster-whisper)** — Runs Whisper locally via [faster-whisper](https://github.com/SYSTRAN/faster-whisper). Uses CPU by default, GPU if available. Model sizes:
+**Local (faster-whisper or whisper.cpp)** — Uses `faster-whisper` when installed; otherwise the same `local` provider can use Homebrew `whisper-cli` through Shay's local-command seam. `faster-whisper` may download a named model on first use. The whisper.cpp path reuses only an existing GGML model from `stt.local.model_path` or a bounded cache and does not download one. Both run on-device.
 
 | Model | Size | Speed | Quality |
 |-------|------|-------|---------|
@@ -347,7 +381,7 @@ stt:
 
 **xAI Grok STT** — Requires `XAI_API_KEY`. Posts to `https://api.x.ai/v1/stt` as multipart/form-data. Good choice if you're already using xAI for chat or TTS and want one API key for everything. Auto-detection order puts it after Groq — explicitly set `stt.provider: xai` to force it.
 
-**Custom local CLI fallback** — Set `SHAY_LOCAL_STT_COMMAND` if you want Shay-Shay to call a local transcription command directly. The command template supports `{input_path}`, `{output_dir}`, `{language}`, and `{model}` placeholders. Your command must write a `.txt` transcript somewhere under `{output_dir}`.
+**Custom local CLI fallback** — Set `SHAY_LOCAL_STT_COMMAND` if you want Shay-Shay to call a local transcription command directly. The command template supports `{input_path}`, `{output_dir}`, `{output_base}`, `{language}`, `{model}`, and `{model_path}` placeholders. Your command must write a `.txt` transcript somewhere under `{output_dir}`.
 
 #### Example: Doubao / Volcengine ASR
 
@@ -369,9 +403,10 @@ Shay-Shay writes the incoming voice message to `{input_path}`, runs the command,
 
 ### Fallback Behavior
 
-If your configured provider isn't available, Shay-Shay automatically falls back:
-- **Local faster-whisper unavailable** → Tries a local `whisper` CLI or `SHAY_LOCAL_STT_COMMAND` before cloud providers
-- **Groq key not set** → Falls back to local transcription, then OpenAI
-- **OpenAI key not set** → Falls back to local transcription, then Groq
-- **Mistral key/SDK not set** → Skipped in auto-detect; falls through to next available provider
+An explicitly configured provider is authoritative. Shay never crosses from an explicit local choice to a cloud provider, or from one cloud provider to another:
+
+- **`provider: local`** → Uses `faster-whisper`, then a local `whisper-cli`/custom-command path; if neither works, returns an error
+- **`provider: local_command`** → Uses the local command, with local `faster-whisper` as its only fallback
+- **Explicit cloud provider without its credential or package** → Returns an error; no paid or alternate-cloud fallback runs
+- **Provider omitted** → Auto-detects local first, then configured Groq, OpenAI, Mistral, and xAI options
 - **Nothing available** → Voice messages pass through with an accurate note to the user

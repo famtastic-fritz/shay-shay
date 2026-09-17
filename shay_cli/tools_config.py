@@ -163,6 +163,14 @@ TOOL_CATEGORIES = {
         "icon": "🔊",
         "providers": [
             {
+                "name": "macOS System Voice",
+                "badge": "★ recommended on macOS · local · free",
+                "tag": "Private on-device speech via /usr/bin/say; system-voice quality",
+                "env_vars": [],
+                "tts_provider": "macos",
+                "platforms": ["darwin"],
+            },
+            {
                 "name": "Nous Subscription",
                 "badge": "subscription",
                 "tag": "Managed OpenAI TTS billed to your subscription",
@@ -174,8 +182,8 @@ TOOL_CATEGORIES = {
             },
             {
                 "name": "Microsoft Edge TTS",
-                "badge": "★ recommended · free",
-                "tag": "Good quality, no API key needed",
+                "badge": "free · cloud",
+                "tag": "Good quality and no API key, but text leaves the device",
                 "env_vars": [],
                 "tts_provider": "edge",
             },
@@ -199,7 +207,7 @@ TOOL_CATEGORIES = {
             {
                 "name": "ElevenLabs",
                 "badge": "paid",
-                "tag": "Most natural voices",
+                "tag": "Most natural voices; explicit voice ID required",
                 "env_vars": [
                     {"key": "ELEVENLABS_API_KEY", "prompt": "ElevenLabs API key", "url": "https://elevenlabs.io/app/settings/api-keys"},
                 ],
@@ -1536,6 +1544,9 @@ def _visible_providers(cat: dict, config: dict) -> list[dict]:
     features = get_nous_subscription_features(config)
     visible = []
     for provider in cat.get("providers", []):
+        platforms = provider.get("platforms")
+        if platforms and sys.platform not in platforms:
+            continue
         if provider.get("managed_nous_feature") and not managed_nous_tools_enabled():
             continue
         if provider.get("requires_nous_auth") and not features.nous_auth_present:
