@@ -1277,7 +1277,11 @@ def reconcile_idempotency_duplicates(conn: sqlite3.Connection) -> dict[str, Any]
          ORDER BY idempotency_key
         """
     ).fetchall()
-    with write_txn(conn):
+    # Additive migrations may already have an implicit SQLite transaction
+    # open (for example after ALTER TABLE/UPDATE statements in the caller).
+    # Reuse that transaction instead of issuing a nested BEGIN IMMEDIATE.
+    txn = contextlib.nullcontext(conn) if conn.in_transaction else write_txn(conn)
+    with txn:
         for group in groups:
             key = group["idempotency_key"]
             rows = conn.execute(
