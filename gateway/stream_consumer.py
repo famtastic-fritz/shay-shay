@@ -147,6 +147,10 @@ class GatewayStreamConsumer:
         self._last_sent_text = ""   # Track last-sent text to skip redundant edits
         self._fallback_final_send = False
         self._fallback_prefix = ""
+        self._fallback_undelivered_content: Optional[str] = None
+        self._partial_overflow_fallback = False
+        self._overflow_delivery_failed = False
+        self._overflow_attempt_size = 0
         self._flood_strikes = 0         # Consecutive flood-control edit failures
         self._current_edit_interval = self.cfg.edit_interval  # Adaptive backoff
         self._final_response_sent = False
@@ -187,6 +191,13 @@ class GatewayStreamConsumer:
         """True when the stream consumer delivered the final assistant reply."""
         return self._final_response_sent
 
+    async def retry_pending_final(self, final_text: str) -> bool:
+        """Retry only the exact final-response suffix not yet acknowledged."""
+        if self._fallback_undelivered_content is None:
+            return self._final_response_sent
+        await self._send_fallback_final(final_text)
+        return self._final_response_sent
+
     def on_segment_break(self) -> None:
         """Finalize the current stream segment and start a fresh message."""
         self._queue.put(_NEW_SEGMENT)
@@ -215,6 +226,8 @@ class GatewayStreamConsumer:
         self._last_sent_text = ""
         self._fallback_final_send = False
         self._fallback_prefix = ""
+        self._fallback_undelivered_content = None
+        self._partial_overflow_fallback = False
         # Native draft streaming: bump the draft_id so the next text segment
         # animates as a fresh preview below the tool-progress bubbles, not
         # over the prior segment's already-finalized draft.  This is how
@@ -361,7 +374,12 @@ class GatewayStreamConsumer:
             else len
         )
         _raw_limit = getattr(self.adapter, "MAX_MESSAGE_LENGTH", 4096)
-        _safe_limit = max(500, _raw_limit - _len_fn(self.cfg.cursor) - 100)
+        # Keep the usual headroom for large platform messages, but never let
+        # the minimum buffer exceed a smaller adapter's actual hard limit.
+        _safe_limit = max(
+            1,
+            min(_raw_limit, max(500, _raw_limit - _len_fn(self.cfg.cursor) - 100)),
+        )
 
         # Resolve native draft streaming once per run.  When enabled the
         # consumer routes mid-stream frames through adapter.send_draft and
@@ -405,6 +423,22 @@ class GatewayStreamConsumer:
                 if got_done:
                     self._flush_think_buffer()
 
+                # A failed overflow send must not retry in a tight loop while
+                # the model is still streaming. Keep any later deltas in the
+                # pending suffix and leave the final retry to the gateway.
+                if self._overflow_delivery_failed:
+                    new_suffix = self._accumulated[self._overflow_attempt_size:]
+                    if new_suffix:
+                        self._fallback_undelivered_content = (
+                            (self._fallback_undelivered_content or "") + new_suffix
+                        )
+                        self._overflow_attempt_size = len(self._accumulated)
+                    if got_done or got_segment_break:
+                        self._final_response_sent = False
+                        return
+                    await asyncio.sleep(0.05)
+                    continue
+
                 # Decide whether to flush an edit
                 now = time.monotonic()
                 elapsed = now - self._last_edit_time
@@ -440,21 +474,30 @@ class GatewayStreamConsumer:
                         chunks = self.adapter.truncate_message(
                             self._accumulated, _safe_limit, len_fn=_len_fn,
                         )
-                        chunks_delivered = False
+                        delivered_count = 0
                         reply_to = self._message_id or self._initial_reply_to_id
                         for chunk in chunks:
                             new_id = await self._send_new_chunk(chunk, reply_to)
                             if new_id is not None and new_id != reply_to:
-                                chunks_delivered = True
-                        self._accumulated = ""
+                                delivered_count += 1
+                                reply_to = new_id
+                                continue
+                            break
+                        all_chunks_delivered = delivered_count == len(chunks)
+                        if all_chunks_delivered:
+                            self._fallback_undelivered_content = None
+                            self._accumulated = ""
+                        else:
+                            self._fallback_undelivered_content = "".join(
+                                chunks[delivered_count:]
+                            )
+                            self._partial_overflow_fallback = delivered_count > 0
+                            self._overflow_delivery_failed = True
+                            self._overflow_attempt_size = len(self._accumulated)
                         self._last_sent_text = ""
                         self._last_edit_time = time.monotonic()
                         if got_done:
-                            # Only claim final delivery if THESE chunks actually
-                            # landed.  ``_already_sent`` may be True from prior
-                            # tool-progress edits or fallback-mode promotion (#10748)
-                            # — that doesn't mean the final answer reached the user.
-                            self._final_response_sent = chunks_delivered
+                            self._final_response_sent = all_chunks_delivered
                             return
                         if got_segment_break:
                             self._message_id = None
@@ -689,7 +732,11 @@ class GatewayStreamConsumer:
         Retries each chunk once on flood-control failures with a short delay.
         """
         final_text = self._clean_for_display(text)
-        continuation = self._continuation_text(final_text)
+        partial_overflow = self._partial_overflow_fallback
+        if self._fallback_undelivered_content is not None:
+            continuation = self._fallback_undelivered_content
+        else:
+            continuation = self._continuation_text(final_text)
         self._fallback_final_send = False
         if not continuation.strip():
             # Nothing new to send — the visible partial already matches final text.
@@ -738,11 +785,13 @@ class GatewayStreamConsumer:
         safe_limit = max(500, raw_limit - 100)
         chunks = self._split_text_chunks(continuation, safe_limit, len_fn=_len_fn)
 
-        stale_message_id = self._message_id  # partial message to clean up
-        last_message_id: Optional[str] = None
-        last_successful_chunk = ""
+        # A partial overflow consists of several valid visible messages.  Its
+        # last id is not a disposable streaming preview and must not be deleted.
+        stale_message_id = None if partial_overflow else self._message_id
+        last_message_id: Optional[str] = self._message_id
+        last_successful_chunk = self._last_sent_text
         sent_any_chunk = False
-        for chunk in chunks:
+        for chunk_index, chunk in enumerate(chunks):
             # Try sending with one retry on flood-control errors.
             result = None
             for attempt in range(2):
@@ -762,26 +811,26 @@ class GatewayStreamConsumer:
                     break  # non-flood error or second attempt failed
 
             if not result or not result.success:
-                if sent_any_chunk:
-                    # Some continuation text already reached the user. Suppress
-                    # the base gateway final-send path so we don't resend the
-                    # full response and create another duplicate.
+                # Delivery state advances only after acknowledgement.  Keep
+                # the failed chunk plus every later chunk for an exact retry.
+                self._fallback_undelivered_content = "".join(chunks[chunk_index:])
+                self._final_response_sent = False
+                if sent_any_chunk or partial_overflow:
                     self._already_sent = True
-                    self._final_response_sent = True
                     self._message_id = last_message_id
                     self._last_sent_text = last_successful_chunk
                     self._fallback_prefix = ""
                     return
-                # No fallback chunk reached the user — allow the normal gateway
-                # final-send path to try one more time.
-                self._already_sent = False
-                self._message_id = None
-                self._last_sent_text = ""
-                self._fallback_prefix = ""
+                # The original overflow prefix is already visible even when
+                # the first tail chunk fails, so a full-response fallback
+                # would duplicate it.
+                self._already_sent = bool(partial_overflow)
                 return
             sent_any_chunk = True
             last_successful_chunk = chunk
             last_message_id = result.message_id or last_message_id
+            remaining = "".join(chunks[chunk_index + 1:])
+            self._fallback_undelivered_content = remaining or None
             # Each fallback chunk is a fresh platform message — notify
             # so any stale tool-progress bubble gets closed off.
             self._notify_new_message()
@@ -807,6 +856,7 @@ class GatewayStreamConsumer:
         self._final_response_sent = True
         self._last_sent_text = chunks[-1]
         self._fallback_prefix = ""
+        self._partial_overflow_fallback = False
 
     def _is_flood_error(self, result) -> bool:
         """Check if a SendResult failure is due to flood control / rate limiting."""
@@ -1185,6 +1235,25 @@ class GatewayStreamConsumer:
                         self._flood_strikes = 0
                         return True
                     else:
+                        # A split delivery can fail after one or more chunks
+                        # are already visible.  Adopt its last known id and
+                        # acknowledged prefix before entering normal fallback,
+                        # so final delivery sends only the missing tail.
+                        if getattr(result, "partial", False):
+                            undelivered_content = getattr(
+                                result, "undelivered_content", None,
+                            )
+                            if undelivered_content is not None:
+                                self._fallback_undelivered_content = undelivered_content
+                                self._partial_overflow_fallback = True
+                            delivered_content = getattr(result, "delivered_content", None)
+                            if delivered_content is not None and undelivered_content is None:
+                                self._last_sent_text = delivered_content
+                            if result.message_id:
+                                self._message_id = str(result.message_id)
+                                self._message_created_ts = time.monotonic()
+                            if getattr(result, "continuation_message_ids", ()):
+                                self._notify_new_message()
                         # Edit failed.  If this looks like flood control / rate
                         # limiting, use adaptive backoff: double the edit interval
                         # and retry on the next cycle.  Only permanently disable
@@ -1215,13 +1284,15 @@ class GatewayStreamConsumer:
                             "Edit failed (strikes=%d), entering fallback mode",
                             self._flood_strikes,
                         )
-                        self._fallback_prefix = self._visible_prefix()
+                        if not self._partial_overflow_fallback:
+                            self._fallback_prefix = self._visible_prefix()
                         self._fallback_final_send = True
                         self._edit_supported = False
                         self._already_sent = True
                         # Best-effort: strip the cursor from the last visible
                         # message so the user doesn't see a stuck ▉.
-                        await self._try_strip_cursor()
+                        if not self._partial_overflow_fallback:
+                            await self._try_strip_cursor()
                         return False
                 else:
                     # Editing not supported — skip intermediate updates.

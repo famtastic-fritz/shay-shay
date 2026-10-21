@@ -87,6 +87,13 @@ def parse_pointer_sources(entries: Iterable[str]) -> List[PrefetchSource]:
     return sources
 
 
+def default_obsidian_root(home: Path | None = None) -> Path:
+    user_home = home or Path.home()
+    current = user_home / "Development" / "FAMtastic" / "obsidian"
+    legacy = user_home / "famtastic" / "obsidian"
+    return next((path for path in (current, legacy) if path.is_dir()), current)
+
+
 def default_intelligence_sources(home: Path | None = None) -> List[PrefetchSource]:
     """Return high-signal Shay/FAMtastic intelligence artifacts if present.
 
@@ -96,7 +103,7 @@ def default_intelligence_sources(home: Path | None = None) -> List[PrefetchSourc
     """
     user_home = home or Path.home()
     shay_home = Path(os.environ.get("SHAY_HOME", user_home / ".shay")).expanduser()
-    obsidian = user_home / "famtastic" / "obsidian"
+    obsidian = default_obsidian_root(user_home)
     process_intel = shay_home / "process-intelligence" / "intelligence"
     return [
         PrefetchSource(

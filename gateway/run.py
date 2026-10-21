@@ -15831,11 +15831,21 @@ class GatewayRunner:
                         except Exception as e:
                             logger.debug("Stream consumer wait before queued message failed: %s", e)
                     _previewed = bool(result.get("response_previewed"))
+                    first_response = result.get("final_response", "")
+                    if (
+                        _sc
+                        and not getattr(_sc, "final_response_sent", False)
+                        and first_response
+                        and hasattr(_sc, "retry_pending_final")
+                    ):
+                        try:
+                            await _sc.retry_pending_final(first_response)
+                        except Exception as e:
+                            logger.warning("Pending streamed tail retry failed: %s", e)
                     _already_streamed = bool(
                         (_sc and getattr(_sc, "final_response_sent", False))
                         or _previewed
                     )
-                    first_response = result.get("final_response", "")
                     if first_response and not _already_streamed:
                         try:
                             logger.info(
@@ -15987,6 +15997,16 @@ class GatewayRunner:
         _sc = stream_consumer_holder[0]
         if isinstance(response, dict) and not response.get("failed"):
             _final = response.get("final_response") or ""
+            if (
+                _sc
+                and _final
+                and not getattr(_sc, "final_response_sent", False)
+                and hasattr(_sc, "retry_pending_final")
+            ):
+                try:
+                    await _sc.retry_pending_final(_final)
+                except Exception as e:
+                    logger.warning("Pending streamed tail retry failed: %s", e)
             _is_empty_sentinel = not _final or _final == "(empty)"
             _streamed = bool(
                 _sc and getattr(_sc, "final_response_sent", False)

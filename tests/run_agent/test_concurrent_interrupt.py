@@ -82,6 +82,7 @@ def _make_agent(monkeypatch):
     # fanout, not steer injection.
     stub._apply_pending_steer_to_tool_results = lambda *a, **kw: None
     stub._invoke_tool = MagicMock(side_effect=lambda *a, **kw: '{"ok": true}')
+    stub._record_tool_ledger_event = MagicMock()
     return stub
 
 
@@ -143,4 +144,3 @@ def test_clear_interrupt_clears_worker_tids(monkeypatch):
         "clear_interrupt() did not clear the interrupt bit for a tracked "
         "worker tid — stale interrupt can leak into the next turn"
     )
-

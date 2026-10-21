@@ -3,6 +3,7 @@ from pathlib import Path
 from agent.intelligence_prefetch import (
     build_intelligence_prefetch,
     parse_pointer_sources,
+    default_intelligence_sources,
 )
 
 
@@ -52,3 +53,26 @@ def test_build_prefetch_includes_default_gap_research_when_present(tmp_path, mon
 def test_build_prefetch_returns_empty_when_no_sources(tmp_path, monkeypatch):
     monkeypatch.setenv("SHAY_HOME", str(tmp_path / ".shay"))
     assert build_intelligence_prefetch("anything", home=tmp_path) == ""
+
+
+def test_current_root_wins_and_legacy_install_still_works(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHAY_HOME", str(tmp_path / ".shay"))
+    suffix = Path("01-Shay-Platform/gap-research/latest-gap-research.md")
+    legacy = tmp_path / "famtastic/obsidian" / suffix
+    current = tmp_path / "Development/FAMtastic/obsidian" / suffix
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("Legacy evidence")
+    assert "Legacy evidence" in build_intelligence_prefetch("gap research", home=tmp_path)
+    current.parent.mkdir(parents=True)
+    current.write_text("Current evidence")
+    block = build_intelligence_prefetch("gap research", home=tmp_path)
+    assert "Current evidence" in block
+    assert "Legacy evidence" not in block
+    current.unlink()
+    # Once the current vault exists, do not mix missing artifacts with old ones.
+    assert "Legacy evidence" not in build_intelligence_prefetch("gap research", home=tmp_path)
+
+
+def test_missing_roots_resolve_to_current_layout(tmp_path):
+    source = default_intelligence_sources(tmp_path)[0]
+    assert source.path.is_relative_to(tmp_path / "Development/FAMtastic/obsidian")

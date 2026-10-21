@@ -18,6 +18,7 @@ from shay_cli.config import get_env_path, get_env_value, get_shay_home, load_con
 from shay_cli.models import provider_label
 from shay_cli.nous_subscription import get_nous_subscription_features
 from shay_cli.runtime_provider import resolve_requested_provider
+from shay_cli.telegram_health import assess_telegram_readiness, telegram_dependency_available
 from shay_cli.vercel_auth import describe_vercel_auth
 from shay_constants import OPENROUTER_MODELS_URL
 from tools.tool_backend_helpers import managed_nous_tools_enabled
@@ -388,6 +389,17 @@ def show_status(args):
     print()
     print(color("◆ Messaging Platforms", Colors.CYAN, Colors.BOLD))
 
+    # Configuration is only the first Telegram health layer. Reuse this
+    # snapshot for the gateway section below so one status invocation cannot
+    # contradict itself while reporting service state.
+    gateway_snapshot = None
+    try:
+        from shay_cli.gateway import get_gateway_runtime_snapshot
+
+        gateway_snapshot = get_gateway_runtime_snapshot()
+    except Exception:
+        pass
+
     platforms = {
         "Telegram": ("TELEGRAM_BOT_TOKEN", "TELEGRAM_HOME_CHANNEL"),
         "Discord": ("DISCORD_BOT_TOKEN", "DISCORD_HOME_CHANNEL"),
@@ -409,19 +421,32 @@ def show_status(args):
     for name, (token_var, home_var) in platforms.items():
         token = os.getenv(token_var, "")
         has_token = bool(token)
-        
+
         home_channel = ""
         if home_var:
             home_channel = os.getenv(home_var, "")
         # Back-compat: QQBot home channel was renamed from QQ_HOME_CHANNEL to QQBOT_HOME_CHANNEL
         if not home_channel and home_var == "QQBOT_HOME_CHANNEL":
             home_channel = os.getenv("QQ_HOME_CHANNEL", "")
-        
-        status = "configured" if has_token else "not configured"
+
+        if name == "Telegram":
+            readiness = assess_telegram_readiness(
+                configured=has_token,
+                dependency_available=telegram_dependency_available(),
+                gateway_running=(gateway_snapshot.running if gateway_snapshot is not None else None),
+                gateway_process_count=(
+                    len(gateway_snapshot.gateway_pids) if gateway_snapshot is not None else None
+                ),
+            )
+            status = readiness.status_label
+            platform_ok = readiness.ready
+        else:
+            status = "configured" if has_token else "not configured"
+            platform_ok = has_token
         if home_channel:
             status += f" (home: {home_channel})"
-        
-        print(f"  {name:<12}  {check_mark(has_token)} {status}")
+
+        print(f"  {name:<12}  {check_mark(platform_ok)} {status}")
 
     # Plugin-registered platforms
     try:
@@ -443,7 +468,7 @@ def show_status(args):
     try:
         from shay_cli.gateway import get_gateway_runtime_snapshot, _format_gateway_pids
 
-        snapshot = get_gateway_runtime_snapshot()
+        snapshot = gateway_snapshot or get_gateway_runtime_snapshot()
         is_running = snapshot.running
         print(f"  Status:       {check_mark(is_running)} {'running' if is_running else 'stopped'}")
         print(f"  Manager:      {snapshot.manager}")

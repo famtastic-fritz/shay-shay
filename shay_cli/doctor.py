@@ -284,6 +284,63 @@ def _check_gateway_service_linger(issues: list[str]) -> None:
         check_warn("Could not verify systemd linger", f"({linger_detail})")
 
 
+def _check_telegram_operational_health(issues: list[str]) -> None:
+    """Report Telegram prerequisites as operational health, not token presence."""
+    configured = bool(os.getenv("TELEGRAM_BOT_TOKEN", "").strip())
+    if not configured:
+        return
+
+    from shay_cli.telegram_health import assess_telegram_readiness, telegram_dependency_available
+
+    gateway_running: bool | None = None
+    gateway_process_count: int | None = None
+    try:
+        from shay_cli.gateway import get_gateway_runtime_snapshot
+
+        gateway_snapshot = get_gateway_runtime_snapshot()
+        gateway_running = gateway_snapshot.running
+        gateway_process_count = len(gateway_snapshot.gateway_pids)
+    except Exception:
+        pass
+
+    readiness = assess_telegram_readiness(
+        configured=True,
+        dependency_available=telegram_dependency_available(),
+        gateway_running=gateway_running,
+        gateway_process_count=gateway_process_count,
+    )
+
+    print()
+    print(color("◆ Telegram Operational Health", Colors.CYAN, Colors.BOLD))
+    if readiness.ready:
+        check_ok("Telegram local delivery prerequisites", f"({readiness.doctor_detail})")
+        check_info("Run a real Telegram message test to verify inbound and outbound delivery")
+        return
+
+    check_fail("Telegram local delivery prerequisites", f"({readiness.doctor_detail})")
+    if readiness.dependency_available is None:
+        issues.append("Telegram dependency could not be inspected — verify the active Python environment")
+    elif not readiness.dependency_available:
+        issues.append(
+            "Telegram is configured but python-telegram-bot is missing — "
+            f"install it with: {sys.executable} -m pip install 'shay-shay[messaging]'"
+        )
+    elif readiness.gateway_running is False:
+        issues.append("Telegram is configured but the gateway is stopped — run: shay gateway start")
+    elif readiness.gateway_process_count is not None and readiness.gateway_process_count > 1:
+        issues.append(
+            "Telegram is configured but multiple gateway processes are active — "
+            "stop duplicate pollers, then run: shay gateway status"
+        )
+    elif readiness.gateway_process_count == 0:
+        issues.append(
+            "Telegram service reports running but no gateway process was found — "
+            "run: shay gateway status"
+        )
+    else:
+        issues.append("Telegram is configured but the gateway state could not be inspected — run: shay gateway status")
+
+
 _APIKEY_PROVIDERS_CACHE: list | None = None
 
 
@@ -449,12 +506,17 @@ def run_doctor(args):
             check_fail(name, "(missing)")
             issues.append(f"Install {name}: {_python_install_cmd()} {module}")
     
+    telegram_configured = bool(os.getenv("TELEGRAM_BOT_TOKEN", "").strip())
     for module, name in optional_packages:
         try:
             __import__(module)
-            check_ok(name, "(optional)")
+            detail = "(required by configured Telegram)" if module == "telegram" and telegram_configured else "(optional)"
+            check_ok(name, detail)
         except ImportError:
-            check_warn(name, "(optional, not installed)")
+            if module == "telegram" and telegram_configured:
+                check_fail(name, "(required by configured Telegram, not installed)")
+            else:
+                check_warn(name, "(optional, not installed)")
     
     # =========================================================================
     # Check: Configuration files
@@ -921,6 +983,7 @@ def run_doctor(args):
         except Exception:
             pass
 
+    _check_telegram_operational_health(issues)
     _check_gateway_service_linger(issues)
 
     # =========================================================================

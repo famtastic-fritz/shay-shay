@@ -1321,6 +1321,7 @@ class AIAgent:
         self._executing_tools = False
         self._tool_guardrails = ToolCallGuardrailController()
         self._tool_guardrail_halt_decision: ToolGuardrailDecision | None = None
+        self._ledger_turn_id: Optional[str] = None
 
         # Interrupt mechanism for breaking out of tool loops
         self._interrupt_requested = False
@@ -2473,6 +2474,86 @@ class AIAgent:
             logger.warning(
                 "Session DB creation failed (will retry next turn): %s", e
             )
+
+    @staticmethod
+    def _ledger_code(value: Any, default: str = "unknown", *, field: str = "source") -> str:
+        """Validate original metadata; never rewrite secret text into an identifier."""
+        from agent.turn_ledger import normalize_ledger_payload
+        try:
+            return normalize_ledger_payload({field: value})[field]
+        except (KeyError, TypeError, ValueError):
+            return default
+
+    def _begin_ledger_turn(self) -> Optional[str]:
+        """Best-effort start of a fresh durable turn receipt."""
+        self._ledger_turn_id = None
+        if not self._session_db or not self._session_db_created:
+            return None
+        turn_id = uuid.uuid4().hex
+        try:
+            self._session_db.begin_turn(self.session_id, turn_id=turn_id)
+            self._session_db.append_turn_event(
+                turn_id,
+                "turn.started",
+                {
+                    "provider": self._ledger_code(self.provider),
+                    "model": self._ledger_code(self.model, field="model"),
+                    "api_mode": self._ledger_code(self.api_mode),
+                    "source": self._ledger_code(self.platform, "cli"),
+                    "surface": self._ledger_code(self.platform, "cli"),
+                },
+            )
+        except Exception:
+            logger.warning("Turn ledger unavailable: start_failed")
+            try:
+                self._session_db.finish_turn(turn_id, "failed", outcome="failed")
+            except Exception:
+                logger.warning("Turn ledger unavailable: start_cleanup_failed")
+            return None
+        self._ledger_turn_id = turn_id
+        return turn_id
+
+    def _append_ledger_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        """Append allowlisted operational facts without affecting execution."""
+        if not self._ledger_turn_id or not self._session_db:
+            return
+        try:
+            self._session_db.append_turn_event(self._ledger_turn_id, event_type, payload)
+        except Exception:
+            logger.warning("Turn ledger unavailable: event_write_failed")
+
+    def _record_tool_ledger_event(
+        self,
+        event_type: str,
+        tool_name: str,
+        tool_call_id: Optional[str],
+        *,
+        outcome: str,
+        duration: float = 0.0,
+        error_code: Optional[str] = None,
+    ) -> None:
+        payload: Dict[str, Any] = {
+            "tool_name": self._ledger_code(tool_name),
+            "tool_call_id": self._ledger_code(tool_call_id) if tool_call_id else None,
+            "outcome": outcome,
+            "status": outcome,
+            "duration_ms": max(0, int(duration * 1000)),
+        }
+        if error_code:
+            payload["error_code"] = error_code
+        self._append_ledger_event(event_type, payload)
+
+    def _finish_ledger_turn(self, *, status: str, outcome: str) -> None:
+        """Atomically append the final event and terminalize the receipt."""
+        if not self._ledger_turn_id or not self._session_db:
+            return
+        turn_id = self._ledger_turn_id
+        try:
+            self._session_db.finish_turn(turn_id, status, outcome=outcome)
+        except Exception:
+            logger.warning("Turn ledger unavailable: finish_failed")
+        finally:
+            self._ledger_turn_id = None
 
     def reset_session_state(self):
         """Reset all session-scoped token counters to 0 for a fresh session.
@@ -10574,6 +10655,20 @@ class AIAgent:
         if self._interrupt_requested:
             print(f"{self.log_prefix}⚡ Interrupt: skipping {num_tools} tool call(s)")
             for tc in tool_calls:
+                self._record_tool_ledger_event(
+                    "tool.started",
+                    tc.function.name,
+                    getattr(tc, "id", None),
+                    outcome="skipped",
+                    error_code="interrupted",
+                )
+                self._record_tool_ledger_event(
+                    "tool.completed",
+                    tc.function.name,
+                    getattr(tc, "id", None),
+                    outcome="skipped",
+                    error_code="interrupted",
+                )
                 messages.append({
                     "role": "tool",
                     "name": tc.function.name,
@@ -10678,6 +10773,11 @@ class AIAgent:
                     print(f"  📞 Tool {i}: {name}({list(args.keys())}) - {args_preview}")
 
         for tc, name, args, block_result, blocked_by_guardrail in parsed_calls:
+            self._record_tool_ledger_event(
+                "tool.started", name, getattr(tc, "id", None),
+                outcome="blocked" if block_result is not None else "started",
+                error_code="policy_blocked" if block_result is not None else None,
+            )
             if block_result is not None:
                 continue
             if self.tool_progress_callback:
@@ -10907,6 +11007,21 @@ class AIAgent:
                     logging.debug(f"Tool {function_name} completed in {tool_duration:.2f}s")
                     logging.debug(f"Tool result ({len(function_result)} chars): {function_result}")
 
+            if r is None:
+                ledger_outcome = "skipped" if self._interrupt_requested else "failed"
+                ledger_error = "interrupted" if self._interrupt_requested else "dispatch_failed"
+            elif blocked:
+                ledger_outcome, ledger_error = "blocked", "policy_blocked"
+            elif is_error:
+                ledger_outcome, ledger_error = "failed", "tool_error"
+            else:
+                ledger_outcome, ledger_error = "completed", None
+            self._record_tool_ledger_event(
+                "tool.completed", name, getattr(tc, "id", None),
+                outcome=ledger_outcome, duration=tool_duration,
+                error_code=ledger_error,
+            )
+
             # Print cute message per tool
             if self._should_emit_quiet_tool_messages():
                 cute_msg = _get_cute_tool_message_impl(name, args, tool_duration, result=function_result)
@@ -10996,6 +11111,14 @@ class AIAgent:
                     self._vprint(f"{self.log_prefix}⚡ Interrupt: skipping {len(remaining_calls)} tool call(s)", force=True)
                 for skipped_tc in remaining_calls:
                     skipped_name = skipped_tc.function.name
+                    self._record_tool_ledger_event(
+                        "tool.started", skipped_name, getattr(skipped_tc, "id", None),
+                        outcome="skipped", error_code="interrupted",
+                    )
+                    self._record_tool_ledger_event(
+                        "tool.completed", skipped_name, getattr(skipped_tc, "id", None),
+                        outcome="skipped", error_code="interrupted",
+                    )
                     skip_msg = {
                         "role": "tool",
                         "name": skipped_name,
@@ -11051,6 +11174,11 @@ class AIAgent:
                     _guardrail_block_decision = guardrail_decision
 
             _execution_blocked = _block_msg is not None or _guardrail_block_decision is not None
+            self._record_tool_ledger_event(
+                "tool.started", function_name, getattr(tool_call, "id", None),
+                outcome="blocked" if _execution_blocked else "started",
+                error_code="policy_blocked" if _execution_blocked else None,
+            )
 
             if _execution_blocked:
                 # Tool blocked by plugin or guardrail policy — skip counters,
@@ -11349,6 +11477,15 @@ class AIAgent:
             else:
                 logger.info("tool %s completed (%.2fs, %d chars)", function_name, tool_duration, _result_len)
 
+            self._record_tool_ledger_event(
+                "tool.completed", function_name, getattr(tool_call, "id", None),
+                outcome=("blocked" if _execution_blocked else
+                         "failed" if _is_error_result else "completed"),
+                duration=tool_duration,
+                error_code=("policy_blocked" if _execution_blocked else
+                            "tool_error" if _is_error_result else None),
+            )
+
             if not _execution_blocked and self.tool_progress_callback:
                 try:
                     self.tool_progress_callback(
@@ -11422,6 +11559,14 @@ class AIAgent:
                 self._vprint(f"{self.log_prefix}⚡ Interrupt: skipping {remaining} remaining tool call(s)", force=True)
                 for skipped_tc in assistant_message.tool_calls[i:]:
                     skipped_name = skipped_tc.function.name
+                    self._record_tool_ledger_event(
+                        "tool.started", skipped_name, getattr(skipped_tc, "id", None),
+                        outcome="skipped", error_code="interrupted",
+                    )
+                    self._record_tool_ledger_event(
+                        "tool.completed", skipped_name, getattr(skipped_tc, "id", None),
+                        outcome="skipped", error_code="interrupted",
+                    )
                     skip_msg = {
                         "role": "tool",
                         "name": skipped_name,
@@ -11670,6 +11815,48 @@ class AIAgent:
         stream_callback: Optional[callable] = None,
         persist_user_message: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Run one turn and guarantee that any opened ledger receipt closes."""
+        result: Optional[Dict[str, Any]] = None
+        turn_id: Optional[str] = None
+        try:
+            result = self._run_conversation_impl(
+                user_message,
+                system_message=system_message,
+                conversation_history=conversation_history,
+                task_id=task_id,
+                stream_callback=stream_callback,
+                persist_user_message=persist_user_message,
+            )
+            turn_id = self._ledger_turn_id
+            return result
+        except BaseException:
+            turn_id = self._ledger_turn_id
+            raise
+        finally:
+            # The normal epilogue terminalizes first.  This guard owns every
+            # early-return and exception path without changing its result.
+            active_turn_id = self._ledger_turn_id
+            if active_turn_id:
+                turn_id = active_turn_id
+                if result is not None and result.get("interrupted"):
+                    status, outcome = "abandoned", "interrupted"
+                elif result is not None and result.get("completed") and not result.get("failed"):
+                    status, outcome = "succeeded", "completed"
+                else:
+                    status, outcome = "failed", "failed"
+                self._finish_ledger_turn(status=status, outcome=outcome)
+            if result is not None and turn_id:
+                result.setdefault("turn_id", turn_id)
+
+    def _run_conversation_impl(
+        self,
+        user_message: str,
+        system_message: str = None,
+        conversation_history: List[Dict[str, Any]] = None,
+        task_id: str = None,
+        stream_callback: Optional[callable] = None,
+        persist_user_message: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Run a complete conversation with tool calling until completion.
 
@@ -11742,6 +11929,7 @@ class AIAgent:
         self._persist_user_message_override = persist_user_message
         # Generate unique task_id if not provided to isolate VMs between concurrent tasks
         effective_task_id = task_id or str(uuid.uuid4())
+        ledger_turn_id = self._begin_ledger_turn()
         # Expose the active task_id so tools running mid-turn (e.g. delegate_task
         # in delegate_tool.py) can identify this agent for the cross-agent file
         # state registry.  Set BEFORE any tool dispatch so snapshots taken at
@@ -15534,6 +15722,20 @@ class AIAgent:
             )
         except Exception as exc:
             logger.warning("on_session_end hook failed: %s", exc)
+
+        if interrupted:
+            _ledger_status, _ledger_outcome = "abandoned", "interrupted"
+        elif _turn_exit_reason.startswith("max_iterations_reached"):
+            _ledger_status, _ledger_outcome = "abandoned", "budget_exhausted"
+        elif final_response is None or _turn_exit_reason.startswith(
+            ("all_retries_exhausted", "error_", "empty_response", "guardrail_halt")
+        ):
+            _ledger_status, _ledger_outcome = "failed", "failed"
+        else:
+            _ledger_status, _ledger_outcome = "succeeded", "completed"
+        self._finish_ledger_turn(status=_ledger_status, outcome=_ledger_outcome)
+        if ledger_turn_id:
+            result["turn_id"] = ledger_turn_id
 
         return result
 
