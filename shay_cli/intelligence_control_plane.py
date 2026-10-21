@@ -596,6 +596,8 @@ def instantiate_worker_from_template(
 
 
 def get_memory_truth_surfaces() -> list[dict[str, Any]]:
+    from agent.intelligence_prefetch import default_obsidian_root
+    obsidian = default_obsidian_root()
     return [
         {
             "surface_id": "north-star-memory",
@@ -608,14 +610,14 @@ def get_memory_truth_surfaces() -> list[dict[str, Any]]:
             "surface_id": "active-state-file",
             "surface_type": "active_state",
             "owner": "memory-truth",
-            "source_of_truth": "~/famtastic/obsidian/01-Shay-Platform/HOT-CONTEXT-POINTERS.md",
+            "source_of_truth": str(obsidian / "01-Shay-Platform/HOT-CONTEXT-POINTERS.md"),
             "usage": "current operational state and resumability",
         },
         {
             "surface_id": "essence-vault",
             "surface_type": "essence",
             "owner": "memory-truth",
-            "source_of_truth": "~/famtastic/obsidian/ via basic-memory/vault-search",
+            "source_of_truth": f"{obsidian}/ via basic-memory/vault-search",
             "usage": "durable recall and historical search",
         },
         {

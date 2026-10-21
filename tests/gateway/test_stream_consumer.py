@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from gateway.stream_consumer import GatewayStreamConsumer, StreamConsumerConfig
+from gateway.config import PlatformConfig
+from gateway.platforms.telegram import TelegramAdapter
 
 
 # ── _clean_for_display unit tests ────────────────────────────────────────
@@ -887,7 +889,7 @@ class TestFinalResponseDeliveryGuard:
         )
         adapter.MAX_MESSAGE_LENGTH = 100
         adapter.truncate_message = MagicMock(
-            side_effect=lambda text, limit: [text[:limit], text[limit:]],
+            side_effect=lambda text, limit, **_kwargs: [text[:limit], text[limit:]],
         )
 
         config = StreamConsumerConfig(edit_interval=0.01, buffer_threshold=5)
@@ -902,7 +904,7 @@ class TestFinalResponseDeliveryGuard:
         task = asyncio.create_task(consumer.run())
         await asyncio.sleep(0.05)
         consumer.finish()
-        await task
+        await asyncio.wait_for(task, timeout=2)
 
         assert consumer._final_response_sent is False, (
             "_already_sent leaked into _final_response_sent — gateway will "
@@ -910,20 +912,19 @@ class TestFinalResponseDeliveryGuard:
         )
 
     @pytest.mark.asyncio
-    async def test_split_overflow_partial_send_marks_final_sent(self):
-        """Split-overflow path: if at least one chunk lands on done frame,
-        we did deliver the final answer — _final_response_sent must be True."""
+    async def test_split_overflow_partial_send_keeps_final_unconfirmed(self):
+        """A partial split is not a fully delivered final response."""
         adapter = MagicMock()
         adapter.send = AsyncMock(side_effect=[
             SimpleNamespace(success=True, message_id="msg_1"),
-            SimpleNamespace(success=True, message_id="msg_2"),
+            SimpleNamespace(success=False, message_id=None),
         ])
         adapter.edit_message = AsyncMock(
             return_value=SimpleNamespace(success=True),
         )
         adapter.MAX_MESSAGE_LENGTH = 100
         adapter.truncate_message = MagicMock(
-            side_effect=lambda text, limit: [text[:limit], text[limit:]],
+            side_effect=lambda text, limit, **kwargs: [text[:limit], text[limit:]],
         )
 
         config = StreamConsumerConfig(edit_interval=0.01, buffer_threshold=5)
@@ -934,9 +935,10 @@ class TestFinalResponseDeliveryGuard:
         task = asyncio.create_task(consumer.run())
         await asyncio.sleep(0.05)
         consumer.finish()
-        await task
+        await asyncio.wait_for(task, timeout=2)
 
-        assert consumer._final_response_sent is True
+        assert consumer._final_response_sent is False
+        assert consumer._fallback_undelivered_content == long_text[100:]
 
 
 class TestEditOverflowSplitAndDeliver:
@@ -987,6 +989,108 @@ class TestEditOverflowSplitAndDeliver:
         # on_new_message fired so the tool-progress bubble breaks below
         # the new continuation (per the openclaw #32535 lesson).
         assert new_msg_count[0] == 1
+
+    def test_partial_split_fallback_sends_only_missing_rendered_tail(self):
+        asyncio.run(self._exercise_partial_split_fallback())
+
+    async def _exercise_partial_split_fallback(self):
+        adapter = TelegramAdapter(PlatformConfig(enabled=True, token="fake-token"))
+        adapter._bot = MagicMock()
+        adapter._bot.edit_message_text = AsyncMock()
+        adapter._bot.delete_message = AsyncMock()
+        adapter._bot.send_message = AsyncMock(side_effect=[
+            SimpleNamespace(message_id=1001),
+            Exception("forced continuation failure"),
+            SimpleNamespace(message_id=2001),
+        ])
+        fallback_contents = []
+        real_send = adapter.send
+
+        async def recording_send(*args, **kwargs):
+            fallback_contents.append(kwargs["content"])
+            return await real_send(*args, **kwargs)
+
+        adapter.send = recording_send
+
+        consumer = GatewayStreamConsumer(
+            adapter,
+            "999",
+            StreamConsumerConfig(edit_interval=0.01, buffer_threshold=5, cursor=" ▉"),
+        )
+        consumer._message_id = "456"
+        consumer._last_sent_text = "old preview ▉"
+        consumer._already_sent = True
+
+        final_text = "x" * 9000
+        chunks = adapter.truncate_message(
+            final_text, adapter.MAX_MESSAGE_LENGTH, len_fn=adapter.message_len_fn,
+        )
+        assert any("(" in chunk and "/" in chunk for chunk in chunks)
+
+        assert await consumer._send_or_edit(final_text) is False
+        assert consumer._message_id == "1001"
+        assert consumer._fallback_prefix == ""
+        assert consumer._fallback_undelivered_content == "".join(chunks[2:])
+
+        await consumer._send_fallback_final(final_text)
+
+        assert fallback_contents == [chunks[2]]
+        assert chunks[0] not in fallback_contents
+        assert chunks[1] not in fallback_contents
+        assert consumer._fallback_undelivered_content is None
+        assert adapter._bot.edit_message_text.await_count == 1
+        adapter._bot.delete_message.assert_not_awaited()
+
+    def test_first_tail_failure_retries_only_exact_unsent_suffix(self):
+        asyncio.run(self._exercise_first_tail_failure())
+
+    async def _exercise_first_tail_failure(self):
+        adapter = MagicMock()
+        adapter.MAX_MESSAGE_LENGTH = 600
+        tail = "a" * 600 + "b" * 300
+        adapter.send = AsyncMock(side_effect=[
+            SimpleNamespace(success=False, error="network"),
+            SimpleNamespace(success=True, message_id="tail-1"),
+            SimpleNamespace(success=True, message_id="tail-2"),
+        ])
+        consumer = GatewayStreamConsumer(adapter, "chat", StreamConsumerConfig())
+        consumer._partial_overflow_fallback = True
+        consumer._fallback_undelivered_content = tail
+        consumer._already_sent = True
+
+        await consumer._send_fallback_final("delivered-prefix" + tail)
+        assert consumer.final_response_sent is False
+        assert consumer._fallback_undelivered_content == tail
+
+        assert await consumer.retry_pending_final("delivered-prefix" + tail) is True
+        sent = [call.kwargs["content"] for call in adapter.send.await_args_list]
+        assert sent == [tail[:500], tail[:500], tail[500:]]
+
+    def test_later_tail_failure_preserves_only_remaining_suffix(self):
+        asyncio.run(self._exercise_later_tail_failure())
+
+    async def _exercise_later_tail_failure(self):
+        adapter = MagicMock()
+        adapter.MAX_MESSAGE_LENGTH = 600
+        tail = "a" * 500 + "b" * 500 + "c" * 200
+        adapter.send = AsyncMock(side_effect=[
+            SimpleNamespace(success=True, message_id="tail-1"),
+            SimpleNamespace(success=False, error="network"),
+            SimpleNamespace(success=True, message_id="tail-2"),
+            SimpleNamespace(success=True, message_id="tail-3"),
+        ])
+        consumer = GatewayStreamConsumer(adapter, "chat", StreamConsumerConfig())
+        consumer._partial_overflow_fallback = True
+        consumer._fallback_undelivered_content = tail
+        consumer._already_sent = True
+
+        await consumer._send_fallback_final("delivered-prefix" + tail)
+        assert consumer.final_response_sent is False
+        assert consumer._fallback_undelivered_content == tail[500:]
+
+        assert await consumer.retry_pending_final("delivered-prefix" + tail) is True
+        sent = [call.kwargs["content"] for call in adapter.send.await_args_list]
+        assert sent == [tail[:500], tail[500:1000], tail[500:1000], tail[1000:]]
 
 
 class TestInterimCommentaryMessages:
@@ -1780,4 +1884,3 @@ class TestUtf16OverflowDetection:
         # auto-attr mock. Verified indirectly by all the other tests in
         # this file passing — they all use MagicMock adapters.
         assert consumer is not None
-

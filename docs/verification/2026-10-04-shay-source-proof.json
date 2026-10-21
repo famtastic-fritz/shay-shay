@@ -1,0 +1,54 @@
+{
+  "scope": "bounded local source completion; runtime activation unverified",
+  "source_baseline": "07a2d609ef9073a58ada13230ce7319d1b96c4ee",
+  "candidate_chain": "f5d00eb plus reviewed repairs",
+  "focused": {
+    "passed": 599,
+    "excluded": "existing checkout-name assertion in test_runtime_checkout_anchor_reports_live_checkout_state"
+  },
+  "gateway": {
+    "passed": 5334,
+    "skipped": 10,
+    "baseline_failures": 17,
+    "introduced_failures": [],
+    "failure_ids": [
+      "tests/gateway/test_config.py::TestLoadGatewayConfig::test_bridges_quoted_false_platform_enabled_from_config_yaml",
+      "tests/gateway/test_config.py::TestStreamingConfig::test_from_dict_malformed_numeric_values_fall_back_to_defaults",
+      "tests/gateway/test_google_chat.py::TestAuthorizationEmailMatch::test_allowlist_denies_wrong_email",
+      "tests/gateway/test_google_chat.py::TestAuthorizationEmailMatch::test_allowlist_falls_back_to_resource_name_when_no_email",
+      "tests/gateway/test_google_chat.py::TestAuthorizationEmailMatch::test_allowlist_matches_when_user_id_is_email",
+      "tests/gateway/test_google_chat.py::TestEnvConfigLoading::test_missing_project_does_not_enable",
+      "tests/gateway/test_google_chat.py::TestEnvConfigLoading::test_missing_subscription_does_not_enable",
+      "tests/gateway/test_google_chat.py::TestPlatformRegistration::test_enum_value",
+      "tests/gateway/test_status_command.py::test_first_run_non_slack_home_channel_onboarding_keeps_direct_command",
+      "tests/gateway/test_status_command.py::test_first_run_slack_home_channel_onboarding_uses_parent_command",
+      "tests/gateway/test_status_command.py::test_handle_message_persists_agent_token_counts",
+      "tests/gateway/test_tts_media_routing.py::test_streaming_delivery_routes_non_voice_telegram_ogg_media_tag_to_document_sender",
+      "tests/gateway/test_tts_media_routing.py::test_streaming_delivery_routes_telegram_flac_media_tag_to_document_sender",
+      "tests/gateway/test_tts_media_routing.py::test_streaming_delivery_routes_telegram_mp3_media_tag_to_voice_sender",
+      "tests/gateway/test_update_streaming.py::TestUpdatePromptInterception::test_recognized_slash_command_bypasses_pending_update_prompt",
+      "tests/gateway/test_verbose_command.py::TestVerboseCommand::test_defaults_to_all_when_no_tool_progress_set",
+      "tests/gateway/test_verbose_command.py::TestVerboseCommand::test_per_platform_isolation"
+    ]
+  },
+  "agent_adjacent": {
+    "passed": 1792,
+    "skipped": 9,
+    "baseline_passed": 1608,
+    "baseline_failures": [
+      "tests/run_agent/test_async_httpx_del_neuter.py::TestClientCacheBoundedGrowth::test_same_key_replaces_stale_loop_entry"
+    ],
+    "introduced_failures": []
+  },
+  "intelligence_fixtures": {
+    "passed": 3
+  },
+  "review": "independent Code Reviewer PASS after original-value metadata, fixed-code logs, credential prefixes and atomic-terminal fixes",
+  "environment": "canonical scripts/run_tests.sh; four workers; installed Python3.14.7 environment; credential variables unset; SHAY_HOME and vault pinned before import for agent adjacent suite",
+  "limitations": [
+    "shared agent seams only; actual client UI projection and browser proof unverified",
+    "no automatic side-effect replay and no exactly-once side-effect claim",
+    "no provider, scheduler, gateway restart, push, deploy, sends or owner acceptance",
+    "initial restricted/alternate-interpreter runs retained as non-comparable diagnostics in /private/tmp"
+  ]
+}

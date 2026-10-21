@@ -363,9 +363,12 @@ class TelegramAdapter(BasePlatformAdapter):
         self._pending_text_batches: Dict[str, MessageEvent] = {}
         self._pending_text_batch_tasks: Dict[str, asyncio.Task] = {}
         self._polling_error_task: Optional[asyncio.Task] = None
+        self._polling_recovery_tasks: set[asyncio.Task] = set()
+        self._connection_generation: int = 0
         self._polling_conflict_count: int = 0
         self._polling_network_error_count: int = 0
         self._polling_error_callback_ref = None
+        self._stopping = False
         # DM Topics: map of topic_name -> message_thread_id (populated at startup)
         self._dm_topics: Dict[str, int] = {}
         # DM Topics config from extra.dm_topics
@@ -689,7 +692,20 @@ class TelegramAdapter(BasePlatformAdapter):
                 self.name, exc_info=True,
             )
 
-    async def _handle_polling_network_error(self, error: Exception) -> None:
+    def _polling_generation_valid(self, generation: int) -> bool:
+        return generation == self._connection_generation and not self._stopping
+
+    def _track_polling_recovery(self, coro) -> asyncio.Task:
+        task = asyncio.create_task(coro)
+        self._polling_recovery_tasks.add(task)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._polling_recovery_tasks.discard)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
+
+    async def _handle_polling_network_error(
+        self, error: Exception, generation: Optional[int] = None,
+    ) -> None:
         """Reconnect polling after a transient network interruption.
 
         Triggered by NetworkError/TimedOut in the polling error callback, which
@@ -701,7 +717,8 @@ class TelegramAdapter(BasePlatformAdapter):
         MAX_NETWORK_RETRIES attempts, then mark the adapter retryable-fatal so
         the supervisor restarts the gateway process.
         """
-        if self.has_fatal_error:
+        generation = self._connection_generation if generation is None else generation
+        if not self._polling_generation_valid(generation) or self.has_fatal_error:
             return
 
         MAX_NETWORK_RETRIES = 10
@@ -727,6 +744,8 @@ class TelegramAdapter(BasePlatformAdapter):
             self.name, attempt, MAX_NETWORK_RETRIES, delay, error,
         )
         await asyncio.sleep(delay)
+        if not self._polling_generation_valid(generation):
+            return
 
         try:
             if self._app and self._app.updater and self._app.updater.running:
@@ -735,6 +754,8 @@ class TelegramAdapter(BasePlatformAdapter):
             pass
 
         await self._drain_polling_connections()
+        if not self._polling_generation_valid(generation):
+            return
 
         try:
             await self._app.updater.start_polling(
@@ -755,21 +776,21 @@ class TelegramAdapter(BasePlatformAdapter):
             # own. Schedule a deferred probe to detect the wedge and
             # re-enter the ladder if needed.
             if not self.has_fatal_error:
-                probe = asyncio.ensure_future(self._verify_polling_after_reconnect())
-                self._background_tasks.add(probe)
-                probe.add_done_callback(self._background_tasks.discard)
+                self._track_polling_recovery(
+                    self._verify_polling_after_reconnect(generation)
+                )
         except Exception as retry_err:
             logger.warning("[%s] Telegram polling reconnect failed: %s", self.name, retry_err)
             # start_polling failed — polling is dead and no further error
             # callbacks will fire, so schedule the next retry ourselves.
             if not self.has_fatal_error:
-                task = asyncio.ensure_future(
-                    self._handle_polling_network_error(retry_err)
+                self._polling_error_task = self._track_polling_recovery(
+                    self._handle_polling_network_error(retry_err, generation)
                 )
-                self._background_tasks.add(task)
-                task.add_done_callback(self._background_tasks.discard)
 
-    async def _verify_polling_after_reconnect(self) -> None:
+    async def _verify_polling_after_reconnect(
+        self, generation: Optional[int] = None,
+    ) -> None:
         """Heartbeat probe scheduled after a successful reconnect.
 
         PTB's Updater can survive a botched stop()+start_polling() cycle
@@ -790,9 +811,10 @@ class TelegramAdapter(BasePlatformAdapter):
         HEARTBEAT_PROBE_DELAY = 60
         PROBE_TIMEOUT = 10
 
+        generation = self._connection_generation if generation is None else generation
         await asyncio.sleep(HEARTBEAT_PROBE_DELAY)
 
-        if self.has_fatal_error:
+        if not self._polling_generation_valid(generation) or self.has_fatal_error:
             return
         if not (self._app and self._app.updater and self._app.updater.running):
             logger.warning(
@@ -800,7 +822,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 self.name, HEARTBEAT_PROBE_DELAY,
             )
             await self._handle_polling_network_error(
-                RuntimeError("Updater not running after reconnect heartbeat")
+                RuntimeError("Updater not running after reconnect heartbeat"), generation,
             )
             return
 
@@ -811,9 +833,15 @@ class TelegramAdapter(BasePlatformAdapter):
                 "[%s] Polling heartbeat probe failed %ds after reconnect: %s",
                 self.name, HEARTBEAT_PROBE_DELAY, probe_err,
             )
-            await self._handle_polling_network_error(probe_err)
+            if self._polling_generation_valid(generation):
+                await self._handle_polling_network_error(probe_err, generation)
 
-    async def _handle_polling_conflict(self, error: Exception) -> None:
+    async def _handle_polling_conflict(
+        self, error: Exception, generation: Optional[int] = None,
+    ) -> None:
+        generation = self._connection_generation if generation is None else generation
+        if not self._polling_generation_valid(generation):
+            return
         if self.has_fatal_error and self.fatal_error_code == "telegram_polling_conflict":
             return
         # Track consecutive conflicts — transient 409s can occur when a
@@ -838,7 +866,11 @@ class TelegramAdapter(BasePlatformAdapter):
             except Exception:
                 pass
             await asyncio.sleep(RETRY_DELAY)
+            if not self._polling_generation_valid(generation):
+                return
             await self._drain_polling_connections()
+            if not self._polling_generation_valid(generation):
+                return
             try:
                 await self._app.updater.start_polling(
                     allowed_updates=Update.ALL_TYPES,
@@ -850,8 +882,13 @@ class TelegramAdapter(BasePlatformAdapter):
                 return
             except Exception as retry_err:
                 logger.warning("[%s] Telegram polling retry failed: %s", self.name, retry_err)
-                # Don't fall through to fatal yet — wait for the next conflict
-                # to trigger another retry attempt (up to MAX_CONFLICT_RETRIES).
+                # A stopped updater cannot trigger another callback. Keep
+                # recovery in this guarded task, using the actual failure
+                # class so network errors never exhaust the conflict ladder.
+                if self._looks_like_polling_conflict(retry_err):
+                    await self._handle_polling_conflict(retry_err, generation)
+                else:
+                    await self._handle_polling_network_error(retry_err, generation)
                 return
 
         # Exhausted retries — fatal
@@ -1120,6 +1157,9 @@ class TelegramAdapter(BasePlatformAdapter):
             TELEGRAM_WEBHOOK_PORT   Local listen port (default 8443)
             TELEGRAM_WEBHOOK_SECRET Secret token for update verification
         """
+        self._stopping = False
+        self._connection_generation += 1
+        connection_generation = self._connection_generation
         if not TELEGRAM_AVAILABLE:
             logger.error(
                 "[%s] python-telegram-bot not installed. Run: pip install python-telegram-bot",
@@ -1316,10 +1356,14 @@ class TelegramAdapter(BasePlatformAdapter):
                     if self._polling_error_task and not self._polling_error_task.done():
                         return
                     if self._looks_like_polling_conflict(error):
-                        self._polling_error_task = loop.create_task(self._handle_polling_conflict(error))
+                        self._polling_error_task = loop.create_task(
+                            self._handle_polling_conflict(error, connection_generation)
+                        )
                     elif self._looks_like_network_error(error):
                         logger.warning("[%s] Telegram network error, scheduling reconnect: %s", self.name, error)
-                        self._polling_error_task = loop.create_task(self._handle_polling_network_error(error))
+                        self._polling_error_task = loop.create_task(
+                            self._handle_polling_network_error(error, connection_generation)
+                        )
                     else:
                         logger.error("[%s] Telegram polling error: %s", self.name, error, exc_info=True)
 
@@ -1384,6 +1428,28 @@ class TelegramAdapter(BasePlatformAdapter):
 
     async def disconnect(self) -> None:
         """Stop polling/webhook, cancel pending album flushes, and disconnect."""
+        self._stopping = True
+        self._connection_generation += 1
+        polling_error_task = self._polling_error_task
+        current_task = asyncio.current_task()
+        if (
+            polling_error_task
+            and polling_error_task is not current_task
+            and not polling_error_task.done()
+        ):
+            polling_error_task.cancel()
+            await asyncio.gather(polling_error_task, return_exceptions=True)
+        if polling_error_task is not current_task:
+            self._polling_error_task = None
+        recovery_tasks = [
+            task for task in self._polling_recovery_tasks
+            if task is not current_task and not task.done()
+        ]
+        for task in recovery_tasks:
+            task.cancel()
+        if recovery_tasks:
+            await asyncio.gather(*recovery_tasks, return_exceptions=True)
+        self._polling_recovery_tasks.clear()
         pending_media_group_tasks = list(self._media_group_tasks.values())
         for task in pending_media_group_tasks:
             task.cancel()
@@ -1753,8 +1819,9 @@ class TelegramAdapter(BasePlatformAdapter):
         and the gateway has full visibility into every message id we put on
         screen.
 
-        Falls back to ``SendResult(success=False)`` only if even the first-
-        chunk edit fails — that's a real adapter problem, not an overflow.
+        A continuation failure returns a partial failed result with the ids
+        and exact content already delivered, allowing the stream consumer to
+        send only the missing tail.
         """
         chunks = self.truncate_message(
             content, self.MAX_MESSAGE_LENGTH, len_fn=utf16_len,
@@ -1811,6 +1878,7 @@ class TelegramAdapter(BasePlatformAdapter):
         # are already correctly sized).  Best-effort MarkdownV2 with plain
         # fallback, mirroring send().
         continuation_ids: list[str] = []
+        delivered_chunks: list[str] = [first_chunk]
         prev_id = message_id
         for chunk in chunks[1:]:
             sent_msg = None
@@ -1851,17 +1919,27 @@ class TelegramAdapter(BasePlatformAdapter):
                     break
             if sent_msg is None:
                 # Continuation failed — the user has chunk 1 + however many
-                # continuations succeeded.  Report success with what we got
-                # so the stream consumer knows the edit landed; the
-                # remaining tail is lost on this attempt and the next
-                # streaming tick may retry.
+                # continuations succeeded.  This is explicitly partial, not
+                # success; include the delivered prefix so the generic stream
+                # consumer can avoid duplicating it during final fallback.
                 logger.warning(
                     "[%s] Overflow split: stopped at %d/%d chunks delivered",
                     self.name, 1 + len(continuation_ids), len(chunks),
                 )
-                break
+                last_id = continuation_ids[-1] if continuation_ids else message_id
+                return SendResult(
+                    success=False,
+                    message_id=last_id,
+                    error="partial_delivery:continuation_failed",
+                    retryable=False,
+                    continuation_message_ids=tuple(continuation_ids),
+                    partial=True,
+                    delivered_content="".join(delivered_chunks),
+                    undelivered_content="".join(chunks[1 + len(continuation_ids):]),
+                )
             new_id = str(getattr(sent_msg, "message_id", "")) or prev_id
             continuation_ids.append(new_id)
+            delivered_chunks.append(chunk)
             prev_id = new_id
 
         last_id = continuation_ids[-1] if continuation_ids else message_id

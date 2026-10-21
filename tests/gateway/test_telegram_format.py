@@ -796,6 +796,30 @@ class TestEditMessageStreamingSafety:
         # Continuations were sent threaded as replies for visual grouping.
         assert adapter._bot.send_message.await_count == len(result.continuation_message_ids)
 
+    @pytest.mark.asyncio
+    async def test_overflow_continuation_failure_reports_partial_delivery(self):
+        adapter = TelegramAdapter(PlatformConfig(enabled=True, token="fake-token"))
+        adapter._bot = MagicMock()
+        adapter._bot.edit_message_text = AsyncMock()
+        adapter._bot.send_message = AsyncMock(
+            side_effect=[SimpleNamespace(message_id=1001), Exception("send failed")]
+        )
+
+        oversized = "x" * 9000
+        chunks = adapter.truncate_message(
+            oversized, adapter.MAX_MESSAGE_LENGTH, len_fn=adapter.message_len_fn,
+        )
+        result = await adapter.edit_message("123", "456", oversized, finalize=False)
+
+        assert result.success is False
+        assert result.partial is True
+        assert result.retryable is False
+        assert result.error == "partial_delivery:continuation_failed"
+        assert result.message_id == "1001"
+        assert result.continuation_message_ids == ("1001",)
+        assert result.delivered_content == "".join(chunks[:2])
+        assert result.undelivered_content == "".join(chunks[2:])
+
 # =========================================================================
 # Telegram guest mention gating
 # =========================================================================

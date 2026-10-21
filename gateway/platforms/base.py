@@ -1042,6 +1042,15 @@ class SendResult:
     # made up the full payload, in send order.  Empty tuple for the common
     # single-message case.
     continuation_message_ids: tuple = ()
+    # A failed result may still represent a prefix that reached the user.
+    # Consumers can use this metadata to continue from the acknowledged
+    # prefix without treating the whole payload as delivered or retrying it.
+    partial: bool = False
+    delivered_content: Optional[str] = None
+    # Exact rendered content that remains unsent after a partial delivery.
+    # Unlike ``delivered_content``, this need not correspond to a prefix of
+    # the adapter's original input (platform chunk markers may be present).
+    undelivered_content: Optional[str] = None
 
 
 class EphemeralReply(str):

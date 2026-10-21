@@ -21,9 +21,11 @@ import re
 import sqlite3
 import threading
 import time
+import uuid
 from pathlib import Path
 
 from agent.memory_manager import sanitize_context
+from agent.turn_ledger import TurnEvent, TurnReceipt, normalize_ledger_payload, validate_ledger_identifier
 from shay_constants import get_shay_home
 from typing import Any, Callable, Dict, List, Optional, TypeVar
 
@@ -33,7 +35,7 @@ T = TypeVar("T")
 
 DEFAULT_DB_PATH = get_shay_home() / "state.db"
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 # ---------------------------------------------------------------------------
 # WAL-compatibility fallback
@@ -244,10 +246,38 @@ CREATE TABLE IF NOT EXISTS state_meta (
     value TEXT
 );
 
+CREATE TABLE IF NOT EXISTS turn_receipts (
+    turn_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    contract_version INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('active', 'succeeded', 'failed', 'abandoned')),
+    outcome TEXT,
+    correlation_id TEXT,
+    started_at REAL NOT NULL,
+    finished_at REAL,
+    UNIQUE(session_id, correlation_id)
+);
+
+CREATE TABLE IF NOT EXISTS turn_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    turn_id TEXT NOT NULL REFERENCES turn_receipts(turn_id) ON DELETE CASCADE,
+    sequence INTEGER NOT NULL,
+    contract_version INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    correlation_id TEXT,
+    occurred_at REAL NOT NULL,
+    UNIQUE(turn_id, sequence),
+    UNIQUE(turn_id, correlation_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source);
 CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_session_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_turn_receipts_session ON turn_receipts(session_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_turn_receipts_status ON turn_receipts(status, started_at);
+CREATE INDEX IF NOT EXISTS idx_turn_events_turn ON turn_events(turn_id, sequence);
 """
 
 FTS_SQL = """
@@ -676,6 +706,228 @@ class SessionDB:
             cursor.executescript(FTS_TRIGRAM_SQL)
 
         self._conn.commit()
+
+    # =========================================================================
+    # Durable turn ledger
+    # =========================================================================
+
+    @staticmethod
+    def _turn_receipt_from_row(row: sqlite3.Row) -> TurnReceipt:
+        return TurnReceipt(
+            turn_id=row["turn_id"],
+            session_id=row["session_id"],
+            status=row["status"],
+            outcome=row["outcome"],
+            correlation_id=row["correlation_id"],
+            started_at=row["started_at"],
+            finished_at=row["finished_at"],
+            version=row["contract_version"],
+        )
+
+    @staticmethod
+    def _validate_ledger_label(value: str, label: str) -> str:
+        """Validate a short identifier/code, never arbitrary user content."""
+        return validate_ledger_identifier(value)
+
+    def begin_turn(
+        self,
+        session_id: str,
+        *,
+        turn_id: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+        started_at: Optional[float] = None,
+    ) -> TurnReceipt:
+        """Create an active receipt for an existing session.
+
+        ``correlation_id`` makes retries idempotent within a session.  No
+        transcript row is created or changed.  A missing session is rejected
+        rather than synthesized, preserving foreign-key ownership.
+        """
+        turn_id = turn_id or uuid.uuid4().hex
+        self._validate_ledger_label(turn_id, "turn_id")
+        if correlation_id is not None:
+            self._validate_ledger_label(correlation_id, "correlation_id")
+        timestamp = time.time() if started_at is None else float(started_at)
+
+        def _do(conn):
+            if correlation_id is not None:
+                existing = conn.execute(
+                    "SELECT * FROM turn_receipts WHERE session_id = ? AND correlation_id = ?",
+                    (session_id, correlation_id),
+                ).fetchone()
+                if existing is not None:
+                    return existing
+            if conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone() is None:
+                raise KeyError(f"session does not exist: {session_id}")
+            conn.execute(
+                "INSERT INTO turn_receipts "
+                "(turn_id, session_id, contract_version, status, correlation_id, started_at) "
+                "VALUES (?, ?, 1, 'active', ?, ?)",
+                (turn_id, session_id, correlation_id, timestamp),
+            )
+            return conn.execute(
+                "SELECT * FROM turn_receipts WHERE turn_id = ?", (turn_id,)
+            ).fetchone()
+
+        return self._turn_receipt_from_row(self._execute_write(_do))
+
+    def append_turn_event(
+        self,
+        turn_id: str,
+        event_type: str,
+        payload: Optional[Dict[str, Any]] = None,
+        *,
+        correlation_id: Optional[str] = None,
+        occurred_at: Optional[float] = None,
+    ) -> TurnEvent:
+        """Atomically append the next event, returning an immutable DTO.
+
+        Reusing an event ``correlation_id`` for the same turn returns the
+        original event without allocating another sequence.  Events cannot be
+        appended after a terminal outcome.  Payload validation happens before
+        the write and rejects content-bearing fields.
+        """
+        self._validate_ledger_label(turn_id, "turn_id")
+        self._validate_ledger_label(event_type, "event_type")
+        if event_type == "turn.finished":
+            raise ValueError("terminal events must be written atomically by finish_turn")
+        if correlation_id is not None:
+            self._validate_ledger_label(correlation_id, "correlation_id")
+        safe_payload = normalize_ledger_payload(payload)
+        timestamp = time.time() if occurred_at is None else float(occurred_at)
+
+        def _do(conn):
+            if correlation_id is not None:
+                existing = conn.execute(
+                    "SELECT * FROM turn_events WHERE turn_id = ? AND correlation_id = ?",
+                    (turn_id, correlation_id),
+                ).fetchone()
+                if existing is not None:
+                    return existing
+            receipt = conn.execute(
+                "SELECT status FROM turn_receipts WHERE turn_id = ?", (turn_id,)
+            ).fetchone()
+            if receipt is None:
+                raise KeyError(f"turn does not exist: {turn_id}")
+            if receipt["status"] != "active":
+                raise ValueError("cannot append an event to a terminal turn")
+            sequence = conn.execute(
+                "SELECT COALESCE(MAX(sequence), 0) + 1 FROM turn_events WHERE turn_id = ?",
+                (turn_id,),
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO turn_events "
+                "(turn_id, sequence, contract_version, event_type, payload, correlation_id, occurred_at) "
+                "VALUES (?, ?, 1, ?, ?, ?, ?)",
+                (turn_id, sequence, event_type, json.dumps(safe_payload, sort_keys=True),
+                 correlation_id, timestamp),
+            )
+            return conn.execute(
+                "SELECT * FROM turn_events WHERE turn_id = ? AND sequence = ?",
+                (turn_id, sequence),
+            ).fetchone()
+
+        row = self._execute_write(_do)
+        return TurnEvent(
+            turn_id=row["turn_id"], sequence=row["sequence"],
+            event_type=row["event_type"], payload=json.loads(row["payload"]),
+            correlation_id=row["correlation_id"], occurred_at=row["occurred_at"],
+            version=row["contract_version"],
+        )
+
+    def finish_turn(
+        self,
+        turn_id: str,
+        status: str,
+        *,
+        outcome: Optional[str] = None,
+        finished_at: Optional[float] = None,
+    ) -> TurnReceipt:
+        """Set the sole terminal outcome; identical retries are idempotent.
+
+        ``status`` must be succeeded, failed, or abandoned.  Once terminal,
+        a different status or outcome is rejected and the first result wins.
+        """
+        self._validate_ledger_label(turn_id, "turn_id")
+        if status not in {"succeeded", "failed", "abandoned"}:
+            raise ValueError("terminal status must be succeeded, failed, or abandoned")
+        if outcome is not None:
+            self._validate_ledger_label(outcome, "outcome")
+        timestamp = time.time() if finished_at is None else float(finished_at)
+        terminal_payload = normalize_ledger_payload({"status": status, "outcome": outcome})
+
+        def _do(conn):
+            row = conn.execute(
+                "SELECT * FROM turn_receipts WHERE turn_id = ?", (turn_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"turn does not exist: {turn_id}")
+            if row["status"] != "active":
+                if row["status"] == status and row["outcome"] == outcome:
+                    return row
+                raise ValueError("turn already has a different terminal outcome")
+            sequence = conn.execute(
+                "SELECT COALESCE(MAX(sequence), 0) + 1 FROM turn_events WHERE turn_id = ?",
+                (turn_id,),
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO turn_events (turn_id, sequence, contract_version, event_type, payload, occurred_at) "
+                "VALUES (?, ?, 1, 'turn.finished', ?, ?)",
+                (turn_id, sequence, json.dumps(terminal_payload, sort_keys=True), timestamp),
+            )
+            conn.execute(
+                "UPDATE turn_receipts SET status = ?, outcome = ?, finished_at = ? "
+                "WHERE turn_id = ? AND status = 'active'",
+                (status, outcome, timestamp, turn_id),
+            )
+            return conn.execute(
+                "SELECT * FROM turn_receipts WHERE turn_id = ?", (turn_id,)
+            ).fetchone()
+
+        return self._turn_receipt_from_row(self._execute_write(_do))
+
+    def get_turn_receipt(self, turn_id: str) -> Optional[TurnReceipt]:
+        """Return one immutable receipt, or ``None`` when it is absent."""
+        row = self._conn.execute(
+            "SELECT * FROM turn_receipts WHERE turn_id = ?", (turn_id,)
+        ).fetchone()
+        return self._turn_receipt_from_row(row) if row is not None else None
+
+    def list_turn_events(self, turn_id: str) -> List[TurnEvent]:
+        """Return immutable events in their transaction-allocated order."""
+        rows = self._conn.execute(
+            "SELECT * FROM turn_events WHERE turn_id = ? ORDER BY sequence", (turn_id,)
+        ).fetchall()
+        return [
+            TurnEvent(
+                turn_id=row["turn_id"], sequence=row["sequence"],
+                event_type=row["event_type"], payload=json.loads(row["payload"]),
+                correlation_id=row["correlation_id"], occurred_at=row["occurred_at"],
+                version=row["contract_version"],
+            )
+            for row in rows
+        ]
+
+    def recover_incomplete_turns(self, *, before: Optional[float] = None) -> int:
+        """Mark active receipts abandoned without replaying any side effect.
+
+        When ``before`` is supplied, only turns started at or before that time
+        are recovered.  The operation appends no event and touches no messages.
+        It returns the number of receipts transitioned by this call.
+        """
+        cutoff = time.time() if before is None else float(before)
+        finished_at = time.time()
+
+        def _do(conn):
+            cursor = conn.execute(
+                "UPDATE turn_receipts SET status = 'abandoned', "
+                "outcome = 'recovered_incomplete', finished_at = ? "
+                "WHERE status = 'active' AND started_at <= ?",
+                (finished_at, cutoff),
+            )
+            return cursor.rowcount
+
+        return self._execute_write(_do)
 
     # =========================================================================
     # Session lifecycle
@@ -2963,4 +3215,3 @@ class SessionDB:
                 (error[:500], session_id),
             )
         self._execute_write(_do)
-

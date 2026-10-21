@@ -1,0 +1,39 @@
+{
+  "repo": "/Users/famtastic-fritz/Development/FAMtastic/shay-shay",
+  "source": "/private/tmp/shay-source-completion-20261004",
+  "old_sha": "07a2d609ef9073a58ada13230ce7319d1b96c4ee",
+  "new_sha": "04d5c3fd0f0d6e3bf9b796e530db2e1b86c8ebdf",
+  "changed_paths": [
+    "agent/intelligence_prefetch.py",
+    "agent/turn_ledger.py",
+    "docs/plans/2026-09-30-shay-turn-ledger-telegram-hardening.md",
+    "docs/plans/2026-10-04-shay-source-completion.md",
+    "docs/verification/2026-10-04-shay-source-proof.json",
+    "docs/verification/2026-10-04-shay-source-review.md",
+    "gateway/platforms/telegram.py",
+    "gateway/run.py",
+    "run_agent.py",
+    "shay_cli/intelligence_control_plane.py",
+    "shay_state.py",
+    "tests/agent/test_intelligence_prefetch.py",
+    "tests/gateway/test_telegram_conflict.py",
+    "tests/gateway/test_telegram_format.py",
+    "tests/run_agent/test_concurrent_interrupt.py",
+    "tests/run_agent/test_run_agent.py",
+    "tests/run_agent/test_turn_ledger_wiring.py",
+    "tests/test_shay_state.py",
+    "tests/test_turn_ledger.py"
+  ],
+  "preserved_files": 33,
+  "preserved_tracked_dirty": 33,
+  "preserved_overlap": [
+    "agent/intelligence_prefetch.py",
+    "shay_cli/intelligence_control_plane.py"
+  ],
+  "all_preserved_hashes_match": true,
+  "index_matches_head": true,
+  "staged_changes": 0,
+  "main_worktrees_checked": 1,
+  "source_only": true,
+  "runtime_activation": "not performed"
+}
